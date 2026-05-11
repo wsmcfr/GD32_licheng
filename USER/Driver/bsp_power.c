@@ -1,0 +1,224 @@
+#include "bsp_power.h"
+#include "sd_app.h"
+
+/*
+ * 函数作用：
+ *   在进入深度睡眠前关闭所有串口和对应 DMA 接收链路。
+ * 说明：
+ *   必须先关中断、再关 DMA、最后关串口外设，避免睡眠前残留接收动作。
+ */
+static void bsp_usart_disable_for_deepsleep(void)
+{
+    usart_interrupt_disable(USART0, USART_INT_IDLE);
+    nvic_irq_disable(USART0_IRQn);
+    usart_dma_receive_config(USART0, USART_RECEIVE_DMA_DISABLE);
+    dma_channel_disable(USART0_RX_DMA_PERIPH, USART0_RX_DMA_CHANNEL);
+    usart_disable(USART0);
+
+    usart_interrupt_disable(USART1, USART_INT_IDLE);
+    nvic_irq_disable(USART1_IRQn);
+    usart_dma_receive_config(USART1, USART_RECEIVE_DMA_DISABLE);
+    dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+    usart_disable(USART1);
+
+    usart_interrupt_disable(USART2, USART_INT_IDLE);
+    nvic_irq_disable(USART2_IRQn);
+    usart_dma_receive_config(USART2, USART_RECEIVE_DMA_DISABLE);
+    dma_channel_disable(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL);
+    usart_disable(USART2);
+
+    usart_interrupt_disable(USART5, USART_INT_IDLE);
+    nvic_irq_disable(USART5_IRQn);
+    usart_dma_receive_config(USART5, USART_RECEIVE_DMA_DISABLE);
+    dma_channel_disable(USART5_RX_DMA_PERIPH, USART5_RX_DMA_CHANNEL);
+    usart_disable(USART5);
+}
+
+/*
+ * 函数作用：
+ *   在进入深度睡眠前关闭 OLED 和 I2C 总线。
+ */
+static void bsp_oled_disable_for_deepsleep(void)
+{
+    OLED_Display_Off();
+
+    i2c_dma_config(I2C0, I2C_DMA_OFF);
+    dma_channel_disable(DMA0, DMA_CH6);
+    i2c_disable(I2C0);
+
+    gpio_mode_set(OLED_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, OLED_DAT_PIN | OLED_CLK_PIN);
+}
+
+/*
+ * 函数作用：
+ *   在进入深度睡眠前关闭 SPI Flash 和 GD30AD3344 对应的 SPI/DMA。
+ * 说明：
+ *   片选先拉高，确保外设在休眠期间不会误进入命令接收状态。
+ */
+static void bsp_spi_disable_for_deepsleep(void)
+{
+    SPI_FLASH_CS_HIGH();
+    SPI_GD30AD3344_CS_HIGH();
+
+    spi_dma_disable(SPI0, SPI_DMA_RECEIVE);
+    spi_dma_disable(SPI0, SPI_DMA_TRANSMIT);
+    spi_dma_disable(SPI3, SPI_DMA_RECEIVE);
+    spi_dma_disable(SPI3, SPI_DMA_TRANSMIT);
+
+    dma_channel_disable(DMA1, DMA_CH2);
+    dma_channel_disable(DMA1, DMA_CH3);
+    dma_channel_disable(DMA1, DMA_CH4);
+
+    spi_disable(SPI0);
+    spi_disable(SPI3);
+}
+
+/*
+ * 函数作用：
+ *   在进入深度睡眠前关闭 SDIO 外设。
+ * 说明：
+ *   SD 卡组件内部自带 GPIO 初始化，因此唤醒后不需要额外保留旧的 bsp_sdio_init。
+ */
+static void bsp_sdio_disable_for_deepsleep(void)
+{
+    nvic_irq_disable(SDIO_IRQn);
+    sdio_dma_disable();
+    sdio_clock_disable();
+    sd_power_off();
+    sdio_deinit();
+    dma_channel_disable(DMA1, DMA_CH3);
+}
+
+/*
+ * 函数作用：
+ *   将大部分 GPIO 切换为低功耗状态，减少深度睡眠期间漏电。
+ * 说明：
+ *   这里保留唤醒按键为输入上拉，其余不再使用的引脚尽量切到模拟模式。
+ */
+static void bsp_gpio_enter_deepsleep_state(void)
+{
+    rcu_periph_clock_enable(RCU_GPIOA);
+    rcu_periph_clock_enable(RCU_GPIOB);
+    rcu_periph_clock_enable(RCU_GPIOC);
+    rcu_periph_clock_enable(RCU_GPIOD);
+    rcu_periph_clock_enable(RCU_GPIOE);
+
+    LED1_OFF;
+    LED2_OFF;
+    LED3_OFF;
+    LED4_OFF;
+    LED5_OFF;
+    LED6_OFF;
+
+    gpio_mode_set(KEYE_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY1_PIN | KEY2_PIN | KEY3_PIN | KEY4_PIN | KEY5_PIN);
+    gpio_mode_set(KEYB_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY6_PIN);
+
+    gpio_mode_set(USART0_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART0_TX_PIN);
+    gpio_mode_set(USART0_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART0_RX_PIN);
+    gpio_mode_set(USART1_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART1_TX_PIN);
+    gpio_mode_set(USART1_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART1_RX_PIN);
+    gpio_mode_set(USART2_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART2_TX_PIN);
+    gpio_mode_set(USART2_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART2_RX_PIN);
+    gpio_mode_set(USART5_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART5_TX_PIN);
+    gpio_mode_set(USART5_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART5_RX_PIN);
+
+    gpio_mode_set(OLED_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, OLED_DAT_PIN | OLED_CLK_PIN);
+
+    gpio_mode_set(GD25QXX_SPI_GPIO_PORT,
+                  GPIO_MODE_ANALOG,
+                  GPIO_PUPD_NONE,
+                  GD25QXX_SPI_SCK_PIN | GD25QXX_SPI_MISO_PIN | GD25QXX_SPI_MOSI_PIN);
+    gpio_mode_set(GD25QXX_SPI_CS_GPIO_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GD25QXX_SPI_CS_PIN);
+    gpio_output_options_set(GD25QXX_SPI_CS_GPIO_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, GD25QXX_SPI_CS_PIN);
+    GPIO_BOP(GD25QXX_SPI_CS_GPIO_PORT) = GD25QXX_SPI_CS_PIN;
+
+    gpio_mode_set(GD30AD3344_SPI_GPIO_PORT,
+                  GPIO_MODE_ANALOG,
+                  GPIO_PUPD_NONE,
+                  GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
+    gpio_mode_set(GD30AD3344_SPI_GPIO_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GD30AD3344_SPI_CS_PIN);
+    gpio_output_options_set(GD30AD3344_SPI_GPIO_PORT,
+                            GPIO_OTYPE_PP,
+                            GPIO_OSPEED_2MHZ,
+                            GD30AD3344_SPI_CS_PIN);
+    GPIO_BOP(GD30AD3344_SPI_GPIO_PORT) = GD30AD3344_SPI_CS_PIN;
+
+    gpio_mode_set(ADC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, ADC1_PIN | ADC_VREF_PIN);
+    gpio_mode_set(DAC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, DAC1_PIN);
+
+    gpio_mode_set(GPIOC, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11 | GPIO_PIN_12);
+    gpio_mode_set(GPIOD, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, GPIO_PIN_2);
+
+    gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEYW_PIN);
+}
+
+/*
+ * 函数作用：
+ *   从深度睡眠唤醒后，重新恢复时钟、滴答和所有板级外设。
+ * 说明：
+ *   这里的顺序与上电初始化保持一致，确保依赖关系正确恢复。
+ */
+static void bsp_deepsleep_reinit_after_wakeup(void)
+{
+    SystemInit();
+    SystemCoreClockUpdate();
+    systick_config();
+    update_perf_counter();
+
+    bsp_led_init();
+    bsp_btn_init();
+    bsp_usart_init();
+    bsp_oled_init();
+    OLED_Init();
+    bsp_adc_init();
+    bsp_dac_init();
+    bsp_gd25qxx_init();
+    bsp_gd30ad3344_init();
+    bsp_rtc_init();
+    sd_fatfs_init();
+}
+
+/*
+ * 函数作用：
+ *   进入深度睡眠，并在唤醒后恢复系统运行。
+ * 主要流程：
+ *   1. 收拢外设和 GPIO。
+ *   2. 配置唤醒中断。
+ *   3. 暂停性能计数和 SysTick 中断。
+ *   4. 进入 PMU 深度睡眠模式。
+ *   5. 唤醒后重新初始化系统。
+ */
+void bsp_enter_deepsleep(void)
+{
+    rcu_periph_clock_enable(RCU_PMU);
+
+    __disable_irq();
+
+    bsp_usart_disable_for_deepsleep();
+    bsp_oled_disable_for_deepsleep();
+    bsp_spi_disable_for_deepsleep();
+    bsp_sdio_disable_for_deepsleep();
+
+    adc_disable(ADC0);
+    adc_dma_mode_disable(ADC0);
+    dma_channel_disable(DMA1, DMA_CH0);
+    dac_disable(DAC0, DAC_OUT0);
+    dac_dma_disable(DAC0, DAC_OUT0);
+    dma_channel_disable(DMA0, DMA_CH5);
+    timer_disable(TIMER5);
+
+    bsp_gpio_enter_deepsleep_state();
+    bsp_wkup_key_exti_init();
+
+    pmu_flag_clear(PMU_FLAG_RESET_WAKEUP);
+    pmu_flag_clear(PMU_FLAG_RESET_STANDBY);
+
+    before_cycle_counter_reconfiguration();
+    SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
+
+    __enable_irq();
+
+    pmu_to_deepsleepmode(PMU_LDO_LOWPOWER, PMU_LOWDRIVER_ENABLE, WFI_CMD);
+
+    bsp_deepsleep_reinit_after_wakeup();
+}

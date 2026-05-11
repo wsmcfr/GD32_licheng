@@ -1,0 +1,54 @@
+# 文件作用：
+#   约束上传到 Git 仓库的内容，只保留工程源码、工程配置和必要文档。
+# 说明：
+#   本文件排除本机 AI 工具目录、编译输出、中间文件和 Keil 生成产物，
+#   避免把无关内容一并推送到 GitHub。
+
+# 本机工具与会话目录
+.agents/
+.claude/
+.codex/
+.cursor/
+.spec-workflow/
+.trellis/
+
+# Python/Node 常见缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+node_modules/
+
+# Keil / MDK 编译输出
+MDK/output/
+MDK/Lists/
+MDK/Listing/
+MDK/*.bak
+MDK/*.dep
+MDK/*.crf
+MDK/*.lnp
+MDK/*.htm
+MDK/*.map
+MDK/*.axf
+MDK/*.o
+MDK/*.d
+
+# 工程生成目录
+Objects/
+Listings/
+output/
+
+# 通用二进制和临时文件
+*.o
+*.obj
+*.d
+*.dep
+*.axf
+*.bin
+*.elf
+*.hex
+*.map
+*.lst
+*.log
+*.tmp
+*.temp
