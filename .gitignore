@@ -10,7 +10,11 @@
 .codex/
 .cursor/
 .spec-workflow/
-.trellis/
+
+# Trellis 运行态目录默认不入库，但项目规范文档需要版本化
+.trellis/*
+!.trellis/spec/
+!.trellis/spec/**
 
 # Python/Node 常见缓存
 __pycache__/
