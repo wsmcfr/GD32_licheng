@@ -1,0 +1,6 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Check backend index navigation and checklist completeness"}
+{"file": "USER/gd32f4xx_it.c", "reason": "Check interrupt and error-handling documentation against actual ISR code"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Check frontend index navigation and checklist completeness"}
+{"file": "工程文档.md", "reason": "Cross-check documented architecture and naming with source-derived guidelines"}

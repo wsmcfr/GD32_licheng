@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Need to rewrite backend index for this firmware project and add checklist/navigation"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Need to rewrite frontend index for this firmware project and add checklist/navigation"}
+{"file": "USER/App/sd_app.c", "reason": "Shows storage, error handling, logging, and compatibility wrapper patterns"}
+{"file": "USER/Driver/bsp_usart.c", "reason": "Shows low-level peripheral init pattern and DMA/IRQ handling"}
+{"file": "USER/App/scheduler.c", "reason": "Shows boot sequence and app task scheduling conventions"}
