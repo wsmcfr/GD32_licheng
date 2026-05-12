@@ -1,10 +1,3 @@
-/* Licence
-* Company: MCUSTUDIO
-* Auther: Ahypnis.
-* Version: V0.10
-* Time: 2025/06/05
-* Note:
-*/
 #include "btn_app.h"
 
 /*
@@ -47,9 +40,16 @@ static ebtn_btn_t btns[] = {
 
 /*
  * 函数作用：
- *   根据按钮逻辑 ID 读取当前按下状态。
+ *   根据 ebtn 框架传入的按钮逻辑 ID，读取对应物理按键的当前按下状态。
+ * 主要流程：
+ *   1. 通过 btn->key_id 区分 7 个按键。
+ *   2. 调用板级按键读取宏获取 GPIO 电平。
+ *   3. 将低电平按下的硬件语义转换成 ebtn 需要的 1/0 状态。
+ * 参数说明：
+ *   btn：ebtn 框架维护的按键对象指针，必须指向 btns[] 中的有效对象。
  * 返回值说明：
- *   1 表示当前按键处于按下状态，0 表示未按下。
+ *   1：表示当前按键处于按下状态。
+ *   0：表示当前按键未按下，或 key_id 不在本工程定义范围内。
  */
 static uint8_t prv_btn_get_state(struct ebtn_btn *btn)
 {
@@ -76,7 +76,16 @@ static uint8_t prv_btn_get_state(struct ebtn_btn *btn)
 
 /*
  * 函数作用：
- *   处理按键单击事件，并执行对应的 LED 或低功耗动作。
+ *   处理 ebtn 框架派发的按键事件，并把单击事件映射成 LED 翻转或低功耗动作。
+ * 主要流程：
+ *   1. 仅响应 EBTN_EVT_ONCLICK，忽略当前未使用的长按、连击等事件。
+ *   2. 根据 key_id 执行对应 LED 翻转。
+ *   3. KEY2 单击后额外进入深度睡眠，用于验证低功耗唤醒流程。
+ * 参数说明：
+ *   btn：产生事件的按键对象指针，key_id 决定本次事件对应的物理按键。
+ *   evt：ebtn 框架派发的事件类型，本函数当前只处理单击事件。
+ * 返回值说明：
+ *   无返回值。
  */
 static void prv_btn_event(struct ebtn_btn *btn, ebtn_evt_t evt)
 {
@@ -114,7 +123,11 @@ static void prv_btn_event(struct ebtn_btn *btn, ebtn_evt_t evt)
 
 /*
  * 函数作用：
- *   初始化按键事件框架，并注册静态按键数组。
+ *   初始化按键事件框架，并注册本模块维护的静态按键数组和回调函数。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void app_btn_init(void)
 {
@@ -123,7 +136,11 @@ void app_btn_init(void)
 
 /*
  * 函数作用：
- *   周期性推进 ebtn 状态机。
+ *   周期性推进 ebtn 状态机，使按键去抖、点击识别和事件回调持续运行。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void btn_task(void)
 {

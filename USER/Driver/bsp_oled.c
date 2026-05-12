@@ -14,6 +14,10 @@ __IO uint8_t oled_data_buf[2] = {0x40U, 0x00U};
  *   2. 将 PB8/PB9 配置为 I2C0 复用开漏输出。
  *   3. 初始化 I2C0 工作频率和本机地址。
  *   4. 预先配置 DMA0 CH6，为 OLED 命令/数据发送做准备。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_oled_init(void)
 {

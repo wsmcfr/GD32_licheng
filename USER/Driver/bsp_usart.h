@@ -48,6 +48,15 @@ extern "C" {
 #define USART1_RX_PIN                  GPIO_PIN_6
 #define USART1_AF                      GPIO_AF_7
 
+/* RS485 方向控制脚：PE8 同时控制 MAX3485 的 DE 和 RE#，高电平发送，低电平接收。 */
+#define RS485_USART                    USART1
+#define RS485_DIR_PORT                 GPIOE
+#define RS485_DIR_CLK_PORT             RCU_GPIOE
+#define RS485_DIR_PIN                  GPIO_PIN_8
+/* RS485 方向控制有效电平。若实测 485_CS 为低电平发送，只需交换下面两个宏。 */
+#define RS485_DIR_TX_LEVEL             SET
+#define RS485_DIR_RX_LEVEL             RESET
+
 /* USART2 引脚与 DMA 映射。 */
 #define USART2_RDATA_ADDRESS           ((uint32_t)&USART_DATA(USART2))
 #define USART2_RX_DMA_PERIPH           DMA0
@@ -78,13 +87,85 @@ extern uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
 extern uint8_t usart2_rxbuffer[BSP_USART2_RX_BUFFER_SIZE];
 extern uint8_t usart5_rxbuffer[BSP_USART5_RX_BUFFER_SIZE];
 
-/* 串口初始化接口。 */
+/*
+ * 函数作用：
+ *   初始化 USART0 调试串口和 DMA 接收链路。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void bsp_usart0_init(void);
+
+/*
+ * 函数作用：
+ *   初始化当前默认启用的 USART0 和 USART1/RS485 资源。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void bsp_usart_init(void);
+
+/*
+ * 函数作用：
+ *   初始化 USART1 以及 RS485 方向控制 GPIO。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void bsp_usart1_init(void);
+
+/*
+ * 函数作用：
+ *   初始化 USART2 及其 DMA 接收链路。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void bsp_usart2_init(void);
+
+/*
+ * 函数作用：
+ *   初始化 USART5 及其 DMA 接收链路。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void bsp_usart5_init(void);
+
+/*
+ * 函数作用：
+ *   初始化工程中定义的全部 USART 接口。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void bsp_usart_all_init(void);
+
+/*
+ * 函数作用：
+ *   将 RS485 收发器方向切换为接收态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void bsp_rs485_direction_receive(void);
+
+/*
+ * 函数作用：
+ *   将 RS485 收发器方向切换为发送态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void bsp_rs485_direction_transmit(void);
 
 #ifdef __cplusplus
 }

@@ -16,6 +16,10 @@ extern uint8_t ucLed[6];
 /*
  * 函数作用：
  *   按照 ucLed 数组内容刷新 LED 状态。
+ * 参数说明：
+ *   无参数，函数内部直接读取全局 ucLed 状态数组。
+ * 返回值说明：
+ *   无返回值。
  */
 void led_task(void);
 

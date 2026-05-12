@@ -17,12 +17,20 @@ extern "C" {
 /*
  * 函数作用：
  *   初始化 SPI Flash 所使用的 GPIO、SPI0、DMA 等底层资源。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_gd25qxx_init(void);
 
 /*
  * 函数作用：
  *   初始化 GD30AD3344 所使用的 GPIO、SPI3、DMA 等底层资源。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_gd30ad3344_init(void);
 

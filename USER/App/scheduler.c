@@ -1,18 +1,20 @@
-/* Licence
-* Company: MCUSTUDIO
-* Auther: Ahypnis.
-* Version: V0.10
-* Time: 2025/06/05
-* Note:
-*/
 #include "scheduler.h"
 
-/* Number of scheduler tasks in scheduler_task[]. */
+/*
+ * 变量作用：
+ *   记录 scheduler_task[] 中的有效任务数量。
+ * 说明：
+ *   该值在 scheduler_init() 中按静态任务表长度计算，避免手工维护数量导致越界或漏调度。
+ */
 static uint8_t task_num;
 
 /*
  * 结构体作用：
  *   描述一个调度任务的入口函数、周期和上次执行时间。
+ * 成员说明：
+ *   task_func：任务入口函数指针，必须是不带参数且无返回值的周期任务。
+ *   rate_ms：任务执行周期，单位为毫秒。
+ *   last_run：上次执行时间戳，单位为毫秒，由 scheduler_run() 更新。
  */
 typedef struct {
     void (*task_func)(void);
@@ -20,7 +22,12 @@ typedef struct {
     uint32_t last_run;
 } task_t;
 
-/* Static task table: function pointer, run period in ms, and last run time. */
+/*
+ * 变量作用：
+ *   静态调度任务表，集中登记所有需要周期运行的应用层任务。
+ * 说明：
+ *   新增周期任务时只在这里登记，避免调度入口散落在各个功能模块中。
+ */
 static task_t scheduler_task[] =
 {
      {led_task,  1,    0}
@@ -31,8 +38,13 @@ static task_t scheduler_task[] =
     ,{rtc_task,  500,  0}
 };
 
-/**
- * @brief Initialize task count from the static task table.
+/*
+ * 函数作用：
+ *   根据静态任务表初始化调度任务数量。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void scheduler_init(void)
 {
@@ -40,7 +52,19 @@ void scheduler_init(void)
 }
 
 
-
+/*
+ * 函数作用：
+ *   完成系统上电后的基础外设、组件和应用任务初始化。
+ * 主要流程：
+ *   1. 初始化 SysTick、周期计数器和基础板级外设。
+ *   2. 按依赖顺序初始化存储、串口、ADC/DAC、RTC、OLED 和按键应用层。
+ *   3. 执行 SPI Flash 与可选 SD/FatFs 冒烟测试。
+ *   4. 初始化调度器任务数量，进入主循环前完成任务表准备。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void system_init(void)
 {
 	#ifdef __FIRMWARE_VERSION_DEFINE
@@ -48,7 +72,8 @@ void system_init(void)
 	#endif
 		systick_config();
 		init_cycle_counter(false);
-		delay_ms(200); // Wait download if SWIO be set to GPIO
+		/* 上电后保留短延时，给下载器和调试器重新连接 SWIO 留出窗口。 */
+		delay_ms(200);
 
 	#ifdef __FIRMWARE_VERSION_DEFINE
 		fw_ver = gd32f4xx_firmware_version_get();
@@ -94,8 +119,17 @@ void system_init(void)
 
 		scheduler_init();
 }
-/**
- * @brief Run due tasks according to their millisecond period.
+/*
+ * 函数作用：
+ *   按毫秒周期轮询任务表，执行已经到期的周期任务。
+ * 主要流程：
+ *   1. 遍历 scheduler_task[] 中的每个任务。
+ *   2. 使用 get_system_ms() 读取当前时间。
+ *   3. 当前时间达到任务周期后，更新 last_run 并调用任务函数。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void scheduler_run(void)
 {

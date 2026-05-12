@@ -8,6 +8,10 @@
  *   2. 配置 SPI0 的 SCK/MISO/MOSI 复用引脚。
  *   3. 配置片选引脚为普通推挽输出。
  *   4. 初始化 SPI0 参数并调用 Flash 组件初始化。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_gd25qxx_init(void)
 {
@@ -55,6 +59,10 @@ void bsp_gd25qxx_init(void)
  *   1. 打开 GPIOE、SPI3、DMA1 时钟。
  *   2. 配置 SPI3 三线复用功能和片选 GPIO。
  *   3. 初始化 SPI3 参数并调用 ADC 组件初始化。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_gd30ad3344_init(void)
 {

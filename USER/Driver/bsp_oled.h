@@ -33,6 +33,10 @@ extern __IO uint8_t oled_data_buf[2];
 /*
  * 函数作用：
  *   初始化 OLED 所依赖的 GPIO、I2C0 和 DMA 发送通道。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_oled_init(void);
 

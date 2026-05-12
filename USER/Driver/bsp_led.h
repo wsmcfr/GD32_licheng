@@ -87,6 +87,10 @@ extern "C" {
 /*
  * 函数作用：
  *   初始化板载 LED 使用的 GPIO，并统一关闭所有 LED。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_led_init(void);
 

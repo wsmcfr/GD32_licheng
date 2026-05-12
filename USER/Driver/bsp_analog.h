@@ -34,12 +34,20 @@ extern uint16_t convertarr[CONVERT_NUM];
 /*
  * 函数作用：
  *   初始化 ADC0 双通道采样及 DMA 循环搬运。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_adc_init(void);
 
 /*
  * 函数作用：
  *   初始化 DAC0 通道 0 以及触发它的 TIMER5。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_dac_init(void);
 

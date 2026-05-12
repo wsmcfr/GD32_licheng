@@ -735,11 +735,6 @@
               <FilePath>..\USER\App\usart_app.c</FilePath>
             </File>
             <File>
-              <FileName>scheduler.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\USER\App\scheduler.c</FilePath>
-            </File>
-            <File>
               <FileName>sd_app.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\USER\App\sd_app.c</FilePath>
@@ -753,6 +748,11 @@
               <FileName>adc_app.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\USER\App\adc_app.c</FilePath>
+            </File>
+            <File>
+              <FileName>scheduler.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\USER\App\scheduler.c</FilePath>
             </File>
           </Files>
         </Group>

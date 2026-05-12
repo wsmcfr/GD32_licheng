@@ -4,6 +4,10 @@
 /*
  * 函数作用：
  *   在进入深度睡眠前关闭所有串口和对应 DMA 接收链路。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  * 说明：
  *   必须先关中断、再关 DMA、最后关串口外设，避免睡眠前残留接收动作。
  */
@@ -37,6 +41,10 @@ static void bsp_usart_disable_for_deepsleep(void)
 /*
  * 函数作用：
  *   在进入深度睡眠前关闭 OLED 和 I2C 总线。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 static void bsp_oled_disable_for_deepsleep(void)
 {
@@ -52,6 +60,10 @@ static void bsp_oled_disable_for_deepsleep(void)
 /*
  * 函数作用：
  *   在进入深度睡眠前关闭 SPI Flash 和 GD30AD3344 对应的 SPI/DMA。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  * 说明：
  *   片选先拉高，确保外设在休眠期间不会误进入命令接收状态。
  */
@@ -76,6 +88,10 @@ static void bsp_spi_disable_for_deepsleep(void)
 /*
  * 函数作用：
  *   在进入深度睡眠前关闭 SDIO 外设。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  * 说明：
  *   SD 卡组件内部自带 GPIO 初始化，因此唤醒后不需要额外保留旧的 bsp_sdio_init。
  */
@@ -92,6 +108,10 @@ static void bsp_sdio_disable_for_deepsleep(void)
 /*
  * 函数作用：
  *   将大部分 GPIO 切换为低功耗状态，减少深度睡眠期间漏电。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  * 说明：
  *   这里保留唤醒按键为输入上拉，其余不再使用的引脚尽量切到模拟模式。
  */
@@ -117,6 +137,12 @@ static void bsp_gpio_enter_deepsleep_state(void)
     gpio_mode_set(USART0_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART0_RX_PIN);
     gpio_mode_set(USART1_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART1_TX_PIN);
     gpio_mode_set(USART1_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART1_RX_PIN);
+    /*
+     * PE8 同时接 MAX3485 的 DE 和 RE#。
+     * 这里必须保持低电平推挽输出，而不是切到模拟输入；否则 485_CS 会悬空，
+     * 示波器容易看到工频/环境耦合的正弦波，且收发器方向状态不确定。
+     */
+    bsp_rs485_direction_receive();
     gpio_mode_set(USART2_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART2_TX_PIN);
     gpio_mode_set(USART2_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART2_RX_PIN);
     gpio_mode_set(USART5_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART5_TX_PIN);
@@ -155,6 +181,10 @@ static void bsp_gpio_enter_deepsleep_state(void)
 /*
  * 函数作用：
  *   从深度睡眠唤醒后，重新恢复时钟、滴答和所有板级外设。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  * 说明：
  *   这里的顺序与上电初始化保持一致，确保依赖关系正确恢复。
  */
@@ -187,6 +217,10 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
  *   3. 暂停性能计数和 SysTick 中断。
  *   4. 进入 PMU 深度睡眠模式。
  *   5. 唤醒后重新初始化系统。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_enter_deepsleep(void)
 {

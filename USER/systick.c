@@ -37,44 +37,51 @@ OF SUCH DAMAGE.
 
 volatile static uint32_t delay;
 
-/*!
-    \brief    configure systick
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
+/*
+ * 函数作用：
+ *   配置 SysTick 为 1ms 周期中断，并设置最高优先级。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值；若 SysTick_Config 配置失败则进入无限循环停机。
+ */
 void systick_config(void)
 {
-    /* setup systick timer for 1000Hz interrupts */
+    /* SystemCoreClock / 1000 生成 1ms 节拍，作为 delay 和调度时间基准。 */
     if(SysTick_Config(SystemCoreClock / 1000U)) {
-        /* capture error */
+        /* SysTick 是系统时间基准，配置失败后继续运行没有确定时序，因此停机。 */
         while(1) {
         }
     }
-    /* configure the systick handler priority */
+    /* 让 SysTick 保持高优先级，减少阻塞延时和周期调度的时间抖动。 */
     NVIC_SetPriority(SysTick_IRQn, 0x00U);
 }
 
-/*!
-    \brief    delay a time in milliseconds
-    \param[in]  count: count in milliseconds
-    \param[out] none
-    \retval     none
-*/
+/*
+ * 函数作用：
+ *   基于 SysTick 递减计数实现毫秒级阻塞延时。
+ * 参数说明：
+ *   count：需要延时的毫秒数，函数会阻塞直到该计数递减到 0。
+ * 返回值说明：
+ *   无返回值。
+ */
 void delay_1ms(uint32_t count)
 {
     delay = count;
 
+    /* delay 由 SysTick_Handler() 递减，这里只等待计数归零。 */
     while(0U != delay) {
     }
 }
 
-/*!
-    \brief    delay decrement
-    \param[in]  none
-    \param[out] none
-    \retval     none
-*/
+/*
+ * 函数作用：
+ *   在 SysTick 中断中递减阻塞延时计数。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void delay_decrement(void)
 {
     if(0U != delay) {

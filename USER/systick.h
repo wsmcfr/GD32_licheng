@@ -37,11 +37,34 @@ OF SUCH DAMAGE.
 
 #include <stdint.h>
 
-/* configure systick */
+/*
+ * 函数作用：
+ *   配置 SysTick 为 1ms 系统节拍。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void systick_config(void);
-/* delay a time in milliseconds */
+
+/*
+ * 函数作用：
+ *   执行毫秒级阻塞延时。
+ * 参数说明：
+ *   count：需要延时的毫秒数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void delay_1ms(uint32_t count);
-/* delay decrement */
+
+/*
+ * 函数作用：
+ *   递减阻塞延时计数，供 SysTick_Handler() 周期调用。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void delay_decrement(void);
 
 #endif /* SYS_TICK_H */

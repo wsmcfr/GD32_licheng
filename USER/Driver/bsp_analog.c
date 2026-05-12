@@ -11,6 +11,14 @@ uint16_t convertarr[CONVERT_NUM] = {0U};
 /*
  * 函数作用：
  *   配置 TIMER5，作为 DAC 触发源使用。
+ * 主要流程：
+ *   1. 复位 TIMER5 配置。
+ *   2. 配置预分频、计数周期和向上计数模式。
+ *   3. 将更新事件设置为 TRGO，驱动 DAC 定时输出。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  * 说明：
  *   该函数只服务于当前 DAC 输出节拍，因此使用 static 限定在本文件内。
  */
@@ -40,6 +48,10 @@ static void timer5_config(void)
  *   1. 配置 ADC 时钟、GPIO 模拟输入。
  *   2. 配置 DMA1 CH0，将采样结果循环搬运到 adc_value。
  *   3. 配置 ADC0 连续扫描两个通道并启动软件触发。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_adc_init(void)
 {
@@ -92,6 +104,15 @@ void bsp_adc_init(void)
 /*
  * 函数作用：
  *   初始化 DAC0 通道 0，并绑定 TIMER5 触发输出。
+ * 主要流程：
+ *   1. 打开 DAC、GPIOA 和 TIMER5 时钟。
+ *   2. 将 PA4 配置为模拟输出。
+ *   3. 配置 DAC0 OUT0 使用 TIMER5 TRGO 触发。
+ *   4. 启动 TIMER5，为 DAC 输出提供节拍。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void bsp_dac_init(void)
 {
