@@ -13,6 +13,7 @@
  */
 
 #include "gd32f4xx.h"
+#include "boot_app_config.h"
 #include "systick.h"
 #include "perf_counter.h"
 

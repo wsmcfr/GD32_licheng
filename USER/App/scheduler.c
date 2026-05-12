@@ -70,6 +70,13 @@ void system_init(void)
 	#ifdef __FIRMWARE_VERSION_DEFINE
 		uint32_t fw_ver = 0;
 	#endif
+		/*
+		 * 当前工程作为 BootLoader App 运行，链接地址不再是 0x08000000。
+		 * 先接管 BootLoader 跳转现场，确保 VTOR 指向 App 向量表，并恢复
+		 * BootLoader 跳转前关闭的全局中断，否则 SysTick/USART/DMA 中断不会触发。
+		 */
+		boot_app_handoff_init();
+
 		systick_config();
 		init_cycle_counter(false);
 		/* 上电后保留短延时，给下载器和调试器重新连接 SWIO 留出窗口。 */

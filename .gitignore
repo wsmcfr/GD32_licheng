@@ -9,6 +9,7 @@
 .claude/
 .codex/
 .cursor/
+.vscode/
 .spec-workflow/
 
 # Trellis 运行态目录默认不入库，但项目规范文档需要版本化
@@ -36,6 +37,8 @@ MDK/*.map
 MDK/*.axf
 MDK/*.o
 MDK/*.d
+*.uvguix*
+JLinkSettings.ini
 
 # 工程生成目录
 Objects/

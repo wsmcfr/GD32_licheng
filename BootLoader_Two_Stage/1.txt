@@ -1,0 +1,165 @@
+文件夹 PATH 列表
+卷序列号为 F6A0-9DF9
+C:.
+├─27_0_BootLoader
+│  ├─01 Readme
+│  ├─CMSIS
+│  │  └─GD
+│  │      └─GD32F4xx
+│  │          ├─Include
+│  │          └─Source
+│  │              ├─ARM
+│  │              └─IAR
+│  ├─Function
+│  ├─HardWare
+│  │  ├─BootLoader
+│  │  ├─LED
+│  │  ├─ROM
+│  │  └─USART
+│  ├─HeaderFiles
+│  ├─Library
+│  │  ├─GD32F4xx_standard_peripheral
+│  │  │  ├─Include
+│  │  │  └─Source
+│  │  ├─GD32F4xx_usb_library
+│  │  │  ├─device
+│  │  │  │  ├─class
+│  │  │  │  │  ├─audio
+│  │  │  │  │  │  ├─Include
+│  │  │  │  │  │  └─Source
+│  │  │  │  │  ├─cdc
+│  │  │  │  │  │  ├─Include
+│  │  │  │  │  │  └─Source
+│  │  │  │  │  ├─dfu
+│  │  │  │  │  │  ├─Include
+│  │  │  │  │  │  └─Source
+│  │  │  │  │  ├─hid
+│  │  │  │  │  │  ├─Include
+│  │  │  │  │  │  └─Source
+│  │  │  │  │  ├─iap
+│  │  │  │  │  │  ├─Include
+│  │  │  │  │  │  └─Source
+│  │  │  │  │  ├─msc
+│  │  │  │  │  │  ├─Include
+│  │  │  │  │  │  └─Source
+│  │  │  │  │  └─printer
+│  │  │  │  │      ├─Include
+│  │  │  │  │      └─Source
+│  │  │  │  └─core
+│  │  │  │      ├─Include
+│  │  │  │      └─Source
+│  │  │  ├─driver
+│  │  │  │  ├─Include
+│  │  │  │  └─Source
+│  │  │  ├─host
+│  │  │  │  ├─class
+│  │  │  │  │  ├─hid
+│  │  │  │  │  │  ├─Include
+│  │  │  │  │  │  └─Source
+│  │  │  │  │  └─msc
+│  │  │  │  │      ├─Include
+│  │  │  │  │      └─Source
+│  │  │  │  └─core
+│  │  │  │      ├─Include
+│  │  │  │      └─Source
+│  │  │  └─ustd
+│  │  │      ├─class
+│  │  │      │  ├─cdc
+│  │  │      │  ├─hid
+│  │  │      │  └─msc
+│  │  │      └─common
+│  │  └─Third_Party
+│  │      └─fat_fs
+│  │          ├─inc
+│  │          └─src
+│  │              └─option
+│  ├─project
+│  │  ├─.vscode
+│  │  ├─Listings
+│  │  ├─Objects
+│  │  └─RTE
+│  │      ├─_ADC
+│  │      └─_CIMC_GD32_Template
+│  ├─Startup
+│  └─User
+└─27_1_App
+    ├─01 Readme
+    ├─CMSIS
+    │  └─GD
+    │      └─GD32F4xx
+    │          ├─Include
+    │          └─Source
+    │              ├─ARM
+    │              └─IAR
+    ├─Function
+    ├─HardWare
+    │  ├─Config
+    │  ├─LED
+    │  ├─ROM
+    │  └─USART
+    ├─HeaderFiles
+    ├─Library
+    │  ├─GD32F4xx_standard_peripheral
+    │  │  ├─Include
+    │  │  └─Source
+    │  ├─GD32F4xx_usb_library
+    │  │  ├─device
+    │  │  │  ├─class
+    │  │  │  │  ├─audio
+    │  │  │  │  │  ├─Include
+    │  │  │  │  │  └─Source
+    │  │  │  │  ├─cdc
+    │  │  │  │  │  ├─Include
+    │  │  │  │  │  └─Source
+    │  │  │  │  ├─dfu
+    │  │  │  │  │  ├─Include
+    │  │  │  │  │  └─Source
+    │  │  │  │  ├─hid
+    │  │  │  │  │  ├─Include
+    │  │  │  │  │  └─Source
+    │  │  │  │  ├─iap
+    │  │  │  │  │  ├─Include
+    │  │  │  │  │  └─Source
+    │  │  │  │  ├─msc
+    │  │  │  │  │  ├─Include
+    │  │  │  │  │  └─Source
+    │  │  │  │  └─printer
+    │  │  │  │      ├─Include
+    │  │  │  │      └─Source
+    │  │  │  └─core
+    │  │  │      ├─Include
+    │  │  │      └─Source
+    │  │  ├─driver
+    │  │  │  ├─Include
+    │  │  │  └─Source
+    │  │  ├─host
+    │  │  │  ├─class
+    │  │  │  │  ├─hid
+    │  │  │  │  │  ├─Include
+    │  │  │  │  │  └─Source
+    │  │  │  │  └─msc
+    │  │  │  │      ├─Include
+    │  │  │  │      └─Source
+    │  │  │  └─core
+    │  │  │      ├─Include
+    │  │  │      └─Source
+    │  │  └─ustd
+    │  │      ├─class
+    │  │      │  ├─cdc
+    │  │      │  ├─hid
+    │  │      │  └─msc
+    │  │      └─common
+    │  └─Third_Party
+    │      └─fat_fs
+    │          ├─inc
+    │          └─src
+    │              └─option
+    ├─project
+    │  ├─.vscode
+    │  ├─Listings
+    │  ├─Objects
+    │  └─RTE
+    │      ├─_ADC
+    │      └─_CIMC_GD32_Template
+    ├─Startup
+    └─User
