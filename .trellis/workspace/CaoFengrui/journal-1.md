@@ -151,3 +151,52 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: BootLoader two-stage app integration
+
+**Date**: 2026-05-12
+**Task**: BootLoader two-stage app integration
+**Branch**: `main`
+
+### Summary
+
+将当前工程接入两阶段BootLoader并精简依赖；BootLoader硬件上板验证仍未完成。
+
+### Main Changes
+
+| 项目 | 本次记录 |
+|---|---|
+| 工程目标 | 将当前 `D:\GD32\2026706296` 工程整理为可被两阶段 BootLoader 跳转运行的 App，并把官方 `27_BootLoader_Two_Stage` 例程副本放入当前仓库。 |
+| App 链接规划 | 当前 App 已改为从 `0x0800D000` 链接运行，Flash 使用范围为 `0x0800D000 ~ 0x08070000`，保留 `0x08000000 ~ 0x0800BFFF` 给 BootLoader，`0x0800C000` 给参数区，`0x08073000` 起作为下载缓存区。 |
+| App 启动接管 | 新增 `USER/boot_app_config.c/.h`，在 `system_init()` 开头调用 `boot_app_handoff_init()`，完成 `SCB->VTOR` 切换、清理挂起中断、重新开启全局中断，解决 BootLoader 跳转后 App 中断入口和 PRIMASK 状态问题。 |
+| Keil 工程配置 | `MDK/2026706296.uvprojx` 的 IROM 改为 `0x0800D000 / 0x63000`，启用 HEX 输出，并恢复直接 `fromelf.exe --bin --output=.\output\Project.bin .\output\Project.axf` 生成 BIN；已记录 `nStopA1X=0` 经验，避免 After Build 辅助命令误导致主目标失败。 |
+| BootLoader 副本 | 新增 `BootLoader_Two_Stage/`，修改其中 BootLoader 工程：App 起始地址统一为 `0x0800D000`，下载缓存区为 `0x08073000`，按 `appSize` 擦除页，按 1024B 分块搬运，搬运后从 App 区重新计算 CRC，并增强 MSP/Reset_Handler 合法性检查。 |
+| 依赖精简 | `PACK/perf_counter-2.5.4` 已精简为当前工程必须文件；`Driver/CMSIS_6.2.0` 删除，必要 CMSIS Core 文件复制/合并到 `Driver/CMSIS`，当前保留 `core_cm4.h`、`cmsis_armclang.h`、`cmsis_compiler.h`、`cmsis_version.h`、`m-profile/armv7m_mpu.h`、`m-profile/cmsis_armclang_m.h` 等。 |
+| 文档沉淀 | 新增/更新 `BootLoader_APP_接入说明.md`、`BootLoader_Two_Stage_官方例程详解.md`、`PACK/perf_counter用途说明.md`、`工程文档.md`，并在 `.trellis/spec/backend/quality-guidelines.md` 记录 Keil After Build 的 `nStopA1X=0` 排障经验。 |
+| 已验证 | App 工程 Keil 构建曾显示 `0 Error(s), 0 Warning(s)`，`Project.bin` 已能生成；BootLoader 副本通过 Keil UV4 批处理构建，日志显示 `0 Error(s), 0 Warning(s)`。 |
+| 尚未验证 | **BootLoader 尚未进行硬件上板验证**：还没有实际烧录 BootLoader 到 `0x08000000`、App 到 `0x0800D000`，也没有在板子上验证复位启动、跳转 App、OLED/串口/SysTick/DMA/任务运行是否正常。 |
+| 后续重点 | 上板时先分别烧录 BootLoader 和 App，确认 BootLoader 能跳转到当前 App；再观察串口日志/OLED/任务调度/中断是否正常；运行中升级功能还未移植，后续要新增 App 侧接收固件、写下载缓存区、写参数区和软件复位流程。 |
+
+本次 Git 提交：`58275bc feat(bootloader): 接入两阶段BootLoader并精简依赖`。
+
+注意：当前仍未提交的 `MDK/2026706296.uvguix.caofengrui` 属于 Keil 个人界面状态文件，`GD32F470 Development Kit V2.0 原理图.pdf` 也未纳入本次提交。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `58275bc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
