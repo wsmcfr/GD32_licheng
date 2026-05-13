@@ -420,3 +420,45 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 修复低功耗唤醒与VBAT RTC续时
+
+**Date**: 2026-05-14
+**Task**: 修复低功耗唤醒与VBAT RTC续时
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+修复深睡唤醒后EXTI0残留，并让RTC在VBAT备份域有效时保持断电续时；用户已完成硬件验证并推送到远端。
+
+### Main Changes
+
+| 模块 | 变更 |
+|------|------|
+| 低功耗唤醒 | 深睡唤醒完成后新增 `bsp_wkup_key_exti_deinit()`，关闭 `EXTI0_IRQn` / `EXTI_0` 并清理挂起位，避免低功耗专用唤醒中断残留到正常运行态。 |
+| RTC / VBAT | `bsp_rtc_init()` 改为区分“首次建表”和“备份域恢复”两条路径；当 `RTC_BKP0 == BKP_VALUE` 且 `VBAT` 备份域有效时，只同步并读取现有 RTC 时间，不再重写默认时间。 |
+| 文档同步 | 更新 `工程文档.md` 与 `.trellis/spec/backend/quality-guidelines.md`，明确 `VBAT` 纽扣电池存在时 RTC 断电续时，以及 `EXTI0` 仅在深睡窗口内有效的约束。 |
+
+**验证结果**:
+- 用户已完成硬件实测并确认功能正常。
+- 当前修复提交为 `34f0431 fix(power): preserve vbat rtc state and close wake exti`，已推送到 `origin/fix-wkup-deepsleep`。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `34f0431` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
