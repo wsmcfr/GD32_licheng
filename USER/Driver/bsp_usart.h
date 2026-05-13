@@ -19,7 +19,15 @@ extern "C" {
 #define DEBUG_USART                    USART0
 
 /* 接收缓冲区长度定义。 */
-#define BSP_USART0_RX_BUFFER_SIZE      512U
+/*
+ * 宏作用：
+ *   定义 USART0 DMA 接收缓冲区长度。
+ * 说明：
+ *   USART0 同时承担调试串口和 App 侧升级包入口。当前最小升级协议采用
+ *   “16 字节包头 + 最大 52KB 固件”的单包发送方式，因此 DMA 缓冲需要能
+ *   一次容纳完整升级文件。该宏位于 Driver 层，避免 Driver 头依赖 App 头。
+ */
+#define BSP_USART0_RX_BUFFER_SIZE      (52U * 1024U + 16U)
 #define BSP_USART1_RX_BUFFER_SIZE      256U
 #define BSP_USART2_RX_BUFFER_SIZE      256U
 #define BSP_USART5_RX_BUFFER_SIZE      256U

@@ -13,7 +13,27 @@ extern "C" {
  * 说明：
  *   这里使用独立的 App 层宏，避免聚合头循环包含时依赖 Driver 头中的长度宏。
  */
-#define UART_APP_DMA_BUFFER_SIZE       512U
+/*
+ * 宏作用：
+ *   定义 USART0 应用层接收缓冲区长度。
+ * 说明：
+ *   串口升级采用“16 字节包头 + 固件内容”的接收方式，下载缓存区最大
+ *   52KB，因此这里预留 52KB 固件和 16 字节包头。该缓冲位于 192KB 主 SRAM，
+ *   用于当前最小可用升级流程；若后续固件超过 52KB，应改为分包协议。
+ */
+#if defined(BSP_USART0_RX_BUFFER_SIZE)
+#define UART_APP_DMA_BUFFER_SIZE       BSP_USART0_RX_BUFFER_SIZE
+#else
+#define UART_APP_DMA_BUFFER_SIZE       (52U * 1024U + 16U)
+#endif
+
+/*
+ * 宏作用：
+ *   定义 USART1/RS485 应用层接收缓冲区长度。
+ * 说明：
+ *   RS485 仍保持普通透明转发，不需要占用升级包级别的大缓冲。
+ */
+#define UART_APP_RS485_BUFFER_SIZE     512U
 
 /*
  * 变量作用：
@@ -31,7 +51,7 @@ extern uint8_t uart_dma_buffer[UART_APP_DMA_BUFFER_SIZE];
  */
 extern __IO uint8_t rs485_rx_flag;
 extern __IO uint16_t rs485_dma_length;
-extern uint8_t rs485_dma_buffer[UART_APP_DMA_BUFFER_SIZE];
+extern uint8_t rs485_dma_buffer[UART_APP_RS485_BUFFER_SIZE];
 
 /*
  * 函数作用：

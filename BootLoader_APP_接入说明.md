@@ -8,8 +8,8 @@
 | 参考 BootLoader | `D:\GD32\04 例程模板\04 例程模板\27_BootLoader_Two_Stage` |
 | App 链接地址 | `0x0800D000` |
 | App 最大运行区 | `0x00063000` |
-| 当前已完成内容 | 当前工程已经按 App 地址链接，并在启动时重定位中断向量表；复制到本工程内的 BootLoader 已按当前 App 优化搬运逻辑 |
-| 仍需注意内容 | 当前 App 暂未移植“运行中接收升级包”的协议；首次联调可先用 SWD/烧录器把 App 写到 `0x0800D000` |
+| 当前已完成内容 | 当前工程已经按 App 地址链接，并在启动时重定位中断向量表；复制到本工程内的 BootLoader 已按当前 App 优化搬运逻辑；App 侧已支持 USART0 接收 `.uota` 升级包 |
+| 仍需注意内容 | 首次导入 OTA 功能时仍需先用 SWD/烧录器把带 OTA 接收逻辑的 App 写到 `0x0800D000`；后续升级发送 `Project.uota`，不要直接发送 `Project.bin` |
 
 ## 2. Flash 分区关系
 
@@ -31,6 +31,8 @@
 | `MDK/2026706296.uvprojx` | IROM 改为 `0x0800D000 / 0x63000` | 让链接器把当前工程放到 App 区 |
 | `MDK/output/Project.sct` | `LR_IROM1 0x0800D000 0x00063000` | 与 Keil IROM 配置保持一致 |
 | `MDK/2026706296.uvprojx` | 打开 HEX 输出，并在构建后生成 `Project.bin` | `Project.bin` 用于 BootLoader 搬运写入 App 区，`Project.hex` 用于调试/烧录工具 |
+| `USER/App/usart_app.c` | 新增 USART0 `.uota` 升级包解析、CRC 校验、下载缓存区写入和参数区写入 | App 收到完整升级包后写 `0x08073000` 和 `0x0800C000`，再复位交给 BootLoader 搬运 |
+| `tools/make_uart_ota_packet.py` | 根据 `Project.bin` 生成 `Project.uota` | 给串口助手发送文件使用，自动写入包头、固件长度和 CRC32 |
 
 ## 4. 官方 BootLoader 的实际工作流程
 
@@ -49,9 +51,9 @@
 | 场景 | 当前状态 | 说明 |
 |---|---|---|
 | 首次烧录 BootLoader + App | 当前工程已具备 App 镜像条件 | 先烧 BootLoader 到 `0x08000000`，再把当前 App 写到 `0x0800D000` |
-| 运行中升级 App | 当前工程还没有完整移植升级接收协议 | 官方例程是旧 App 接收串口升级包，写入 `0x08073000` 和参数区，再复位交给 BootLoader 搬运 |
+| 运行中升级 App | 当前工程已支持 USART0 `.uota` 单包升级 | App 接收 `.uota`，写入 `0x08073000` 和参数区，再复位交给 BootLoader 搬运 |
 
-也就是说，官方 Two Stage 例程里，BootLoader 本身不是直接串口收文件的程序；串口接收升级包的逻辑在官方 `27_1_App\Function\Function.c` 里面。
+也就是说，官方 Two Stage 例程里，BootLoader 本身不是直接串口收文件的程序；串口接收升级包的逻辑属于 App 侧。本工程已在当前 App 的 `USER/App/usart_app.c` 中实现 USART0 `.uota` 接收。
 
 ## 6. 当前工程输出文件怎么用
 
@@ -59,9 +61,38 @@
 |---|---|
 | `MDK/output/Project.axf` | Keil 调试用 ELF/AXF 文件 |
 | `MDK/output/Project.hex` | 带地址信息，可用于烧录工具直接写到 `0x0800D000` |
-| `MDK/output/Project.bin` | 纯二进制固件，适合通过升级协议写入下载缓存区 |
+| `MDK/output/Project.bin` | 纯二进制 App 镜像，用于生成 `.uota` 升级包，不要直接通过串口助手发送 |
+| `MDK/output/Project.uota` | USART0 在线升级发送文件，格式为 `16B 包头 + Project.bin` |
 
-如果通过官方 App 侧升级协议发送固件，应该发送 `Project.bin` 的内容，而不是直接把 HEX 文本当作固件数据发送。
+如果通过当前 App 侧 USART0 在线升级，应该发送 `Project.uota`，不要直接发送 `Project.bin` 或 `Project.hex`。
+
+## 6.1 生成并发送串口升级包
+
+| 步骤 | 操作 | 说明 |
+|---|---|---|
+| 1 | 在 Keil 中重新编译当前 App 工程 | 构建后生成 `MDK/output/Project.bin` |
+| 2 | 打开 PowerShell 并进入工程根目录 | 路径为 `D:\GD32\2026706296` |
+| 3 | 执行 `python tools\make_uart_ota_packet.py --version 0x00000002` | 根据当前 `Project.bin` 生成 `MDK/output/Project.uota`，版本号可按实际递增 |
+| 4 | 串口助手选择 `MDK/output/Project.uota` 并发送文件 | 串口参数保持 `115200-8N1`，发送 `.uota` 而不是 `.bin` |
+| 5 | 等待 App 打印 `OTA: ready, reset to BootLoader` | App 已写入下载缓存区和参数区，并准备复位 |
+| 6 | 观察 BootLoader 打印 `app crc32 check pass` 和 `app update success` | 表示 BootLoader 已完成搬运并清除升级标志 |
+
+命令示例：
+
+```powershell
+cd D:\GD32\2026706296
+python tools\make_uart_ota_packet.py --version 0x00000002
+```
+
+当前 `.uota` 包头格式：
+
+| 偏移 | 字段 | 长度 | 说明 |
+|---:|---|---:|---|
+| `0x00` | `magic` | 4B | 小端 `0x5AA5C33C`，用于识别升级包 |
+| `0x04` | `appVersion` | 4B | 小端版本号，由 `--version` 指定 |
+| `0x08` | `firmwareSize` | 4B | `Project.bin` 原始长度 |
+| `0x0C` | `firmwareCRC32` | 4B | `Project.bin` 的 CRC32 |
+| `0x10` | `firmware` | N B | `Project.bin` 原始内容 |
 
 ## 7. 已经对本工程内 BootLoader 副本做的修改
 
@@ -89,9 +120,9 @@
 | 官方 App 内容 | 当前工程是否必须 | 原因 |
 |---|---|---|
 | `SCB->VTOR = 0x0800D000` 和重新开中断 | 必须 | 当前工程已经通过 `boot_app_handoff_init()` 实现 |
-| `BootConfig.h/c` 参数结构 | 暂时不必须 | 当前 App 只作为被 BootLoader 跳转运行的 App，不需要自己写升级参数 |
-| 串口接收新固件、写 `0x08073000` 缓存区 | 暂时不必须 | 这是“运行中升级”的 App 侧功能，后续要做串口升级时再移植，并建议改成分包协议 |
-| 软件复位让 BootLoader 搬运 | 暂时不必须 | 只有 App 自己接收完新固件后，才需要写参数并复位交给 BootLoader |
+| `BootConfig.h/c` 参数结构 | 不单独引入官方文件 | 当前 App 在 `usart_app.c` 内维护与 BootLoader 参数区兼容的最小结构，避免额外 Keil 工程依赖 |
+| 串口接收新固件、写 `0x08073000` 缓存区 | 已实现 | USART0 接收 `.uota` 包后写下载缓存区，并用 CRC32 校验写入结果 |
+| 软件复位让 BootLoader 搬运 | 已实现 | App 写入参数区后复位，BootLoader 根据 `updateStatus=0x01`、`updateFlag=0x5A` 搬运 |
 
 ## 9. 当前工程接入后的启动注意事项
 
@@ -101,15 +132,18 @@
 | App 必须重新打开全局中断 | 官方 BootLoader 跳转前会 `__disable_irq()`，普通函数跳转不会自动恢复 PRIMASK |
 | 不要把 App 链接回 `0x08000000` | `0x08000000` 必须留给 BootLoader |
 | SWD 调试时不要整片擦除 | 整片擦除会把 BootLoader 和参数区一起擦掉 |
-| 当前工程暂未移植运行中升级接收协议 | 现在重点是让当前工程能作为 App 被跳转运行，并生成可下载镜像 |
+| 在线升级必须发送 `.uota` | `.uota` 带包头、固件大小和 CRC；直接发送 `.bin` 不会触发当前 App 的 OTA 流程 |
 
-## 10. 下一步如果要做“运行中升级”
+## 10. 当前运行中升级流程
 
-| 步骤 | 需要做的事 |
+| 步骤 | 当前实现 |
 |---|---|
-| 1 | 在当前工程新增内部 Flash 写入模块，封装擦除、写入、读取和边界检查 |
-| 2 | 复用或重写官方 App 的升级包解析逻辑，建议改成分包协议 |
-| 3 | 收到完整固件后写入 `0x08073000` 下载缓存区 |
-| 4 | 计算固件 CRC32，并把 `appSize/appCRC32/updateFlag/updateStatus` 写入 `0x0800C000` 参数区 |
-| 5 | 软件复位，让 BootLoader 搬运缓存区固件到 `0x0800D000` |
-| 6 | 如果后续 App bin 超过 `52KB`，重新规划下载缓存区或改成外部 Flash/SD 卡分包升级 |
+| 1 | `tools/make_uart_ota_packet.py` 根据 `Project.bin` 生成 `Project.uota` |
+| 2 | App 的 USART0 IDLE + DMA 接收 `.uota`，允许 USB 转串口拆成多个小块后累积 |
+| 3 | App 校验包头、固件长度、固件 CRC32 和 App 向量表 |
+| 4 | App 擦除并写入下载缓存区 `0x08073000`，再读回计算 CRC32 |
+| 5 | App 写入参数区 `0x0800C000`：`magicWord/updateStatus/updateFlag/appSize/appCRC32/appVersion` |
+| 6 | App 软件复位，BootLoader 搬运缓存区固件到 `0x0800D000` |
+| 7 | BootLoader 搬运后重新计算 CRC32，成功后清除 `updateStatus/updateFlag` 并跳转新 App |
+
+限制说明：当前实现仍使用内部 Flash 下载缓存区，单个 `Project.bin` 必须不超过 `52KB`。如果后续 App 超过该大小，需要重新规划下载缓存区，或改成外部 Flash/SD 卡分包升级。
