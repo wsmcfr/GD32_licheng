@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
+- **Total Sessions**: 7
 - **Last Active**: 2026-05-13
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~323 | Active |
+| `journal-1.md` | ~344 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-05-13 | 梳理BootLoader与App两阶段升级实际流程并补充注释 | `cf27b9d` | `fix-wkup-deepsleep` |
 | 6 | 2026-05-13 | Raise UART OTA baudrate and sync workflow docs | `8ac0be5`, `7f186d6`, `b1c9f07` | `fix-wkup-deepsleep` |
 | 5 | 2026-05-13 | Fix WK_UP deep-sleep wake recovery | `8e352ce` | `fix-wkup-deepsleep` |
 | 4 | 2026-05-12 | BootLoader two-stage app integration | `58275bc` | `main` |

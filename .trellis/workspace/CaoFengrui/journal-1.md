@@ -298,3 +298,47 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 
 - Keep incrementing `--version` for each OTA attempt.
 - If transfer speed is still not enough, evaluate whether the target UART clock and host adapter remain stable at a higher baudrate before changing defaults again.
+
+
+## Session 7: 梳理BootLoader与App两阶段升级实际流程并补充注释
+
+**Date**: 2026-05-13
+**Task**: 梳理BootLoader与App两阶段升级实际流程并补充注释
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 模块 | 内容 |
+|---|---|
+| BootLoader 工程讲解 | 新增 `BootLoader_Two_Stage/27_0_BootLoader/BootLoader_程序详解.md`，按启动、参数区、下载缓存区、正式 App 区、搬运和跳转顺序解释 BootLoader 两阶段升级方案。 |
+| App/BootLoader 实际流程文档 | 新增 `BootLoader_App_实际升级运行流程详解.md`，梳理上位机、App、下载缓存区、参数区、BootLoader 和新 App 之间的真实升级时序与职责边界。 |
+| BootLoader 注释补强 | 为 `27_0_BootLoader` 下的 `main.c`、`Function.c/.h`、`BootConfig.c/.h`、`rom.c/.h`、`usart.c/.h`、`HeaderFiles.h` 补充中文注释，重点说明参数区判断、下载区搬运、CRC 校验和 App 跳转原因。 |
+| App 侧注释补强 | 为 `USER/App/usart_app.c`、`USER/boot_app_config.c/.h`、`USER/App/scheduler.c` 补充与 BootLoader 交接相关的详细中文注释，明确 App 只负责写下载缓存区与参数区，真正搬运由 BootLoader 完成。 |
+| 会话产出 | 代码提交 `cf27b9d docs(boot): 补充BootLoader与App升级流程讲解并完善注释`。 |
+
+**验证说明**：
+- 已执行 `git diff --check` 对本次相关改动做文本级校验，无 diff 格式错误。
+- 本次改动以文档和注释补充为主，未额外执行固件编译。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cf27b9d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
