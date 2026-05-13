@@ -387,3 +387,36 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 完成 USART2 OTA 通道迁移并通过硬件升级验证
+
+**Date**: 2026-05-13
+**Task**: 完成 USART2 OTA 通道迁移并通过硬件升级验证
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+将 OTA 从 USART0 拆分到 USART2，新增 uart_ota_app 与 bootloader_port 模块，保留 USART0 作为日志和普通透传；同步更新 Keil 工程、Python 发送工具、仓库文档与 .trellis/spec，并增加 USART2 启动探测与 OTA 收包诊断日志。硬件实测已完成 START/DATA/END、BootLoader 搬运、CRC 校验与新 App 重启闭环验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `577cb98` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
