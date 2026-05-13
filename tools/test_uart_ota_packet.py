@@ -136,6 +136,73 @@ class UartOtaStreamingProtocolTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             ota.main(["--mode", "stream-info", "--chunk-size", "0"])
 
+    def test_find_ack_frame_ignores_text_before_binary_ack(self):
+        """
+        函数作用：
+          验证 ACK 解析器可以跳过 App 串口日志中的普通文本，只识别二进制 ACK。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时 unittest 会报告 ACK 字段不匹配。
+        """
+        ack = ota.build_ack_frame(ota.UART_OTA_FRAME_DATA, 0, 2, 1536)
+        parsed = ota.find_ack_frame(b"OTA: stream log\r\n" + ack, ota.UART_OTA_FRAME_DATA)
+
+        self.assertIsNotNone(parsed)
+        self.assertEqual((0, 2, 1536), parsed)
+
+    def test_send_stream_writes_start_data_end_frames(self):
+        """
+        函数作用：
+          验证流式发送函数按 START、DATA、END 顺序写串口并等待 ACK。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时 unittest 会报告写入帧数量或类型不匹配。
+        """
+
+        class FakeTransport:
+            """
+            类作用：
+              模拟串口传输对象，收到一帧后自动塞入对应 ACK。
+            """
+
+            def __init__(self):
+                self.writes: list[bytes] = []
+                self.rx = bytearray()
+
+            def write(self, data: bytes) -> None:
+                self.writes.append(data)
+                frame_type = struct.unpack("<I", data[4:8])[0]
+                if frame_type == ota.UART_OTA_FRAME_START:
+                    self.rx.extend(ota.build_ack_frame(frame_type, 0, 4, 0))
+                elif frame_type == ota.UART_OTA_FRAME_DATA:
+                    seq, offset, length = struct.unpack("<III", data[8:20])
+                    self.rx.extend(ota.build_ack_frame(frame_type, 0, seq, offset + length))
+                elif frame_type == ota.UART_OTA_FRAME_END:
+                    self.rx.extend(ota.build_ack_frame(frame_type, 0, 0, 0))
+
+            def read(self, size: int) -> bytes:
+                chunk = bytes(self.rx[:size])
+                del self.rx[:size]
+                return chunk
+
+        transport = FakeTransport()
+
+        frames = ota.send_stream(transport, b"0123456789", app_version=4, chunk_size=4, ack_timeout=0.1)
+
+        self.assertEqual(5, frames)
+        self.assertEqual(
+            [
+                ota.UART_OTA_FRAME_START,
+                ota.UART_OTA_FRAME_DATA,
+                ota.UART_OTA_FRAME_DATA,
+                ota.UART_OTA_FRAME_DATA,
+                ota.UART_OTA_FRAME_END,
+            ],
+            [struct.unpack("<I", frame[4:8])[0] for frame in transport.writes],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
