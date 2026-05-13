@@ -203,6 +203,79 @@ class UartOtaStreamingProtocolTest(unittest.TestCase):
             [struct.unpack("<I", frame[4:8])[0] for frame in transport.writes],
         )
 
+    def test_send_stream_reports_progress_after_each_acked_frame(self):
+        """
+        函数作用：
+          验证流式发送函数在每个帧 ACK 后上报进度，避免真实串口发送时长时间无输出。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时 unittest 会报告进度阶段、帧数或字节数不匹配。
+        """
+
+        class FakeTransport:
+            """
+            类作用：
+              模拟串口传输对象，并为每个写入帧生成成功 ACK。
+            """
+
+            def __init__(self):
+                self.rx = bytearray()
+
+            def write(self, data: bytes) -> None:
+                frame_type = struct.unpack("<I", data[4:8])[0]
+                if frame_type == ota.UART_OTA_FRAME_START:
+                    self.rx.extend(ota.build_ack_frame(frame_type, 0, 4, 0))
+                elif frame_type == ota.UART_OTA_FRAME_DATA:
+                    seq, offset, length = struct.unpack("<III", data[8:20])
+                    self.rx.extend(ota.build_ack_frame(frame_type, 0, seq, offset + length))
+                elif frame_type == ota.UART_OTA_FRAME_END:
+                    self.rx.extend(ota.build_ack_frame(frame_type, 0, 0, 0))
+
+            def read(self, size: int) -> bytes:
+                chunk = bytes(self.rx[:size])
+                del self.rx[:size]
+                return chunk
+
+        events = []
+
+        ota.send_stream(FakeTransport(),
+                        b"0123456789",
+                        app_version=4,
+                        chunk_size=4,
+                        ack_timeout=0.1,
+                        progress=events.append)
+
+        self.assertEqual(["START", "DATA", "DATA", "DATA", "END"], [event.stage for event in events])
+        self.assertEqual([1, 2, 3, 4, 5], [event.frame_index for event in events])
+        self.assertEqual([5, 5, 5, 5, 5], [event.total_frames for event in events])
+        self.assertEqual([0, 4, 8, 10, 10], [event.bytes_sent for event in events])
+        self.assertEqual([10, 10, 10, 10, 10], [event.total_bytes for event in events])
+        self.assertEqual([0, 1, 2, 3, 3], [event.chunk_index for event in events])
+        self.assertEqual([3, 3, 3, 3, 3], [event.total_chunks for event in events])
+
+    def test_print_stream_progress_outputs_human_readable_line(self):
+        """
+        函数作用：
+          验证进度打印函数输出阶段、分包、帧数、字节数和百分比。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时 unittest 会报告输出文本缺少关键信息。
+        """
+        event = ota.StreamProgress("DATA", 2, 5, 1, 3, 4, 10)
+        buffer = io.StringIO()
+
+        with redirect_stdout(buffer):
+            ota.print_stream_progress(event)
+
+        output = buffer.getvalue()
+        self.assertIn("DATA acked", output)
+        self.assertIn("chunk=1/3", output)
+        self.assertIn("frames=2/5", output)
+        self.assertIn("bytes=4/10", output)
+        self.assertIn("40%", output)
+
 
 if __name__ == "__main__":
     unittest.main()

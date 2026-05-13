@@ -23,8 +23,9 @@ import argparse
 import binascii
 import struct
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Protocol, Sequence
+from typing import Callable, Iterator, Protocol, Sequence
 
 
 UART_OTA_MAGIC = 0x5AA5C33C
@@ -34,6 +35,30 @@ UART_OTA_FRAME_DATA = 2
 UART_OTA_FRAME_END = 3
 UART_OTA_FRAME_ACK_BASE = 0x80
 UART_OTA_ACK_FRAME_SIZE = 20
+
+
+@dataclass(frozen=True)
+class StreamProgress:
+    """
+    类作用：
+      描述流式 OTA 发送过程中已经被 App ACK 确认的进度。
+    字段说明：
+      stage：当前刚完成 ACK 的阶段，取 START、DATA 或 END。
+      frame_index：已确认帧序号，从 1 开始，包含 START/DATA/END。
+      total_frames：本次发送总帧数，等于 2 + DATA 分包数量。
+      chunk_index：已确认 DATA 分包数量；START 阶段为 0，END 阶段为总分包数。
+      total_chunks：DATA 分包总数。
+      bytes_sent：已被 DATA ACK 确认的固件字节数，不包含协议头。
+      total_bytes：固件总字节数。
+    """
+
+    stage: str
+    frame_index: int
+    total_frames: int
+    chunk_index: int
+    total_chunks: int
+    bytes_sent: int
+    total_bytes: int
 
 
 class StreamTransport(Protocol):
@@ -243,6 +268,7 @@ def send_stream(
     app_version: int,
     chunk_size: int,
     ack_timeout: float = 2.0,
+    progress: Callable[[StreamProgress], None] | None = None,
 ) -> int:
     """
     函数作用：
@@ -257,26 +283,53 @@ def send_stream(
       app_version：本次升级版本号。
       chunk_size：每个 DATA 帧的固件数据长度。
       ack_timeout：每帧等待 ACK 的超时时间，单位秒。
+      progress：可选进度回调；每个帧收到成功 ACK 后调用一次，用于命令行打印。
     返回值说明：
       返回已发送帧数量，包含 START、DATA 和 END。
     """
     frame_count = 0
+    chunks = list(iter_chunks(firmware, chunk_size))
+    total_chunks = len(chunks)
+    total_frames = total_chunks + 2
+
+    def report(stage: str, chunk_index: int, bytes_sent: int) -> None:
+        """
+        函数作用：
+          在帧 ACK 成功后向调用方上报一次发送进度。
+        参数说明：
+          stage：刚完成的阶段名称。
+          chunk_index：已确认 DATA 分包数量。
+          bytes_sent：已确认写入下载区的固件字节数。
+        返回值说明：
+          无返回值。
+        """
+        if progress is not None:
+            progress(StreamProgress(stage,
+                                    frame_count,
+                                    total_frames,
+                                    chunk_index,
+                                    total_chunks,
+                                    bytes_sent,
+                                    len(firmware)))
 
     start_frame = build_start_frame(app_version, firmware)
     transport.write(start_frame)
     wait_for_ack(transport, UART_OTA_FRAME_START, ack_timeout)
     frame_count += 1
+    report("START", 0, 0)
 
-    for seq, (offset, chunk) in enumerate(iter_chunks(firmware, chunk_size)):
+    for seq, (offset, chunk) in enumerate(chunks):
         data_frame = build_data_frame(seq, offset, chunk)
         transport.write(data_frame)
         wait_for_ack(transport, UART_OTA_FRAME_DATA, ack_timeout)
         frame_count += 1
+        report("DATA", seq + 1, offset + len(chunk))
 
     end_frame = build_end_frame(firmware)
     transport.write(end_frame)
     wait_for_ack(transport, UART_OTA_FRAME_END, ack_timeout)
     frame_count += 1
+    report("END", total_chunks, len(firmware))
 
     return frame_count
 
@@ -361,6 +414,29 @@ def print_stream_info(input_bin: Path, app_version: int, chunk_size: int) -> Non
     )
 
 
+def print_stream_progress(progress: StreamProgress) -> None:
+    """
+    函数作用：
+      将流式 OTA 发送进度打印成人可读的一行文本。
+    参数说明：
+      progress：send_stream() 在每个帧 ACK 后上报的进度快照。
+    返回值说明：
+      无返回值；信息直接输出到标准输出。
+    """
+    percent = 100
+    if progress.total_bytes > 0:
+        percent = progress.bytes_sent * 100 // progress.total_bytes
+
+    print(
+        f"{progress.stage} acked: "
+        f"chunk={progress.chunk_index}/{progress.total_chunks}, "
+        f"frames={progress.frame_index}/{progress.total_frames}, "
+        f"bytes={progress.bytes_sent}/{progress.total_bytes} "
+        f"({percent}%)",
+        flush=True,
+    )
+
+
 def send_stream_over_serial(port: str,
                             baudrate: int,
                             input_bin: Path,
@@ -386,8 +462,27 @@ def send_stream_over_serial(port: str,
         raise RuntimeError("send mode requires pyserial: python -m pip install pyserial") from exc
 
     firmware = input_bin.read_bytes()
+    firmware_crc32 = crc32_bytes(firmware)
+    chunk_count = sum(1 for _ in iter_chunks(firmware, chunk_size))
+    print(
+        f"send stream {input_bin}: "
+        f"firmware={len(firmware)} bytes, "
+        f"crc=0x{firmware_crc32:08X}, "
+        f"version=0x{app_version:08X}, "
+        f"chunk_size={chunk_size}, "
+        f"chunks={chunk_count}, "
+        f"port={port}, "
+        f"baudrate={baudrate}",
+        flush=True,
+    )
+
     with serial.Serial(port=port, baudrate=baudrate, timeout=0.02, write_timeout=ack_timeout) as ser:
-        frame_count = send_stream(ser, firmware, app_version, chunk_size, ack_timeout)
+        frame_count = send_stream(ser,
+                                  firmware,
+                                  app_version,
+                                  chunk_size,
+                                  ack_timeout,
+                                  progress=print_stream_progress)
     return frame_count
 
 

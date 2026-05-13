@@ -24,7 +24,7 @@ This is a cross-layer contract. The PC-side sender, App-side receiver, internal 
 | Boundary | Signature / Entry | Contract |
 |----------|-------------------|----------|
 | Stream info | `python tools\make_uart_ota_packet.py --mode stream-info --version <u32> --chunk-size 512` | Reads `MDK/output/Project.bin`, prints size, CRC32, version, chunk size, and chunk count |
-| Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Sends START/DATA/END frames and waits for ACK after every frame |
+| Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Sends START/DATA/END frames, prints ACK progress, and waits for ACK after every frame |
 | Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `MDK/output/Project.uota` for offline inspection only; current low-RAM USART0 OTA must not send it directly |
 | App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one streaming frame; only returns success after download-buffer CRC and parameter writes pass |
 | ISR handoff | `USART0_IRQHandler(void)` | Copies one IDLE DMA frame into `uart_dma_buffer`, records `uart_dma_length`, and sets `rx_flag` |
@@ -140,7 +140,7 @@ new image was actually installed.
 |------|------------------|-------------------|
 | 1 | Build the Keil target | Build log reports `0 Error(s)` and `MDK/output/Project.bin` is non-empty |
 | 2 | `python tools\make_uart_ota_packet.py --mode stream-info --version <new_version> --chunk-size 512` | Output shows firmware size, CRC, version, chunk size, and chunk count |
-| 3 | `python tools\make_uart_ota_packet.py --mode send --port <COMx> --version <new_version> --chunk-size 512` | PC prints `sent stream frames=<n>` |
+| 3 | `python tools\make_uart_ota_packet.py --mode send --port <COMx> --version <new_version> --chunk-size 512` | PC prints stream metadata, `START/DATA/END acked` progress, then `sent stream frames=<n>` |
 | 4 | Watch the debug UART | App prints `OTA: ready, reset to BootLoader` |
 | 5 | Watch the BootLoader UART log after reset | BootLoader prints `app crc32 check pass`, `app update success`, and the new `appVersion` |
 
