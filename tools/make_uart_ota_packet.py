@@ -21,7 +21,7 @@ import argparse
 import binascii
 import struct
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Sequence
 
 
 UART_OTA_MAGIC = 0x5AA5C33C
@@ -145,6 +145,21 @@ def parse_u32(value: str) -> int:
     return number
 
 
+def parse_positive_u32(value: str) -> int:
+    """
+    函数作用：
+      将命令行传入的正整数解析为 32 位无符号范围内的非零值。
+    参数说明：
+      value：数字字符串，可为十进制，也可为 0x 前缀十六进制。
+    返回值说明：
+      返回 1~0xFFFFFFFF 范围内的整数；非法时抛出 argparse.ArgumentTypeError。
+    """
+    number = parse_u32(value)
+    if number == 0:
+        raise argparse.ArgumentTypeError("value must be greater than 0")
+    return number
+
+
 def build_packet(input_bin: Path, output_file: Path, app_version: int) -> tuple[int, int, int]:
     """
     函数作用：
@@ -168,23 +183,53 @@ def build_packet(input_bin: Path, output_file: Path, app_version: int) -> tuple[
     return len(packet), len(firmware), firmware_crc32
 
 
-def main() -> int:
+def print_stream_info(input_bin: Path, app_version: int, chunk_size: int) -> None:
+    """
+    函数作用：
+      打印分包 OTA 传输前需要核对的固件元数据。
+    参数说明：
+      input_bin：原始 Project.bin 路径。
+      app_version：本次升级使用的 App 版本号。
+      chunk_size：计划发送的数据分包大小。
+    返回值说明：
+      无返回值；信息直接输出到标准输出。
+    """
+    firmware = input_bin.read_bytes()
+    firmware_crc32 = crc32_bytes(firmware)
+    chunk_count = sum(1 for _ in iter_chunks(firmware, chunk_size))
+    print(
+        f"stream {input_bin}: "
+        f"firmware={len(firmware)} bytes, "
+        f"crc=0x{firmware_crc32:08X}, "
+        f"version=0x{app_version:08X}, "
+        f"chunk_size={chunk_size}, "
+        f"chunks={chunk_count}"
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     """
     函数作用：
       命令行入口，解析参数并生成串口升级包。
     参数说明：
-      无显式参数，直接读取 sys.argv。
+      argv：可选命令行参数序列；为 None 时由 argparse 读取 sys.argv。
     返回值说明：
       0：生成成功。
     """
     parser = argparse.ArgumentParser(description="Generate UART OTA packet for this GD32 BootLoader App.")
+    parser.add_argument("--mode", choices=("packet", "stream-info"), default="packet")
+    parser.add_argument("--chunk-size", type=parse_positive_u32, default=512)
     parser.add_argument("input_bin", nargs="?", default="MDK/output/Project.bin")
     parser.add_argument("output_file", nargs="?", default="MDK/output/Project.uota")
     parser.add_argument("--version", type=parse_u32, default=0x00000001)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     input_bin = Path(args.input_bin)
     output_file = Path(args.output_file)
+    if args.mode == "stream-info":
+        print_stream_info(input_bin, args.version, args.chunk_size)
+        return 0
+
     total_size, firmware_size, firmware_crc32 = build_packet(input_bin, output_file, args.version)
     print(
         f"generated {output_file} ({total_size} bytes), "

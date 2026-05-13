@@ -1,6 +1,10 @@
 import binascii
+import io
+import tempfile
 import struct
 import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
 
 from tools import make_uart_ota_packet as ota
 
@@ -90,6 +94,47 @@ class UartOtaStreamingProtocolTest(unittest.TestCase):
         """
         with self.assertRaises(ValueError):
             list(ota.iter_chunks(b"abc", 0))
+
+    def test_stream_info_mode_prints_size_crc_and_chunk_count(self):
+        """
+        函数作用：
+          验证 stream-info 模式能输出分包传输前需要核对的关键元数据。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时 unittest 会报告输出字段缺失。
+        """
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = Path(temp_dir) / "app.bin"
+            input_path.write_bytes(b"0123456789")
+            output = io.StringIO()
+
+            with redirect_stdout(output):
+                result = ota.main([
+                    "--mode", "stream-info",
+                    "--chunk-size", "4",
+                    "--version", "0x00000003",
+                    str(input_path),
+                ])
+
+        self.assertEqual(0, result)
+        text = output.getvalue()
+        self.assertIn("stream", text)
+        self.assertIn("firmware=10 bytes", text)
+        self.assertIn("chunks=3", text)
+        self.assertIn("version=0x00000003", text)
+
+    def test_stream_info_rejects_too_small_chunk_size(self):
+        """
+        函数作用：
+          验证 chunk-size 为 0 时 CLI 会返回错误，避免进入无效分包流程。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时 unittest 会报告未抛出 SystemExit。
+        """
+        with self.assertRaises(SystemExit):
+            ota.main(["--mode", "stream-info", "--chunk-size", "0"])
 
 
 if __name__ == "__main__":
