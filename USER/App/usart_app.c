@@ -600,6 +600,10 @@ static uint8_t prv_uart_ota_flash_erase_pages(uint32_t start_addr, uint32_t leng
 
     erase_pages = (length + UART_OTA_FLASH_PAGE_SIZE - 1U) / UART_OTA_FLASH_PAGE_SIZE;
     for(i = 0U; i < erase_pages; i++){
+        /*
+         * 每擦一页前都清一次 FMC 状态，避免上一次写 Flash 的错误标志残留到这一次。
+         * 这里既会被 START 阶段用来擦下载缓存区，也会被参数区回写阶段复用。
+         */
         prv_uart_ota_flash_clear_flags();
         state = fmc_page_erase(start_addr + (i * UART_OTA_FLASH_PAGE_SIZE));
         if(FMC_READY != state){
@@ -636,6 +640,12 @@ static uint8_t prv_uart_ota_flash_write_bytes(uint32_t start_addr, const uint8_t
     }
 
     for(i = 0U; i < length; i++){
+        /*
+         * App 侧这里按字节写入是刻意设计的：
+         * 1. OTA DATA 分包长度不一定按字对齐；
+         * 2. 当前目标是尽量直接把上位机送来的 chunk 原样落到下载缓存区；
+         * 3. 这样 App 不需要为了对齐再做额外拷贝或补齐，逻辑最直接。
+         */
         state = fmc_byte_program(start_addr + i, data[i]);
         if(FMC_READY != state){
             my_printf(DEBUG_USART, "OTA: write fail offset:%d state:%d\r\n", i, state);
@@ -666,6 +676,10 @@ static uint32_t prv_uart_ota_flash_crc32_calc(uint32_t start_addr, uint32_t leng
     uint8_t data;
 
     for(i = 0U; i < length; i++){
+        /*
+         * 这里不是对 RAM 里残留的分包做校验，而是重新从下载缓存区地址读回。
+         * 这样才能证明“写进片内 Flash 的内容”确实和上位机发送的一致。
+         */
         data = *(volatile uint8_t *)(start_addr + i);
         crc ^= data;
         for(j = 0U; j < 8U; j++){
@@ -703,6 +717,13 @@ static uint8_t prv_uart_ota_write_boot_param(uint32_t app_version,
     uint32_t i;
     uart_ota_parameter_t *param = (uart_ota_parameter_t *)uart_ota_param_buffer;
 
+    /*
+     * 先把整个参数区读到 RAM，再基于 RAM 修改。
+     * 这样做是因为：
+     * 1. 参数区不仅有 BootLoader 主参数，还有用户配置和校准数据；
+     * 2. App 这次升级只想改升级相关字段，不应该把其它区域清空；
+     * 3. Flash 不能像 RAM 一样只改几个字节，最终必须整页擦除后整块回写。
+     */
     for(i = 0U; i < UART_OTA_PARAM_SIZE; i++){
         uart_ota_param_buffer[i] = *(volatile uint8_t *)(UART_OTA_PARAM_ADDR + i);
     }
@@ -714,6 +735,12 @@ static uint8_t prv_uart_ota_write_boot_param(uint32_t app_version,
     if(UART_OTA_MAGIC != param->boot_param.magicWord){
         memset(uart_ota_param_buffer, 0, sizeof(uart_ota_param_buffer));
         param = (uart_ota_parameter_t *)uart_ota_param_buffer;
+
+        /*
+         * 如果参数区还没被初始化，App 需要先补一套最小可用的默认参数。
+         * 否则 BootLoader 下次启动时虽然能看到升级标志，但其它固定字段可能全是 0xFF，
+         * 会让参数区看起来像损坏状态。
+         */
         param->boot_param.magicWord = UART_OTA_MAGIC;
         param->boot_param.version = 0x0001U;
         param->boot_param.structSize = sizeof(uart_ota_boot_param_t);
@@ -736,7 +763,22 @@ static uint8_t prv_uart_ota_write_boot_param(uint32_t app_version,
         param->boot_param.tailMagic = 0xA5A5C3C3UL;
     }
 
+    /*
+     * 保留一份主参数快照到 reserved 区，继续兼容原始 Two Stage 示例的布局。
+     * 当前 BootLoader 主流程不依赖这个备份区，但保持布局一致更稳妥。
+     */
     param->boot_param_reserved = param->boot_param;
+
+    /*
+     * 下面这几项是 BootLoader 真正会读取并据此执行搬运的关键字段：
+     * 1. magicWord：说明参数区有效；
+     * 2. updateFlag / updateStatus：说明“下载区已准备好，等你搬运”；
+     * 3. appSize / appCRC32 / appVersion：告诉 BootLoader 新固件是什么；
+     * 4. appStartAddr / appStackAddr / appEntryAddr：告诉 BootLoader 正式 App 要运行到哪里。
+     *
+     * 注意：
+     * App 这里并不把新固件写到正式 App 区，而只是把“待搬运信息”交给 BootLoader。
+     */
     param->boot_param.magicWord = UART_OTA_MAGIC;
     param->boot_param.version = 0x0001U;
     param->boot_param.structSize = sizeof(uart_ota_boot_param_t);
@@ -752,6 +794,10 @@ static uint8_t prv_uart_ota_write_boot_param(uint32_t app_version,
     param->boot_param.appEntryAddr = *(volatile uint32_t *)(UART_OTA_APP_START_ADDR + 4U);
     param->boot_param.tailMagic = 0xA5A5C3C3UL;
 
+    /*
+     * 这里擦的是整个 4KB 参数区，而不是只擦主参数前 256 字节。
+     * 原因是 Flash 页粒度限制和当前参数区总布局就是 4KB，整块读改写最简单可靠。
+     */
     if(0U == prv_uart_ota_flash_erase_pages(UART_OTA_PARAM_ADDR, UART_OTA_PARAM_SIZE)){
         return 0U;
     }
@@ -849,6 +895,11 @@ static uart_ota_result_t prv_uart_ota_process_start(const uint8_t *frame, uint32
         return UART_OTA_RESULT_BAD_LENGTH;
     }
 
+    /*
+     * START 帧一旦确认有效，就先把下载缓存区擦干净。
+     * 这一步只擦“暂存新固件”的区域，不碰当前正在运行的 App 区，
+     * 所以即使升级中途失败，旧 App 仍然还在 0x0800D000 可运行。
+     */
     nvic_irq_disable(USART0_IRQn);
     fmc_unlock();
     if(0U == prv_uart_ota_flash_erase_pages(UART_OTA_DOWNLOAD_ADDR, firmware_size)){
@@ -860,6 +911,10 @@ static uart_ota_result_t prv_uart_ota_process_start(const uint8_t *frame, uint32
     fmc_lock();
     nvic_irq_enable(USART0_IRQn, 0U, 0U);
 
+    /*
+     * 会话状态在 START 成功后才正式进入 RECEIVING。
+     * 后续每个 DATA 帧都会基于这里记录的固件总长度、目标 CRC 和下一期望序号做校验。
+     */
     prv_uart_ota_reset_session();
     uart_ota_session.state = UART_OTA_SESSION_RECEIVING;
     uart_ota_session.app_version = app_version;
@@ -931,9 +986,18 @@ static uart_ota_result_t prv_uart_ota_process_data(const uint8_t *frame, uint32_
             prv_uart_ota_send_ack(UART_OTA_FRAME_DATA, UART_OTA_RESULT_BAD_VECTOR, seq, offset);
             return UART_OTA_RESULT_BAD_VECTOR;
         }
+        /*
+         * 只需要在首个 DATA 帧里校验一次向量表。
+         * 因为 App 镜像开头就是向量表，只要首包合法，就已经能提前排除
+         * “用户发错文件”“文件不是给这个地址跑的”“镜像损坏”这类大问题。
+         */
         uart_ota_session.vector_checked = 1U;
     }
 
+    /*
+     * DATA 帧的核心动作：不是缓存整包，而是立即按 offset 落到下载缓存区。
+     * 这也是当前 App 侧能支持低 RAM OTA 的关键原因。
+     */
     nvic_irq_disable(USART0_IRQn);
     fmc_unlock();
     if(0U == prv_uart_ota_flash_write_bytes(UART_OTA_DOWNLOAD_ADDR + offset, chunk, chunk_length)){
@@ -945,6 +1009,10 @@ static uart_ota_result_t prv_uart_ota_process_data(const uint8_t *frame, uint32_
     fmc_lock();
     nvic_irq_enable(USART0_IRQn, 0U, 0U);
 
+    /*
+     * running_crc 是边收边算的中间值，用来在 END 阶段快速确认整包逻辑一致性；
+     * 之后还会再从 Flash 下载区回读算一次 CRC，确认“写入结果”也一致。
+     */
     uart_ota_session.running_crc = prv_uart_ota_crc32_update(uart_ota_session.running_crc,
                                                              chunk,
                                                              chunk_length);
@@ -993,12 +1061,24 @@ static uart_ota_result_t prv_uart_ota_process_end(const uint8_t *frame, uint32_t
         return UART_OTA_RESULT_VERIFY_ERROR;
     }
 
+    /*
+     * 第二层确认：再从下载缓存区整段回读并计算 CRC。
+     * 第一层只证明“接收逻辑”对，第二层才证明“写进 Flash 的内容”也对。
+     */
     flash_crc32 = prv_uart_ota_flash_crc32_calc(UART_OTA_DOWNLOAD_ADDR, uart_ota_session.firmware_size);
     if(flash_crc32 != uart_ota_session.firmware_crc32){
         prv_uart_ota_send_ack(UART_OTA_FRAME_END, UART_OTA_RESULT_VERIFY_ERROR, flash_crc32, uart_ota_session.firmware_crc32);
         return UART_OTA_RESULT_VERIFY_ERROR;
     }
 
+    /*
+     * 到这里为止，App 端的任务其实已经完成：
+     * 1. 新固件已经安全放进下载缓存区；
+     * 2. BootLoader 所需的升级参数已经准备好。
+     *
+     * 下一步不由 App 自己搬运，而是复位后交给 BootLoader 去把下载区内容
+     * 搬到正式 App 运行区。
+     */
     nvic_irq_disable(USART0_IRQn);
     fmc_unlock();
     if(0U == prv_uart_ota_write_boot_param(uart_ota_session.app_version,
@@ -1227,6 +1307,10 @@ void uart_task(void)
     __enable_irq();
 
     if(rx_snapshot_length > 0U){
+        /*
+         * USART0 默认既承担普通透明转发，也承担 OTA 控制帧接收。
+         * 所以这里先尝试按 OTA 帧解析；只有确认“不是 OTA 包”时，才按普通串口数据转发到 RS485。
+         */
         ota_result = prv_uart_ota_try_process_packet(uart_dma_buffer, rx_snapshot_length);
         if(UART_OTA_RESULT_SUCCESS == ota_result){
             /*
@@ -1236,6 +1320,11 @@ void uart_task(void)
             __disable_irq();
             uart_dma_length = 0U;
             __enable_irq();
+
+            /*
+             * 短延时的目的不是等待写 Flash 完成，而是给 ACK 和日志留出一个稳定发出的窗口，
+             * 让上位机先看到 “OTA: ready, reset to BootLoader” 再发生复位。
+             */
             delay_ms(50);
             prv_uart_ota_system_reset();
         }else if(UART_OTA_RESULT_FRAME_CONSUMED == ota_result){

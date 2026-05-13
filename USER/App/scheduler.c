@@ -74,6 +74,11 @@ void system_init(void)
 		 * 当前工程作为 BootLoader App 运行，链接地址不再是 0x08000000。
 		 * 先接管 BootLoader 跳转现场，确保 VTOR 指向 App 向量表，并恢复
 		 * BootLoader 跳转前关闭的全局中断，否则 SysTick/USART/DMA 中断不会触发。
+		 *
+		 * 这一步必须放在绝大多数外设初始化之前，因为后续很多初始化都会依赖：
+		 * 1. SysTick 正常进入 App 自己的中断服务函数；
+		 * 2. USART / DMA / RTC 等外设中断已经改用 App 的向量表；
+		 * 3. 全局中断状态已经从 BootLoader 关闭态恢复。
 		 */
 		boot_app_handoff_init();
 

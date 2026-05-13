@@ -41,6 +41,10 @@ void boot_app_vector_table_init(void)
  */
 void boot_app_handoff_init(void)
 {
+    /*
+     * 这一步必须在 systick_config()、USART/DMA 初始化之前做。
+     * 否则 App 刚打开这些中断源时，异常入口仍可能落到旧向量表。
+     */
     boot_app_vector_table_init();
 
     /*
@@ -62,6 +66,7 @@ void boot_app_handoff_init(void)
     /*
      * BootLoader 为避免跳转过程中被中断打断，会在 iap_load_app() 里关闭全局中断。
      * PRIMASK 不会因为普通函数跳转自动恢复，因此 App 必须在完成 VTOR 切换后重新开中断。
+     * 这也是“BootLoader 能跳到 App，但 App 的定时器/串口中断不工作”的最常见根因之一。
      */
     __enable_irq();
     __DSB();

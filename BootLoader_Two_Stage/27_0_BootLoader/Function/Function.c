@@ -50,6 +50,12 @@ pFunction jump2app;
 
 /************************ 变量定义 ************************/
 
+/*
+ * Parameter_t 是“整个 4KB 参数区在 RAM 中的镜像”。
+ * BootLoader 读取 0x0800C000 开始的 4KB 数据后，会把它解释成这个总结构。
+ * 这样上层代码就可以按字段直接访问升级标志、用户配置和校准信息，
+ * 而不需要手动计算每个偏移地址。
+ */
 typedef struct __attribute__((packed)) Parameter_SUM
 {
 	BootParam_t BootParam;
@@ -59,9 +65,13 @@ typedef struct __attribute__((packed)) Parameter_SUM
 	CalibData_t CalibData;
 }Parameter_t;
 
+/* 当前启动周期内的参数区 RAM 副本。BootLoader 对参数区的所有判断都基于它。 */
 Parameter_t my_param_sum = { 0 };
 
+/* config_buf 用来暂存整块 4KB 参数区原始字节流。 */
 static uint8_t config_buf[CONFIG_SIZE] = { 0 };
+
+/* app_copy_buf 是搬运 App 时的 1KB 中转缓冲区。 */
 static uint8_t app_copy_buf[BOOT_COPY_CHUNK_SIZE] = { 0 };
 
 /************************ 函数定义 ************************/
@@ -91,9 +101,14 @@ void jump_to_app(void);
 
 /************************************************************
  * Function :       System_Init
- * Comment  :       用于初始化MCU
- * Parameter:       null
- * Return   :       null
+ * Comment  :       初始化 BootLoader 运行所需的最小硬件环境。
+ *                  当前流程只初始化两类资源：
+ *                  1. SysTick：提供 delay_1ms() 所依赖的毫秒节拍；
+ *                  2. USART0：提供 BootLoader 日志输出和串口接收能力。
+ *                  之所以只初始化这两项，是因为 BootLoader 应尽量保持精简，
+ *                  只准备自己真正会用到的底层资源。
+ * Parameter:       无参数。
+ * Return   :       无返回值。
  * Author   :       Jialei Zhao
  * Date     :       2026-02-4 V0.1 original
 ************************************************************/
@@ -107,9 +122,15 @@ void System_Init(void)
 
 /************************************************************
  * Function :       UsrFunction
- * Comment  :       用于用户功能实现
- * Parameter:       null
- * Return   :       null
+ * Comment  :       BootLoader 的总调度函数。
+ *                  上电后所有业务判断都从这里开始，主流程如下：
+ *                  1. 读取参数区 4KB 内容；
+ *                  2. 解析升级标志、App 版本、App 地址等字段；
+ *                  3. 若参数区表明“已有新固件待搬运”，则把下载区固件复制到正式 App 区；
+ *                  4. 搬运成功后清除升级标志并复位，让新 App 在干净环境中启动；
+ *                  5. 如果没有升级任务，则直接检查并跳转到当前 App。
+ * Parameter:       无参数。
+ * Return   :       无返回值。
  * Author   :       Jialei Zhao
  * Date     :       2026-02-4 V0.1 original
 ************************************************************/
@@ -117,14 +138,22 @@ void UsrFunction(void)
 {
 	printf("BootLoader : start compare config\r\n");
 
+	/* 先把 Flash 参数区完整读入 RAM，后续所有判断都基于这个 RAM 镜像。 */
 	Analysis_ConfigForAddr();
 
+	/* 把裸字节流解释成参数区总结构，便于按字段访问升级状态和 App 信息。 */
 	memcpy(&my_param_sum , config_buf , sizeof(Parameter_t));
 
-
+	/*
+	 * 这里重新从当前 App 向量表中刷新 appStartAddr / appStackAddr / appEntryAddr。
+	 * 这样做的原因是：
+	 * 1. 参数区中的入口信息可能是旧值；
+	 * 2. 真正可信的入口信息应以 App 区向量表内容为准；
+	 * 3. 后续打印日志和跳转判断都需要用到这三个值。
+	 */
 	my_param_sum.BootParam.appStartAddr = BOOT_APP_START_ADDR;
-	my_param_sum.BootParam.appStackAddr = *(__IO uint32_t*)(my_param_sum.BootParam.appStartAddr + 0);	//栈顶地址
-	my_param_sum.BootParam.appEntryAddr = *(__IO uint32_t*)(my_param_sum.BootParam.appStartAddr + 4);	// 应用程序入口地址在应用程序起始地址后4字节(需要手动指定中断向量表的位置)
+	my_param_sum.BootParam.appStackAddr = *(__IO uint32_t*)(my_param_sum.BootParam.appStartAddr + 0);
+	my_param_sum.BootParam.appEntryAddr = *(__IO uint32_t*)(my_param_sum.BootParam.appStartAddr + 4);
 
 	printf("BootLoader : appStackAddr:0x%08x\r\n" , my_param_sum.BootParam.appStackAddr);
 	printf("BootLoader : appEntryAddr:0x%08x\r\n" , my_param_sum.BootParam.appEntryAddr);
@@ -134,23 +163,35 @@ void UsrFunction(void)
 	printf("BootLoader : updateStatus:0x%02x\r\n" , my_param_sum.BootParam.updateStatus);
 	printf("BootLoader : updateFlag:0x%02x\r\n" , my_param_sum.BootParam.updateFlag);
 	printf("BootLoader : magicWord:0x%08x\r\n" , my_param_sum.BootParam.magicWord);
+
+	/* 保留 1 秒日志观察窗口，方便上电时通过串口终端看到当前状态。 */
 	delay_1ms(1000);
 
 
 	if (my_param_sum.BootParam.magicWord != BOOT_PARAM_MAGIC)
 	{
+		/*
+		 * 参数区魔术字错误，说明参数区可能未初始化、被擦空或内容损坏。
+		 * 这里不直接判死刑，而是仍然尝试跳转现有 App，因为“参数区坏了”不等于“App 一定坏了”。
+		 */
 		printf("BootLoader : param magic is false\r\n");
 		goto BootJump;
 	}
 
-	//!此时需要将搬运到备份地址的应用程序参数搬运到App的地址
+	/*
+	 * updateFlag + updateStatus 同时满足时，表示旧 App 已经把新固件放进下载缓存区，
+	 * 当前这次上电的任务就是把下载区的新固件搬到正式 App 区。
+	 */
 	if (my_param_sum.BootParam.updateStatus == BOOT_PARAM_UPDATING && my_param_sum.BootParam.updateFlag == BOOT_PARAM_UPDATE_FLAG)
 	{
 		printf("BootLoader : app is updating, need to copy param to app addr\r\n");
 
 		bool Download_Transport_Result = Download_Transport(APP_DOWNLOAD_ADDR);
 
-
+		/*
+		 * 搬运完成后重新读取一遍参数区。
+		 * 这样可以避免后续仅依赖旧的 RAM 副本，并为重新回写统计信息做准备。
+		 */
 		for (uint16_t i = 0; i < CONFIG_SIZE; i++)
 		{
 			config_buf[i] = internal_flash_read_Char(BOOT_CONFIG_ADDR + i);
@@ -159,36 +200,53 @@ void UsrFunction(void)
 
 		if (Download_Transport_Result == TRUE)
 		{
+			/* 升级成功后重新刷新 App 向量表信息，确保参数区写回的是新 App 的真实入口。 */
 			my_param_sum.BootParam.appStartAddr = BOOT_APP_START_ADDR;
-			my_param_sum.BootParam.appStackAddr = *(__IO uint32_t*)(my_param_sum.BootParam.appStartAddr + 0);	//栈顶地址
-			my_param_sum.BootParam.appEntryAddr = *(__IO uint32_t*)(my_param_sum.BootParam.appStartAddr + 4);	// 应用程序入口地址在应用程序起始地址后4字节(需要手动指定中断向量表的位置)
+			my_param_sum.BootParam.appStackAddr = *(__IO uint32_t*)(my_param_sum.BootParam.appStartAddr + 0);
+			my_param_sum.BootParam.appEntryAddr = *(__IO uint32_t*)(my_param_sum.BootParam.appStartAddr + 4);
+
+			/* 清空升级标志，防止下一次上电又重复搬运同一份固件。 */
 			my_param_sum.BootParam.updateStatus = 0x00;
 			my_param_sum.BootParam.updateFlag = 0x00;
+
+			/* 升级成功次数加一，供后续诊断和日志使用。 */
 			my_param_sum.BootParam.updateCount++;
-			// my_param_sum.BootParam.appVersion++;
 
 			printf("BootLoader : app update success\r\n");
 		}
 		else
 		{
+			/* 搬运失败时记录失败统计，方便后面排查“反复重启却进不了新 App”的问题。 */
 			printf("BootLoader : app update fail\r\n");
 			my_param_sum.BootParam.resetCount++;
 			my_param_sum.BootParam.bootFailCount++;
 		}
-		//!擦除一页
+
+		/*
+		 * 当前实现按整块 4KB 参数区重写，而不是只改几个字节。
+		 * 原因是 Flash 不能像 RAM 那样直接覆盖写，先读整块到 RAM、修改字段、
+		 * 再整体擦除回写，是最直观也最安全的做法。
+		 */
 		memcpy(config_buf , &my_param_sum , sizeof(Parameter_t));
 		internal_flash_erase(BOOT_CONFIG_ADDR);
 		internal_flash_write_str_Char(BOOT_CONFIG_ADDR , config_buf , CONFIG_SIZE);
+
+		/*
+		 * 这里故意不直接 jump_to_app()，而是执行一次软件复位。
+		 * 这样新 App 会在更接近“真实上电”的干净环境里启动，
+		 * 避免继承 BootLoader 的部分外设或中断状态。
+		 */
 		mcu_software_reset();
 	}
 	else
 	{
 	BootJump:
+		/* 正常路径：没有待升级任务，就直接检查并跳转到当前 App。 */
 		jump_to_app();
 	}
 
 
-
+	/* 理论上不会走到这里，保留死循环作为防御性兜底。 */
 	while (1)
 	{
 
@@ -208,6 +266,7 @@ static void Analysis_ConfigForAddr(void)
 {
 	for (uint16_t i = 0; i < CONFIG_SIZE; i++)
 	{
+		/* 参数区总大小只有 4KB，按字节读入实现简单直观，便于后续统一解析。 */
 		config_buf[i] = internal_flash_read_Char(BOOT_CONFIG_ADDR + i);
 	}
 }
@@ -348,6 +407,7 @@ static bool Download_Transport(uint32_t DownLoad_Addr)
 
 	if (DownLoad_Addr != APP_DOWNLOAD_ADDR)
 	{
+		/* 当前工程只允许从固定下载区搬运，防止错误参数把任意 Flash 区当成固件源。 */
 		printf("BootLoader : download addr invalid, addr:0x%08x expect:0x%08x\r\n" , DownLoad_Addr , APP_DOWNLOAD_ADDR);
 		return FALSE;
 	}
@@ -370,6 +430,7 @@ static bool Download_Transport(uint32_t DownLoad_Addr)
 	printf("BootLoader : erase app pages:%d\r\n" , erase_pages);
 	for (uint32_t i = 0U; i < erase_pages; i++)
 	{
+		/* 必须先擦再写，否则 Flash 中未擦区域会导致写入失败或保留脏数据。 */
 		internal_flash_erase(app_start_addr + i * FLASH_PAGE_SIZE);
 	}
 
@@ -388,9 +449,11 @@ static bool Download_Transport(uint32_t DownLoad_Addr)
 
 		for (uint32_t i = 0U; i < chunk_size; i++)
 		{
+			/* 先从下载区读到 RAM 中转缓冲，避免直接跨区域边读边写带来的控制复杂度。 */
 			app_copy_buf[i] = internal_flash_read_Char(DownLoad_Addr + copied_size + i);
 		}
 
+		/* 把当前这一块写到正式 App 区对应偏移。 */
 		internal_flash_write_str_Char(app_start_addr + copied_size , app_copy_buf , chunk_size);
 		copied_size += chunk_size;
 	}
@@ -411,6 +474,7 @@ static bool Download_Transport(uint32_t DownLoad_Addr)
 
 		for (uint32_t i = 0U; i < chunk_size; i++)
 		{
+			/* 注意这里读的是“正式 App 区”，而不是下载区。 */
 			app_copy_buf[i] = internal_flash_read_Char(app_start_addr + copied_size + i);
 		}
 
@@ -446,6 +510,7 @@ uint32_t crc32_calc(uint8_t* data , uint32_t len)
 {
 	uint32_t crc = 0xFFFFFFFFUL;
 
+	/* 先用统一的增量接口计算，再在末尾做标准 CRC32 收尾异或。 */
 	crc = crc32_update(crc , data , len);
 
 	return crc ^ 0xFFFFFFFFUL;
@@ -469,6 +534,7 @@ static uint32_t crc32_update(uint32_t crc , uint8_t* data , uint32_t len)
 
 	for (i = 0U; i < len; i++)
 	{
+		/* 逐字节纳入 CRC；与上位机工具保持一致时，BootLoader 才能正确比较固件校验值。 */
 		crc ^= data[i];
 		for (j = 0U; j < 8U; j++)
 		{
@@ -483,15 +549,17 @@ static uint32_t crc32_update(uint32_t crc , uint8_t* data , uint32_t len)
 }
 /************************************************************
  * Function :       mcu_software_reset
- * Comment  :       用于软件复位
- * Parameter:       null
- * Return   :       null
+ * Comment  :       触发一次 MCU 软件复位。
+ *                  升级成功后不直接跳 App，而是通过复位重新走一遍标准启动流程，
+ *                  可以最大程度减少 BootLoader 运行现场对新 App 的影响。
+ * Parameter:       无参数。
+ * Return   :       无返回值。
  * Author   :       Jialei Zhao
  * Date     :       2026-02-4 V0.1 original
 ************************************************************/
 void mcu_software_reset(void)
 {
-	/* set FAULTMASK */
+	/* 先屏蔽异常响应，再触发系统复位，减少复位前被其它异常打断的概率。 */
 	__set_FAULTMASK(1);
 	NVIC_SystemReset();
 }
@@ -514,6 +582,7 @@ void iap_load_app(uint32_t appxaddr)
 
 	if (boot_is_valid_app_start(appxaddr) == FALSE)
 	{
+		/* 起始地址不合法时直接停机，避免跳到错误区域造成不可预期后果。 */
 		while (1);
 	}
 
@@ -575,12 +644,14 @@ void jump_to_app(void)
 	uint32_t app_stack_addr = *(__IO uint32_t*)(app_start_addr + 0U);
 	uint32_t app_entry_addr = *(__IO uint32_t*)(app_start_addr + 4U);
 
+	/* 把当前 App 的真实向量表信息同步到 RAM 参数结构，便于日志和后续统一使用。 */
 	my_param_sum.BootParam.appStartAddr = app_start_addr;
 	my_param_sum.BootParam.appStackAddr = app_stack_addr;
 	my_param_sum.BootParam.appEntryAddr = app_entry_addr;
 
 	if (boot_is_valid_app_stack(app_stack_addr) == TRUE && boot_is_valid_app_entry(app_entry_addr) == TRUE)
 	{
+		/* 只有当前 App 镜像看起来合法，才允许真正切换执行流。 */
 		iap_load_app(app_start_addr);
 	}
 	else

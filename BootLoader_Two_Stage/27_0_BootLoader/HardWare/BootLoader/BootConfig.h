@@ -10,13 +10,35 @@
 /************************* 头文件 *************************/
 #include "HeaderFiles.h"
 /************************* 宏定义 *************************/
-#define BOOT_CONFIG_ADDR 0x0800C000  // Bootloader主参数区地址  4KB , 块0扇3第一页
+
+/*
+ * BootLoader 参数区固定放在 0x0800C000，大小 4KB。
+ * 这 4KB 不是只给一个结构体使用，而是被拆成：
+ * 1. 主参数区；
+ * 2. 预留参数区；
+ * 3. 升级日志区；
+ * 4. 用户配置区；
+ * 5. 校准数据区。
+ *
+ * BootLoader 和 App 必须对这块区域的布局完全达成一致，否则 BootLoader 读到的
+ * 升级标志、App 长度、CRC32 等信息就会错位。
+ */
+#define BOOT_CONFIG_ADDR 0x0800C000
 /************************ 变量定义 ************************/
 
 /**
- * @brief Bootloader主参数区结构体
- * @note  存储在0x0800C000，大小256字节
- * 主参数区 (0x0800C000 - 0x0800C0FF, 256字节)
+ * @brief BootLoader 主参数区结构体
+ * @note  存储在 0x0800C000，大小 256 字节
+ *
+ * 这是 BootLoader 启动时最先关心的结构体。
+ * 其中真正驱动升级流程的关键字段主要有：
+ * 1. magicWord：判断参数区是否已被正确初始化；
+ * 2. updateFlag / updateStatus：判断是否存在待搬运的新 App；
+ * 3. appSize / appCRC32 / appVersion：描述待升级 App；
+ * 4. appStartAddr / appEntryAddr / appStackAddr：描述正式 App 的运行入口；
+ * 5. resetCount / bootFailCount / updateCount：记录运行和升级统计信息。
+ *
+ * 主参数区范围：0x0800C000 - 0x0800C0FF。
  */
 typedef struct __attribute__((packed))
 {
@@ -100,8 +122,13 @@ typedef struct __attribute__((packed))
 
 
 /**
- * @brief 单条升级日志（32字节）
- * 升级日志区 (0x0800C200 - 0x0800C5FF, 1024字节)
+ * @brief 升级日志区结构体
+ * @note  当前定义是整块 1024 字节，不是单独 32 字节日志项。
+ *
+ * 这块区域原本预留给升级记录扩展使用。当前 BootLoader 主流程并没有读写它，
+ * 但它已经占用了参数区中的固定地址空间，因此 App 与后续工具也必须保持同样布局。
+ *
+ * 地址范围：0x0800C200 - 0x0800C5FF。
  */
 typedef struct __attribute__((packed))
 {
@@ -119,7 +146,11 @@ typedef struct __attribute__((packed))
 
 /**
  * @brief 用户配置参数（512字节）
- * 用户配置区 (0x0800C600 - 0x0800C7FF, 512字节)
+ *
+ * 这块区域用于保存与具体业务相关、但又希望跨升级保留的用户配置。
+ * 当前 BootLoader 主流程不会读取这里的字段，但升级时会整体保留并回写整块参数区。
+ *
+ * 用户配置区：0x0800C600 - 0x0800C7FF。
  */
 typedef struct __attribute__((packed))
 {
@@ -157,7 +188,12 @@ typedef struct __attribute__((packed))
 
 /**
  * @brief 出厂校准数据（512字节）  - 整个区域都做保留
- * 校准数据区 (0x0800C800 - 0x0800C9FF, 512字节)
+ *
+ * 这块区域用于保存生产阶段写入的校准数据。
+ * 当前 BootLoader 主流程不解释其内容，但为了保证升级后设备行为稳定，
+ * 整个参数区都要被原样保留。
+ *
+ * 校准数据区：0x0800C800 - 0x0800C9FF。
  */
 typedef struct __attribute__((packed))
 {
@@ -192,6 +228,19 @@ typedef struct __attribute__((packed))
 
 /************************ 函数定义 ************************/
 
+/*
+ * 函数作用：
+ *   为参数区里的各个结构体填充一套“出厂默认值”。
+ *   它更像是参数区初始化助手，适合首次烧录、产测或恢复默认参数时调用。
+ *   当前 BootLoader 启动主流程并不会自动调用它。
+ * 参数说明：
+ *   param：输出的主参数区结构体指针，函数会向其中写入默认 BootParam_t。
+ *   mylog：输出的升级日志区结构体指针，函数会写入默认日志区内容。
+ *   userconfig：输出的用户配置结构体指针，函数会写入默认串口等配置。
+ *   calibdata：输出的校准数据结构体指针，函数会写入默认校准区内容。
+ * 返回值说明：
+ *   无返回值。
+ */
 void bootloader_config_init(BootParam_t* param , UpdateLog_t* mylog , UserConfig_t* userconfig , CalibData_t* calibdata);
 
 

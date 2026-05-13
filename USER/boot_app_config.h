@@ -40,6 +40,9 @@ void boot_app_vector_table_init(void);
 /*
  * 函数作用：
  *   接管 BootLoader 跳转到 App 后的最小启动现场。
+ * 说明：
+ *   这个函数解决的不是“如何运行 App 主逻辑”，而是“BootLoader 已经跳过来了，
+ *   但中断和向量表现场还不完全属于 App”这个交接问题。
  * 参数说明：
  *   无参数。
  * 返回值说明：
