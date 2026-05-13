@@ -68,7 +68,7 @@ void bootloader_config_init(BootParam_t* param ,
 	tmp_log.mode = 1;
 
 	// 3. UserConfig_t 结构体初始化
-	tmp_usercfg.uart_baudrate = 115200;
+	tmp_usercfg.uart_baudrate = 460800;
 	tmp_usercfg.uart_stopbit = 1;
 
 	// 4. CalibData_t 结构体初始化

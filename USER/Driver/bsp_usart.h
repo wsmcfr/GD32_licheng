@@ -18,6 +18,15 @@ extern "C" {
 /* 调试串口选择。 */
 #define DEBUG_USART                    USART0
 
+/*
+ * 宏作用：
+ *   定义当前工程默认调试串口与 OTA 串口波特率。
+ * 说明：
+ *   USART0 同时承担启动日志和流式 OTA 升级入口，因此 App、BootLoader 和
+ *   PC 工具默认值必须保持一致。当前统一提升到 460800，以缩短分包升级耗时。
+ */
+#define DEBUG_USART_BAUDRATE           460800U
+
 /* 接收缓冲区长度定义。 */
 /*
  * 宏作用：

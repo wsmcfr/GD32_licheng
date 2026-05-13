@@ -5,6 +5,7 @@ import struct
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from tools import make_uart_ota_packet as ota
 
@@ -135,6 +136,26 @@ class UartOtaStreamingProtocolTest(unittest.TestCase):
         """
         with self.assertRaises(SystemExit):
             ota.main(["--mode", "stream-info", "--chunk-size", "0"])
+
+    def test_send_mode_uses_default_high_baudrate(self):
+        """
+        函数作用：
+          验证 send 模式未显式指定波特率时，默认使用当前 OTA 推荐高速波特率。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时 unittest 会报告默认波特率与预期不一致。
+        """
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            with mock.patch.object(ota, "send_stream_over_serial", return_value=68) as send_mock:
+                result = ota.main(["--mode", "send", "--port", "COM29", "--version", "0x00000006"])
+
+        self.assertEqual(0, result)
+        send_mock.assert_called_once()
+        self.assertEqual(460800, send_mock.call_args.args[1])
+        self.assertIn("sent stream frames=68, port=COM29, baudrate=460800", output.getvalue())
 
     def test_find_ack_frame_ignores_text_before_binary_ack(self):
         """

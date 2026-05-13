@@ -104,7 +104,7 @@ void bsp_usart0_init(void)
     gpio_output_options_set(USART0_RX_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, USART0_RX_PIN);
 
     usart_deinit(USART0);
-    usart_baudrate_set(USART0, 115200U);
+    usart_baudrate_set(USART0, DEBUG_USART_BAUDRATE);
     usart_receive_config(USART0, USART_RECEIVE_ENABLE);
     usart_transmit_config(USART0, USART_TRANSMIT_ENABLE);
     usart_dma_receive_config(USART0, USART_RECEIVE_DMA_ENABLE);
@@ -138,7 +138,7 @@ void bsp_usart_init(void)
  *   1. 打开 DMA、GPIOD、PE8 方向控制脚和 USART1 外设时钟。
  *   2. 配置 PD5/PD6 为 USART1 的 TX/RX 复用功能。
  *   3. 配置 PE8 为 RS485 收发器方向控制输出，并默认进入接收态。
- *   4. 配置 USART1 为 115200-8N1 收发模式。
+ *   4. 配置 USART1 为默认 115200-8N1 收发模式。
  *   5. 打开 USART1 IDLE 中断，用于 RS485 接收帧完成判定。
  * 参数说明：
  *   无参数。

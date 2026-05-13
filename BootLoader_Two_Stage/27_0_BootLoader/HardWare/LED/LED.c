@@ -25,17 +25,17 @@
 void LED_Init(void)
 {
 	
-	rcu_periph_clock_enable(RCU_GPIOA);    // 初始化GPIO_A总线时钟
+	rcu_periph_clock_enable(RCU_GPIOD);    // 初始化GPIO_A总线时钟
 	
 	//初始化LED1端口
-	gpio_mode_set(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_4);   			// GPIO模式设置为输出
-    gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_4);   // 输出参数设置
-	gpio_bit_reset(GPIOA, GPIO_PIN_4);  											// 引脚初始电平为低电平
+	gpio_mode_set(GPIOD, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_10);   			// GPIO模式设置为输出
+    gpio_output_options_set(GPIOD, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_10);   // 输出参数设置
+	gpio_bit_reset(GPIOD, GPIO_PIN_10);  											// 引脚初始电平为低电平
 	
 	//初始化LED2~4端口（批量初始化端口）
-	gpio_mode_set(GPIOA, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7);   			// GPIO模式设置为输出
-    gpio_output_options_set(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7);     // 输出参数设置
-	gpio_bit_reset(GPIOA, GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7);  										     	// 引脚初始电平为低电平
+	gpio_mode_set(GPIOD, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO_PIN_11|GPIO_PIN_12|GPIO_PIN_13);   			// GPIO模式设置为输出
+    gpio_output_options_set(GPIOD, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_11|GPIO_PIN_12|GPIO_PIN_13);     // 输出参数设置
+	gpio_bit_reset(GPIOD, GPIO_PIN_11|GPIO_PIN_12|GPIO_PIN_13);  										     	// 引脚初始电平为低电平
 	
 	
 }

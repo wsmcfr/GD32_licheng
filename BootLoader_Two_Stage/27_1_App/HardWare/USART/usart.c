@@ -48,7 +48,7 @@ void my_usart_init(void)
 
 	/* USART configure */
 	usart_deinit(USART0);
-	usart_baudrate_set(USART0 , 115200U);
+	usart_baudrate_set(USART0 , USART_DEFAULT_BAUDRATE);
 	usart_receive_config(USART0 , USART_RECEIVE_ENABLE);
 	usart_transmit_config(USART0 , USART_TRANSMIT_ENABLE);
 	usart_enable(USART0);

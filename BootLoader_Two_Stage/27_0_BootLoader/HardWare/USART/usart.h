@@ -20,6 +20,9 @@
 #define USART_RCU RCU_USART0
 #define USART_PIN_RCU RCU_GPIOA
 
+/* BootLoader 与 App 共用同一调试/升级串口，默认波特率必须保持一致。 */
+#define USART_DEFAULT_BAUDRATE 460800U
+
 /************************ 变量定义 ************************/
 
 

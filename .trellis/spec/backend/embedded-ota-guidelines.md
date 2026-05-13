@@ -24,7 +24,7 @@ This is a cross-layer contract. The PC-side sender, App-side receiver, internal 
 | Boundary | Signature / Entry | Contract |
 |----------|-------------------|----------|
 | Stream info | `python tools\make_uart_ota_packet.py --mode stream-info --version <u32> --chunk-size 512` | Reads `MDK/output/Project.bin`, prints size, CRC32, version, chunk size, and chunk count |
-| Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Sends START/DATA/END frames, prints ACK progress, and waits for ACK after every frame |
+| Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Sends START/DATA/END frames at default `460800` baud, prints ACK progress, and waits for ACK after every frame |
 | Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `MDK/output/Project.uota` for offline inspection only; current low-RAM USART0 OTA must not send it directly |
 | App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one streaming frame; only returns success after download-buffer CRC and parameter writes pass |
 | ISR handoff | `USART0_IRQHandler(void)` | Copies one IDLE DMA frame into `uart_dma_buffer`, records `uart_dma_length`, and sets `rx_flag` |
@@ -47,6 +47,7 @@ Current App-side limits:
 |----------|---------------|--------|
 | `BSP_USART0_RX_BUFFER_SIZE` | `1024U` | Must hold one DATA frame, not a full firmware image |
 | `UART_OTA_STREAM_CHUNK_SIZE` | `512U` | `512B` payload + `24B` DATA header fits safely in 1KB |
+| `UART_OTA_DEFAULT_BAUDRATE` | `460800` | App, BootLoader, and PC tool default UART baudrate must match |
 | `UART_OTA_DOWNLOAD_MAX_SIZE` | `52KB` | Internal Flash download buffer remains `0x08073000..0x0807FFFF` |
 | App start | `0x0800D000` | BootLoader jumps here after copying |
 | Parameter area | `0x0800C000` | App writes update flags; BootLoader reads after reset |
@@ -147,7 +148,7 @@ new image was actually installed.
 Current known-good hardware command for the local board:
 
 ```powershell
-python tools\make_uart_ota_packet.py --mode send --port COM29 --version 0x00000005 --chunk-size 512
+python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000005 --chunk-size 512
 ```
 
 For the next trial, keep the same port and chunk size unless the board wiring changes,
@@ -155,7 +156,7 @@ but increase the version, for example:
 
 ```powershell
 python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512
-python tools\make_uart_ota_packet.py --mode send --port COM29 --version 0x00000006 --chunk-size 512
+python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512
 ```
 
 Do not reuse an old version number when validating a bug fix. A repeated version makes it
@@ -184,7 +185,7 @@ send-file MDK\output\Project.uota
 ```powershell
 # First check metadata, then send streaming frames and wait for ACK after every frame.
 python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512
-python tools\make_uart_ota_packet.py --mode send --port COM29 --version 0x00000006 --chunk-size 512
+python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512
 ```
 
 #### Wrong
@@ -208,6 +209,7 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --version 0x000000
 - Do not send `Project.bin`, `Project.hex`, or legacy `Project.uota` directly for the current low-RAM OTA flow.
 - Do not reduce `BSP_USART0_RX_BUFFER_SIZE` below the largest DATA frame size plus header.
 - Do not raise `--chunk-size` above `UART_OTA_STREAM_CHUNK_SIZE` unless App and tests are updated together.
+- Do not change App, BootLoader, and PC sender baudrates independently; the three defaults must stay aligned.
 - Do not move `0x0800C000`, `0x0800D000`, or `0x08073000` in one layer only.
 - Do not reset after writing the download buffer if BootLoader parameter flags were not written.
 - Do not claim App images larger than `52KB` are supported until the download-buffer storage is redesigned.

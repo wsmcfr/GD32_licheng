@@ -35,6 +35,7 @@ UART_OTA_FRAME_DATA = 2
 UART_OTA_FRAME_END = 3
 UART_OTA_FRAME_ACK_BASE = 0x80
 UART_OTA_ACK_FRAME_SIZE = 20
+UART_OTA_DEFAULT_BAUDRATE = 460800
 
 
 @dataclass(frozen=True)
@@ -448,7 +449,7 @@ def send_stream_over_serial(port: str,
       打开真实串口并执行流式 OTA 发送。
     参数说明：
       port：串口号，例如 COM7。
-      baudrate：串口波特率，当前 App 默认为 115200。
+      baudrate：串口波特率，当前 App/BootLoader 默认统一为 460800。
       input_bin：原始 Project.bin 路径。
       app_version：本次升级版本号。
       chunk_size：每个 DATA 帧的数据长度。
@@ -499,7 +500,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--mode", choices=("packet", "stream-info", "send"), default="packet")
     parser.add_argument("--chunk-size", type=parse_positive_u32, default=512)
     parser.add_argument("--port", default=None)
-    parser.add_argument("--baudrate", type=parse_positive_u32, default=115200)
+    parser.add_argument("--baudrate", type=parse_positive_u32, default=UART_OTA_DEFAULT_BAUDRATE)
     parser.add_argument("--ack-timeout", type=float, default=2.0)
     parser.add_argument("input_bin", nargs="?", default="MDK/output/Project.bin")
     parser.add_argument("output_file", nargs="?", default="MDK/output/Project.uota")
