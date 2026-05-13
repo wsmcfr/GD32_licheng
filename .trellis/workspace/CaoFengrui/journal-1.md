@@ -200,3 +200,51 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Fix WK_UP deep-sleep wake recovery
+
+**Date**: 2026-05-13
+**Task**: Fix WK_UP deep-sleep wake recovery
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+Fixed the WK_UP deep-sleep wake recovery path for the BootLoader-relocated GD32F470 App.
+The session also captured the root cause and OTA operator procedure in executable
+project specs so future low-power or OTA work has concrete guardrails.
+
+### Main Changes
+
+| Item | Details |
+|------|---------|
+| Work | Fixed deep-sleep WK_UP wake recovery for the BootLoader-relocated App and recorded executable specs. |
+| Root Cause | The App runs at 0x0800D000, but wake recovery called SystemInit(), which can restore SCB->VTOR to 0x08000000. Interrupts after wake could dispatch through the BootLoader vector table, making the board look like it could not return from WK_UP wake. |
+| Firmware Changes | USER/Driver/bsp_key.c now clears EXTI0/NVIC pending state and uses EXTI_TRIG_FALLING for the pulled-up WK_UP button. USER/Driver/bsp_power.c now restores the App vector table after SystemInit() inside a short interrupt-disabled section and clears EXTI0 pending before WFI. |
+| Spec Updates | .trellis/spec/backend/quality-guidelines.md documents the deep-sleep wakeup VTOR/EXTI/PMU contract. .trellis/spec/backend/embedded-ota-guidelines.md records the UART OTA operator procedure and COM29 send command. |
+| Verification | python -m unittest tools.test_uart_ota_packet: OK. Keil build: 0 Error(s), 1 existing perf_counter.h warning. Project.bin: 33536 bytes. stream-info: crc=0xC0B85342, version=0x00000005, chunks=66. |
+| Git | Commit 8e352ce on fix-wkup-deepsleep, pushed to origin/fix-wkup-deepsleep. |
+| Hardware Follow-up | Send with python tools\make_uart_ota_packet.py --mode send --port COM29 --version 0x00000005 --chunk-size 512, then verify KEY2 enters deep sleep and WK_UP wakes with UART/OLED/tasks restored. |
+| Notes | Unrelated local changes remain in MDK user option files, the schematic PDF, and tmp/. They were not included in the fix commit. |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8e352ce` | (see git log) |
+
+### Testing
+
+- [OK] `python -m unittest tools.test_uart_ota_packet`
+- [OK] Keil command-line build: `0 Error(s), 1 Warning(s)`
+- [OK] `python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000005 --chunk-size 512`
+- [OK] Confirmed `MDK/output/Project.bin` exists and is `33536` bytes
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-05-12
+- **Total Sessions**: 5
+- **Last Active**: 2026-05-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~202 | Active |
+| `journal-1.md` | ~245 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-05-13 | Fix WK_UP deep-sleep wake recovery | `8e352ce` | `fix-wkup-deepsleep` |
 | 4 | 2026-05-12 | BootLoader two-stage app integration | `58275bc` | `main` |
 | 3 | 2026-05-12 | 规范化工程中文注释 | `4d6ebe4ad9bc9432dbc434251177af8cd79a0331` | `main` |
 | 2 | 2026-05-12 | RS485排障与注释规范记录 | - | `main` |
