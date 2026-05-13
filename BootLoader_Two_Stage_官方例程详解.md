@@ -171,6 +171,8 @@ App 侧 USART0 配置：
 | 接收方式 | RBNE 字节接收 + IDLE 空闲中断判定一帧结束 |
 | 接收缓存 | `usart0_tmp_buf[10 * 1024]` |
 
+说明：上表描述的是官方原始 `27_1_App` 例程。当前仓库中复制并接入本工程的 App/BootLoader 副本已经统一把 USART0 升级串口默认波特率调整为 `460800`。
+
 中断处理逻辑：
 
 | 中断条件 | 处理 |
@@ -265,6 +267,38 @@ BootLoader 成功搬运后清除升级标志并复位。下一次启动时：
 | `magicWord` 正确，但 `updateFlag/updateStatus` 已清除 | 不再搬运，直接跳 App |
 | `magicWord` 不正确 | 也直接尝试跳 App |
 | App 入口地址看起来不合法 | 打印 `zzz` 后死循环 |
+
+### 8.7 当前仓库副本相对官方原始例程的差异
+
+当前仓库为了接入现有工程并降低 App RAM 占用，已经对官方原始方案做了如下调整：
+
+| 项目 | 官方原始例程 | 当前仓库副本 |
+|---|---|---|
+| 升级串口默认波特率 | `115200` | `460800` |
+| App 接收方式 | 单次接收整包，依赖 `usart0_tmp_buf[10 * 1024]` | 使用 START/DATA/END 三类帧和 ACK 节流，默认 `chunk_size=512`，每收到一个 DATA 帧就立即写下载缓存区 |
+| 上位机发送方式 | 直接发送官方示例 `.bin` 文件 | 使用 `python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512` |
+| 上位机可见反馈 | 基本没有发送进度 | 会打印 `send stream ...`、`START acked ...`、`DATA acked ...`、`END acked ...` |
+| BootLoader 擦除策略 | 固定擦除 App 开头 `3 * 4KB` | 按 `appSize` 计算实际擦除页数 |
+| BootLoader 搬运策略 | 受原始整包缓存思路约束 | 按 `1024B` 分块从下载缓存区搬运到 App 区，并重新做 CRC32 校验 |
+
+当前仓库副本发送升级包时，可按下面步骤操作：
+
+```powershell
+cd D:\GD32\2026706296
+python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512
+python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512
+```
+
+典型输出如下：
+
+```text
+send stream MDK\output\Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, port=COM29, baudrate=460800
+START acked: chunk=0/66, frames=1/68, bytes=0/33536 (0%)
+DATA acked: chunk=1/66, frames=2/68, bytes=512/33536 (1%)
+...
+END acked: chunk=66/66, frames=68/68, bytes=33536/33536 (100%)
+sent stream frames=68, port=COM29, baudrate=460800
+```
 
 ## 9. CRC32 算法
 

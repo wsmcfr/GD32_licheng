@@ -40,6 +40,83 @@ Before changing:
 
 search the repository for all dependent usages.
 
+### Do not change user-facing firmware workflows without syncing repository docs
+
+When you change a user-visible workflow or default value, code changes alone are not enough.
+Firmware projects in this repository depend on Markdown documents for flashing, OTA, serial
+tooling, and validation steps. Leaving old commands or stale defaults in docs is treated as
+a quality bug, not just a documentation gap.
+
+#### 1. Scope / Trigger
+
+- Trigger: changing UART baud rates, flash addresses, partition sizes, upgrade commands, CLI arguments, expected log output, or hardware-operation steps.
+- Trigger: changing BootLoader/App interaction, OTA packet flow, wakeup procedure, or any action the operator must perform manually.
+
+#### 2. Signatures
+
+Repository documents that must be checked when user-visible workflow changes:
+
+| Document Type | Typical Paths |
+|---------------|---------------|
+| Project prompt / working rules | `AGENTS.md` |
+| User operation docs | repository root `*.md` such as `工程文档.md`, `BootLoader_APP_接入说明.md` |
+| Code-spec docs | `.trellis/spec/backend/*.md`, `.trellis/spec/guides/*.md` when the change becomes a durable rule |
+
+#### 3. Contracts
+
+- If code changes modify a command, default baud rate, address, partition, or expected log line, update every affected repository document in the same task.
+- If the change affects future implementation behavior or review expectations, also update the relevant `.trellis/spec/` file.
+- Example commands in docs must match the current tool contract, including required flags such as `--baudrate`.
+- If a document intentionally describes an original upstream example instead of the current local fork, label that distinction explicitly.
+
+#### 4. Validation & Error Matrix
+
+| Observation | Meaning | Required Action |
+|-------------|---------|-----------------|
+| Code uses new baud rate but docs still show old baud rate | Operator will follow stale procedure | Update all matching docs before commit |
+| Tool prints new progress lines but docs still say "no response" | Troubleshooting guidance is outdated | Add current example output |
+| Local fork differs from upstream reference doc | Reader may confuse original behavior with current project behavior | Mark "upstream/original" vs "current repo copy" explicitly |
+| Only `AGENTS.md` changed but user docs did not | Rule exists, but operator workflow is still stale | Update repository-facing Markdown docs too |
+
+#### 5. Good / Base / Bad Cases
+
+| Case | Expected Result |
+|------|-----------------|
+| Good | Code, `AGENTS.md`, repository docs, and `.trellis/spec/` all show the same baud rate, commands, and workflow |
+| Base | Internal code-only refactor with no user-visible behavior change; repository docs may remain unchanged |
+| Bad | OTA tool default changes to `460800`, but docs still instruct users to send at `115200` |
+
+#### 6. Tests Required
+
+- Search the repo for the old value or old command before commit.
+- Run `git diff --check` on changed docs.
+- Re-read at least one command example and one expected output example from the changed docs against the current implementation.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```text
+Code changed:
+- UART OTA default baudrate = 460800
+
+Docs still say:
+- python tools\make_uart_ota_packet.py --mode send --port COM7 --version 0x00000002 --chunk-size 512
+- 波特率: 115200
+```
+
+##### Correct
+
+```text
+Code changed:
+- UART OTA default baudrate = 460800
+
+Docs updated in same task:
+- send command includes --baudrate 460800
+- troubleshooting/output examples reflect current ACK progress logs
+- AGENTS/spec rules mention mandatory doc sync
+```
+
 ### RS485 direction-control pins must be verified against the physical board
 
 RS485 receive success does not prove that the direction-control GPIO is correct.
