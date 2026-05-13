@@ -342,3 +342,48 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 整理Flash分区原理与OTA容量限制说明
+
+**Date**: 2026-05-13
+**Task**: 整理Flash分区原理与OTA容量限制说明
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+新增独立文档解释当前工程的Flash分区来源、4KB参数区原因以及396KB运行区与52KB OTA上限的关系，并同步修正文档中的旧分区表述。
+
+### Main Changes
+
+| 模块 | 内容 |
+|---|---|
+| 独立分区文档 | 新增 `Flash分区原理与OTA容量限制说明.md`，专门说明 BootLoader 区、参数区、正式 App 区、预留间隙和下载缓存区的地址来源、页数、容量关系。 |
+| 地址计算说明 | 在文档中明确给出 `0x08000000 + 48KB = 0x0800C000`、`0x0800C000 + 4KB = 0x0800D000`、`0x08080000 - 52KB = 0x08073000` 等关键推导过程。 |
+| 参数区原理 | 详细说明参数区为什么必须独占 `4KB`：当前工程按 `4KB` 页擦写，参数区需要支持整页读改写，并承载升级字段、备份区、日志区、配置区和校准区。 |
+| OTA 容量边界 | 明确区分“正式 App 运行空间 `396KB`”和“当前内部 Flash OTA 可升级上限 `52KB`”，解释为什么二者不是同一个问题。 |
+| 现有文档同步 | 更新 `BootLoader_APP_接入说明.md`、`BootLoader_App_实际升级运行流程详解.md` 和 `BootLoader_Two_Stage/地址_规划表.txt`，修正旧的 `76KB App 区` 表述并与当前工程真实常量对齐。 |
+| 作用 | 让后续查看者不需要先读完整升级流程，也能单独理解 Flash 分区设计、当前 OTA 上限以及以后扩展的方向。 |
+
+**验证说明**：
+- 已核对新文档中的地址、页数、容量与当前工程常量一致：`0x0800D000`、`0x63000`、`0x08073000`、`52KB`、`4KB`。
+- 本次改动为文档整理与说明增强，未修改固件逻辑，也未额外执行编译。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `44e9ec2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
