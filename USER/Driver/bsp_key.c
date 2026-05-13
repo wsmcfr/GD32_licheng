@@ -65,3 +65,23 @@ void bsp_wkup_key_exti_init(void)
     exti_init(EXTI_0, EXTI_INTERRUPT, EXTI_TRIG_FALLING);
     nvic_irq_enable(EXTI0_IRQn, 1U, 0U);
 }
+
+/*
+ * 函数作用：
+ *   在深度睡眠唤醒并完成外设重建后，关闭 EXTI0 唤醒中断并清理残留挂起位。
+ * 主要流程：
+ *   1. 先关闭 NVIC 中的 EXTI0 中断响应。
+ *   2. 再关闭 EXTI 线本身的中断使能。
+ *   3. 最后清除 EXTI 和 NVIC 的残留挂起位，避免后续普通按键使用阶段误触发。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void bsp_wkup_key_exti_deinit(void)
+{
+    nvic_irq_disable(EXTI0_IRQn);
+    exti_interrupt_disable(EXTI_0);
+    exti_interrupt_flag_clear(EXTI_0);
+    NVIC_ClearPendingIRQ(EXTI0_IRQn);
+}

@@ -61,6 +61,16 @@ void bsp_btn_init(void);
  */
 void bsp_wkup_key_exti_init(void);
 
+/*
+ * 函数作用：
+ *   关闭唤醒按键对应的 EXTI0 中断源，避免系统恢复到正常运行态后仍保留低功耗专用唤醒路径。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void bsp_wkup_key_exti_deinit(void);
+
 #ifdef __cplusplus
 }
 #endif

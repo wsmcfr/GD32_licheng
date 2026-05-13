@@ -238,6 +238,13 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
     bsp_gd30ad3344_init();
     bsp_rtc_init();
     sd_fatfs_init();
+
+    /*
+     * EXTI0 只在深睡阶段作为 WK_UP 唤醒源使用。
+     * 系统恢复到正常运行态后立即收口，避免 PA0 后续作为普通按键输入时
+     * 每次下降沿都额外打进一次低功耗专用中断。
+     */
+    bsp_wkup_key_exti_deinit();
 }
 
 /*

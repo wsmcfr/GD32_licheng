@@ -430,6 +430,98 @@ NVIC_ClearPendingIRQ(EXTI0_IRQn);
 exti_init(EXTI_0, EXTI_INTERRUPT, EXTI_TRIG_FALLING);
 ```
 
+Additional runtime contract:
+
+- `EXTI0` is a deep-sleep wake source, not a permanent application interrupt.
+- After wake recovery completes and normal app peripherals are restored, explicitly disable `EXTI0_IRQn`, disable `EXTI_0`, and clear both EXTI/NVIC pending state.
+- This prevents the low-power-only wake path from leaking into normal runtime button handling.
+
+### RTC backup-domain restore must preserve VBAT-backed time
+
+If the board provides a battery-backed `VBAT` rail, the RTC should continue running across main-power loss.
+Do not overwrite RTC date/time on every boot just because the firmware re-entered `bsp_rtc_init()`.
+
+#### 1. Scope / Trigger
+
+- Trigger: editing `USER/Driver/bsp_rtc.c`, `USER/Driver/bsp_rtc.h`, board power notes, or any startup path that calls `bsp_rtc_init()`.
+- Trigger: changing RTC clock-source setup, backup-register markers, default date/time values, or `VBAT` wiring assumptions.
+
+#### 2. Signatures
+
+Expected resources and behavior:
+
+```c
+#define BKP_VALUE 0x32F0U
+
+int bsp_rtc_init(void);
+static uint8_t bsp_rtc_has_valid_backup(void);
+static int bsp_rtc_restore_from_backup(void);
+```
+
+Backup-domain contract:
+
+| Item | Required Behavior |
+|------|-------------------|
+| `RTC_BKP0` | Stores a project-owned marker proving the RTC backup domain was initialized before |
+| Valid backup marker | Reuse current RTC time/date; do not rewrite defaults |
+| Missing backup marker | Write project default time/date and then store the marker |
+| `VBAT` battery present | RTC should continue counting when main 3V3 is removed |
+
+#### 3. Contracts
+
+- Read the backup marker before deciding whether this boot is a restore path or a cold RTC initialization.
+- If backup state is valid, do not call `rtc_init()` with default date/time values.
+- If backup state is valid, do not blindly rewrite `RCU_BDCTL_RTCSRC`; preserve the running RTC clock source unless the backup domain is intentionally reset.
+- On restore path, call `rtc_register_sync_wait()` and then `rtc_current_time_get()` so shared runtime structures reflect the persisted RTC registers.
+- Only write default date/time on first initialization or after the backup domain is known to be invalid.
+
+#### 4. Validation & Error Matrix
+
+| Observation | Likely Meaning | Required Action |
+|-------------|----------------|-----------------|
+| RTC resets to default after every wake or reboot | Startup path is rewriting RTC unconditionally | Split cold-init and backup-restore paths |
+| RTC survives reset but not full power loss with battery installed | Backup marker or RTC source may be reconfigured incorrectly | Check `RTC_BKP0`, `VBAT` wiring, and `RTCSRC` rewrite behavior |
+| RTC time reads garbage after restore | Shadow registers were not resynced | Call `rtc_register_sync_wait()` before `rtc_current_time_get()` |
+| No battery installed, RTC falls back to default time | Expected cold-start behavior | Document this as normal |
+
+#### 5. Good / Base / Bad Cases
+
+| Case | Expected Result |
+|------|-----------------|
+| Good | `VBAT` battery installed, main power removed then restored, RTC continues from previous time |
+| Base | No `VBAT` battery installed, RTC reverts to default startup time after full power loss |
+| Bad | `bsp_rtc_init()` always calls `rtc_init()` and rewrites time even when backup domain is valid |
+
+#### 6. Tests Required
+
+- Power the board from main `3V3`, set/observe a non-default RTC time, then remove only main power while keeping `VBAT` present; after restore, confirm the time advanced instead of resetting.
+- Repeat with no `VBAT` battery installed; confirm the board falls back to the documented default startup time.
+- Confirm deep-sleep wake still keeps RTC readable after `bsp_rtc_init()` is re-entered.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```c
+/* Wrong: overwrites persisted RTC time on every boot. */
+bsp_rtc_pre_cfg();
+rtc_init(&rtc_initpara);
+RTC_BKP0 = BKP_VALUE;
+```
+
+##### Correct
+
+```c
+/* Correct: only cold-start writes defaults; VBAT-backed restore just resyncs and reads current time. */
+if (RTC_BKP0 == BKP_VALUE) {
+    rtc_register_sync_wait();
+    rtc_current_time_get(&rtc_initpara);
+} else {
+    rtc_init(&rtc_initpara);
+    RTC_BKP0 = BKP_VALUE;
+}
+```
+
 ---
 
 ## Required Patterns
