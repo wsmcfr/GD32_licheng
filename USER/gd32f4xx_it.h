@@ -139,6 +139,16 @@ void USART1_IRQHandler(void);
 
 /*
  * 函数作用：
+ *   处理 USART2/OTA IDLE 中断并移交 DMA 接收帧。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void USART2_IRQHandler(void);
+
+/*
+ * 函数作用：
  *   处理 EXTI0 外部中断，主要用于唤醒按键中断标志清理。
  * 参数说明：
  *   无参数。

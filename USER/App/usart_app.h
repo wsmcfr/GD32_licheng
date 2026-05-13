@@ -9,16 +9,9 @@ extern "C" {
 
 /*
  * 宏作用：
- *   定义应用层用于暂存一帧串口数据的缓冲区长度。
+ *   定义 USART0 应用层普通桥接缓冲区长度。
  * 说明：
- *   这里使用独立的 App 层宏，避免聚合头循环包含时依赖 Driver 头中的长度宏。
- */
-/*
- * 宏作用：
- *   定义 USART0 应用层接收缓冲区长度。
- * 说明：
- *   串口升级采用 START/DATA/END 分包协议，App 每收到一个小 DATA 帧就写入
- *   片内下载缓存区，因此这里跟随 Driver 层 USART0 DMA 缓冲大小即可。
+ *   USART0 现在只承担普通透传，不再接收 OTA 帧，因此这里只保留桥接所需的缓冲。
  */
 #if defined(BSP_USART0_RX_BUFFER_SIZE)
 #define UART_APP_DMA_BUFFER_SIZE       BSP_USART0_RX_BUFFER_SIZE
@@ -36,7 +29,7 @@ extern "C" {
 
 /*
  * 变量作用：
- *   串口 IDLE 中断接收到的一帧数据缓存，以及完成标志位。
+ *   USART0 IDLE 中断接收到的一帧普通串口数据缓存，以及完成标志位。
  */
 extern __IO uint8_t rx_flag;
 extern __IO uint16_t uart_dma_length;

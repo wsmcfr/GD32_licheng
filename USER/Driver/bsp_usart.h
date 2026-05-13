@@ -20,25 +20,33 @@ extern "C" {
 
 /*
  * 宏作用：
- *   定义当前工程默认调试串口与 OTA 串口波特率。
+ *   定义当前工程默认调试串口波特率。
  * 说明：
- *   USART0 同时承担启动日志和流式 OTA 升级入口，因此 App、BootLoader 和
- *   PC 工具默认值必须保持一致。当前统一提升到 460800，以缩短分包升级耗时。
+ *   USART0 现在只承担启动日志和普通串口透传，不再接收 OTA 帧；
+ *   为保持现有终端脚本和日志观察习惯，继续沿用 460800。
  */
 #define DEBUG_USART_BAUDRATE           460800U
+
+/*
+ * 宏作用：
+ *   定义 OTA 专用串口和默认波特率。
+ * 说明：
+ *   USART2 专门承担 OTA 帧收发；PC 工具、App 和未来如需调整的 BootLoader
+ *   配置，应统一围绕这一组常量更新。
+ */
+#define UART_OTA_USART                 USART2
+#define UART_OTA_USART_BAUDRATE        460800U
 
 /* 接收缓冲区长度定义。 */
 /*
  * 宏作用：
  *   定义 USART0 DMA 接收缓冲区长度。
  * 说明：
- *   USART0 同时承担调试串口和 App 侧升级包入口。当前升级协议已经改为
- *   START/DATA/END 分包发送，App 每收到一个 DATA 帧就写入下载缓存区，
- *   因此 DMA 缓冲只需要容纳单帧数据，不再占用 52KB 级 SRAM。
+ *   USART0 只承担普通透传和调试终端，不再接收 OTA 数据，因此 1KB 缓冲足够。
  */
 #define BSP_USART0_RX_BUFFER_SIZE      1024U
 #define BSP_USART1_RX_BUFFER_SIZE      256U
-#define BSP_USART2_RX_BUFFER_SIZE      256U
+#define BSP_USART2_RX_BUFFER_SIZE      1024U
 #define BSP_USART5_RX_BUFFER_SIZE      256U
 
 /* USART0 引脚与 DMA 映射。 */
@@ -163,6 +171,18 @@ void bsp_usart5_init(void);
  *   无返回值。
  */
 void bsp_usart_all_init(void);
+
+/*
+ * 函数作用：
+ *   通过阻塞轮询方式向指定串口发送一段原始字节流。
+ * 参数说明：
+ *   usart_periph：目标 USART 外设编号。
+ *   data：待发送数据起始地址，必须指向至少 length 字节的有效缓冲区。
+ *   length：待发送字节数，单位为字节。
+ * 返回值说明：
+ *   返回实际完成发送流程的字节数；若等待标志超时，则返回超时前已发送长度。
+ */
+uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint16_t length);
 
 /*
  * 函数作用：

@@ -35,6 +35,7 @@ static task_t scheduler_task[] =
     ,{oled_task, 10,   0}
     ,{btn_task,  5,    0}
     ,{uart_task, 5,    0}
+    ,{uart_ota_task, 5, 0}
     ,{rtc_task,  500,  0}
 };
 
@@ -96,6 +97,9 @@ void system_init(void)
 		bsp_oled_init();
 		bsp_gd25qxx_init();
 		bsp_usart_init();
+		bsp_usart2_init();
+		uart_ota_reset_runtime();
+		uart_ota_emit_startup_probe();
 
 		my_printf(DEBUG_USART, "BOOT: start\r\n");
 

@@ -220,6 +220,16 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
     bsp_led_init();
     bsp_btn_init();
     bsp_usart_init();
+    /*
+     * USART2 已被定义为 OTA 专用口，深睡唤醒后必须与 USART0/USART1 一起恢复，
+     * 否则应用虽然醒来，但 OTA 通道仍停留在关闭态，后续在线升级会直接失联。
+     */
+    bsp_usart2_init();
+    /*
+     * OTA 会话运行态也要在唤醒后清空，避免睡前残留的半包长度或标志位
+     * 被误当成新的 OTA 帧继续处理。
+     */
+    uart_ota_reset_runtime();
     bsp_oled_init();
     OLED_Init();
     bsp_adc_init();

@@ -124,6 +124,7 @@ class UartOtaStreamingProtocolTest(unittest.TestCase):
         self.assertIn("firmware=10 bytes", text)
         self.assertIn("chunks=3", text)
         self.assertIn("version=0x00000003", text)
+        self.assertIn("channel=USART2", text)
 
     def test_stream_info_rejects_too_small_chunk_size(self):
         """
@@ -155,7 +156,7 @@ class UartOtaStreamingProtocolTest(unittest.TestCase):
         self.assertEqual(0, result)
         send_mock.assert_called_once()
         self.assertEqual(460800, send_mock.call_args.args[1])
-        self.assertIn("sent stream frames=68, port=COM29, baudrate=460800", output.getvalue())
+        self.assertIn("sent stream frames=68, channel=USART2, port=COM29, baudrate=460800", output.getvalue())
 
     def test_find_ack_frame_ignores_text_before_binary_ack(self):
         """

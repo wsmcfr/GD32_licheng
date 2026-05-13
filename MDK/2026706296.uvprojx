@@ -614,6 +614,11 @@
               <FileType>1</FileType>
               <FilePath>..\USER\Driver\bsp_power.c</FilePath>
             </File>
+            <File>
+              <FileName>bootloader_port.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\USER\Driver\bootloader_port.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -753,6 +758,11 @@
               <FileName>scheduler.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\USER\App\scheduler.c</FilePath>
+            </File>
+            <File>
+              <FileName>uart_ota_app.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\USER\App\uart_ota_app.c</FilePath>
             </File>
           </Files>
         </Group>

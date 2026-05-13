@@ -8,6 +8,31 @@ uint8_t usart5_rxbuffer[BSP_USART5_RX_BUFFER_SIZE];
 
 /*
  * 函数作用：
+ *   等待指定 USART 标志置位，并在异常情况下超时返回。
+ * 参数说明：
+ *   usart_periph：目标 USART 外设编号。
+ *   flag：需要等待置位的 USART 状态标志。
+ * 返回值说明：
+ *   1：表示在超时前等到目标标志置位。
+ *   0：表示等待超时。
+ */
+static uint8_t prv_bsp_usart_wait_flag_set(uint32_t usart_periph, usart_flag_enum flag)
+{
+    uint32_t timeout = 1000000UL;
+
+    while(RESET == usart_flag_get(usart_periph, flag)){
+        if(0U == timeout){
+            return 0U;
+        }
+        /* 简单递减计数作为超时条件，避免异常串口把主循环永久卡死。 */
+        timeout--;
+    }
+
+    return 1U;
+}
+
+/*
+ * 函数作用：
  *   将 RS485 方向控制脚 PE8 配置为可真实驱动外部 485_CS 网络的 GPIO 推挽输出。
  * 主要流程：
  *   1. 确保 GPIOE 时钟已开启。
@@ -233,11 +258,15 @@ void bsp_usart2_init(void)
                             USART2_TX_PIN | USART2_RX_PIN);
 
     usart_deinit(USART2);
-    usart_baudrate_set(USART2, 115200U);
+    usart_baudrate_set(USART2, UART_OTA_USART_BAUDRATE);
     usart_receive_config(USART2, USART_RECEIVE_ENABLE);
     usart_transmit_config(USART2, USART_TRANSMIT_ENABLE);
     usart_dma_receive_config(USART2, USART_RECEIVE_DMA_ENABLE);
     usart_enable(USART2);
+
+    /* USART2 现在承担 OTA 专用接收，因此也启用 IDLE 中断移交整帧。 */
+    nvic_irq_enable(USART2_IRQn, 1U, 1U);
+    usart_interrupt_enable(USART2, USART_INT_IDLE);
 }
 
 /*
@@ -302,4 +331,40 @@ void bsp_usart_all_init(void)
     bsp_usart1_init();
     bsp_usart2_init();
     bsp_usart5_init();
+}
+
+/*
+ * 函数作用：
+ *   通过阻塞轮询方式向指定串口发送一段原始字节流。
+ * 主要流程：
+ *   1. 逐字节等待 TBE 后写入数据寄存器。
+ *   2. 所有字节发送完后，再等待 TC 确认最后一个字节已经完全移出移位寄存器。
+ * 参数说明：
+ *   usart_periph：目标 USART 外设编号。
+ *   data：待发送数据起始地址。
+ *   length：待发送字节数，单位为字节。
+ * 返回值说明：
+ *   返回实际完成发送流程的字节数。
+ */
+uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint16_t length)
+{
+    uint16_t index;
+
+    if((NULL == data) || (0U == length)){
+        return 0U;
+    }
+
+    for(index = 0U; index < length; index++){
+        if(0U == prv_bsp_usart_wait_flag_set(usart_periph, USART_FLAG_TBE)){
+            return index;
+        }
+        /* TBE 置位后再写 DATA，确保不会覆盖上一字节尚未装载完成的发送缓冲。 */
+        usart_data_transmit(usart_periph, data[index]);
+    }
+
+    if(0U == prv_bsp_usart_wait_flag_set(usart_periph, USART_FLAG_TC)){
+        return index;
+    }
+
+    return length;
 }

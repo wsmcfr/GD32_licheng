@@ -48,6 +48,7 @@
 #include "bsp_analog.h"
 #include "bsp_rtc.h"
 #include "bsp_power.h"
+#include "bootloader_port.h"
 
 /* Component 层头文件。 */
 #include "gd25qxx.h"
@@ -63,6 +64,7 @@
 #include "rtc_app.h"
 #include "sd_app.h"
 #include "usart_app.h"
+#include "uart_ota_app.h"
 #endif
 
 #ifdef __cplusplus

@@ -34,7 +34,7 @@ It maps to hardware-near firmware code:
 - [ ] Read [Error Handling](./error-handling.md)
 - [ ] Read [Logging Guidelines](./logging-guidelines.md)
 - [ ] Read [Quality Guidelines](./quality-guidelines.md)
-- [ ] If touching BootLoader, App relocation, USART0 OTA, or Flash partition constants, read [Embedded OTA Guidelines](./embedded-ota-guidelines.md)
+- [ ] If touching BootLoader, App relocation, USART2 OTA, or Flash partition constants, read [Embedded OTA Guidelines](./embedded-ota-guidelines.md)
 - [ ] If touching SD card, SPI Flash, or LittleFS, read [Database Guidelines](./database-guidelines.md)
 - [ ] If touching ISR-to-task handoff, DMA buffers, or wakeup flow, also read [`../guides/cross-layer-thinking-guide.md`](../guides/cross-layer-thinking-guide.md)
 - [ ] Search existing pin, DMA, IRQ, and buffer-size values before changing them
@@ -50,7 +50,7 @@ It maps to hardware-near firmware code:
 | [Error Handling](./error-handling.md) | Fail-stop, return-code, and ISR safety patterns | Project-specific |
 | [Logging Guidelines](./logging-guidelines.md) | Debug UART logging conventions | Project-specific |
 | [Quality Guidelines](./quality-guidelines.md) | Review checklist and forbidden low-level patterns | Project-specific |
-| [Embedded OTA Guidelines](./embedded-ota-guidelines.md) | USART0 App-side OTA package, Flash layout, and BootLoader handoff contracts | Project-specific |
+| [Embedded OTA Guidelines](./embedded-ota-guidelines.md) | USART2 App-side OTA package, Flash layout, and BootLoader handoff contracts | Project-specific |
 
 ---
 
@@ -60,7 +60,7 @@ It maps to hardware-near firmware code:
 - `USER/Driver/bsp_usart.c`: typical peripheral/DMA/IRQ initialization style
 - `USER/App/sd_app.c`: storage status checking, logging, and compatibility wrappers
 - `USER/gd32f4xx_it.c`: ISR structure and fail-stop handlers
-- `USER/App/usart_app.c`: USART0 OTA packet parsing and BootLoader parameter handoff
+- `USER/App/uart_ota_app.c`: USART2 OTA packet parsing and BootLoader parameter handoff
 - `tools/make_uart_ota_packet.py`: PC-side `.uota` packet generator
 
 ---

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 脚本作用：
-  生成或发送 App 侧 USART0 OTA 升级数据。
+  生成或发送 App 侧 USART2 OTA 升级数据。
 主要流程：
   1. 读取 Keil/fromelf 生成的 Project.bin。
   2. 默认 packet 模式保留旧 16 字节包头 + 原始 bin 的 Project.uota 生成能力。
@@ -36,6 +36,7 @@ UART_OTA_FRAME_END = 3
 UART_OTA_FRAME_ACK_BASE = 0x80
 UART_OTA_ACK_FRAME_SIZE = 20
 UART_OTA_DEFAULT_BAUDRATE = 460800
+UART_OTA_CHANNEL_NAME = "USART2"
 
 
 @dataclass(frozen=True)
@@ -411,7 +412,8 @@ def print_stream_info(input_bin: Path, app_version: int, chunk_size: int) -> Non
         f"crc=0x{firmware_crc32:08X}, "
         f"version=0x{app_version:08X}, "
         f"chunk_size={chunk_size}, "
-        f"chunks={chunk_count}"
+        f"chunks={chunk_count}, "
+        f"channel={UART_OTA_CHANNEL_NAME}"
     )
 
 
@@ -472,6 +474,7 @@ def send_stream_over_serial(port: str,
         f"version=0x{app_version:08X}, "
         f"chunk_size={chunk_size}, "
         f"chunks={chunk_count}, "
+        f"channel={UART_OTA_CHANNEL_NAME}, "
         f"port={port}, "
         f"baudrate={baudrate}",
         flush=True,
@@ -522,7 +525,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                               args.version,
                                               args.chunk_size,
                                               args.ack_timeout)
-        print(f"sent stream frames={frame_count}, port={args.port}, baudrate={args.baudrate}")
+        print(f"sent stream frames={frame_count}, channel={UART_OTA_CHANNEL_NAME}, port={args.port}, baudrate={args.baudrate}")
         return 0
 
     total_size, firmware_size, firmware_crc32 = build_packet(input_bin, output_file, args.version)
