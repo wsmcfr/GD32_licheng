@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
 脚本作用：
-  生成 App 侧串口升级协议使用的发送文件。
+  生成或发送 App 侧 USART0 OTA 升级数据。
 主要流程：
   1. 读取 Keil/fromelf 生成的 Project.bin。
-  2. 在文件开头追加小端 magic、appVersion、固件大小和 CRC32。
-  3. 输出 16 字节包头 + 原始 bin 的 ota 文件，供串口助手“发送文件”使用。
+  2. 默认 packet 模式保留旧 16 字节包头 + 原始 bin 的 Project.uota 生成能力。
+  3. stream-info 模式打印分包数量、固件大小和 CRC，供发送前核对。
+  4. send 模式按 START/DATA/END 帧发送，并等待 App 返回 ACK 后再发下一帧。
 参数说明：
   第 1 个位置参数：输入 bin 文件路径，默认 MDK/output/Project.bin。
-  第 2 个位置参数：输出 ota 文件路径，默认 MDK/output/Project.uota。
+  第 2 个位置参数：packet 模式输出 ota 文件路径，默认 MDK/output/Project.uota。
   --version：写入包头的 App 版本号，支持十进制或 0x 前缀十六进制，默认 0x00000001。
+  --mode：packet、stream-info 或 send；当前低 RAM 在线升级推荐 send。
 返回值说明：
-  0：生成成功。
-  非 0：输入文件不存在、读取失败或写入失败。
+  0：执行成功。
+  非 0：输入文件不存在、读取失败、写入失败、串口依赖缺失或发送失败。
 """
 
 from __future__ import annotations
@@ -312,7 +314,7 @@ def parse_positive_u32(value: str) -> int:
 def build_packet(input_bin: Path, output_file: Path, app_version: int) -> tuple[int, int, int]:
     """
     函数作用：
-      根据输入 bin 生成串口升级发送文件。
+      根据输入 bin 生成旧完整包格式的升级文件。
     主要流程：
       1. 读取原始 Project.bin 内容。
       2. 计算固件 CRC32，并使用 struct.pack('<IIII') 生成小端包头。
@@ -323,6 +325,9 @@ def build_packet(input_bin: Path, output_file: Path, app_version: int) -> tuple[
       app_version：写入包头的 App 版本号。
     返回值说明：
       返回三元组：(生成文件总字节数, 固件原始长度, 固件 CRC32)。
+    说明：
+      该模式主要用于离线检查兼容旧格式；当前低 RAM 在线升级应使用
+      --mode send 逐帧发送 START/DATA/END。
     """
     firmware = input_bin.read_bytes()
     firmware_crc32 = crc32_bytes(firmware)

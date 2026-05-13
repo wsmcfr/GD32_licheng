@@ -113,9 +113,10 @@ Add CLI options:
 
 - `--mode packet` keeps current behavior and writes `Project.uota`.
 - `--mode stream-info` prints frame/chunk metadata without opening a serial port.
+- `--mode send --port COMx` opens a serial port, sends START/DATA/END frames, and waits for ACK after every frame.
 - `--chunk-size <N>` defaults to `512`, must fit in App USART0 frame buffer.
 
-Do not add serial-port dependencies in this task. Actual serial sending can be added later or done by a separate helper if needed.
+`--mode send` imports `pyserial` only when that mode is used. If the module is missing, the tool prints the install hint instead of affecting packet generation or `stream-info`.
 
 **Step 3: Verify**
 
@@ -311,9 +312,9 @@ git push origin main
 
 ---
 
-## Explicit Non-Goals
+## Final Implementation Notes
 
 - Do not rewrite BootLoader to read external SPI Flash in this phase.
 - Do not move App start address or BootLoader parameter address.
 - Do not remove the current internal `52KB` download-buffer limit yet.
-- Do not add third-party Python serial dependencies unless the user explicitly chooses an automated sender tool.
+- The implementation did add an optional `--mode send` path. It depends on `pyserial` only at runtime for real serial sending; unit tests and packet generation still use the Python standard library.

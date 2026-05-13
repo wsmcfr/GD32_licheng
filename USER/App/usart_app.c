@@ -27,8 +27,8 @@ static uint8_t rs485_forward_buffer[UART_APP_RS485_BUFFER_SIZE] = {0};
  * 宏作用：
  *   定义 my_printf() 的格式化缓冲区长度。
  * 说明：
- *   USART0 升级接收缓冲已经扩大到 52KB 级别，但日志格式化不应占用同等
- *   栈空间，因此这里单独限制调试日志单行长度。
+ *   USART0 升级接收已经改为分包写入 Flash，日志格式化不需要跟随 OTA
+ *   分包缓冲扩大，因此这里单独限制调试日志单行长度。
  */
 #define UART_APP_PRINTF_BUFFER_SIZE    512U
 
@@ -1241,8 +1241,8 @@ void uart_task(void)
         }else if(UART_OTA_RESULT_FRAME_CONSUMED == ota_result){
             /*
              * 流式 OTA 每个 START/DATA 帧都已经被即时处理并回 ACK。
-             * 清空本帧长度后，上位机才能发送下一帧，避免 App 为完整固件
-             * 保留 52KB 级 RAM 缓冲。
+             * 清空本帧长度后，上位机才能发送下一帧，App 只需要保留当前
+             * 小帧缓冲，完整固件则直接落到片内下载缓存区。
              */
             __disable_irq();
             if(rx_snapshot_length == uart_dma_length){

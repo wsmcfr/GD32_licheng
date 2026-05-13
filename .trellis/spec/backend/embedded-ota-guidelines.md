@@ -1,55 +1,66 @@
 # Embedded OTA Guidelines
 
-> Scope: USART0 App-side OTA flow for the GD32F470 BootLoader_Two_Stage integration.
+> Scope: USART0 App-side streaming OTA flow for the GD32F470 BootLoader_Two_Stage integration.
 
 ---
 
-## Scenario: USART0 App-Side OTA Package
+## Scenario: USART0 App-Side Streaming OTA
 
 ### 1. Scope / Trigger
 
 Use this guideline whenever changing:
 
-- `USER/App/usart_app.c` OTA parsing, CRC, Flash write, or reset flow
-- `USER/gd32f4xx_it.c` USART0 IDLE + DMA handoff behavior
-- `USER/Driver/bsp_usart.h` USART0 DMA buffer sizes
-- `tools/make_uart_ota_packet.py` packet generation
-- BootLoader/App Flash partition constants or parameter layout
+| Area | Files / Entries |
+|------|-----------------|
+| App OTA parser | `USER/App/usart_app.c`, `USER/App/usart_app.h` |
+| USART0 DMA handoff | `USER/gd32f4xx_it.c`, `USER/Driver/bsp_usart.h`, `USER/Driver/bsp_usart.c` |
+| PC OTA tool | `tools/make_uart_ota_packet.py`, `tools/test_uart_ota_packet.py` |
+| Boot handoff | BootLoader/App Flash partition constants, parameter layout, or CRC logic |
 
-This is a cross-layer contract. The PC-side packet generator, App-side receiver, internal Flash layout, and BootLoader parameter reader must agree exactly.
+This is a cross-layer contract. The PC-side sender, App-side receiver, internal Flash layout, and BootLoader parameter reader must agree exactly.
 
 ### 2. Signatures
 
 | Boundary | Signature / Entry | Contract |
 |----------|-------------------|----------|
-| PC tool | `python tools\make_uart_ota_packet.py --version <u32>` | Reads `MDK/output/Project.bin`, writes `MDK/output/Project.uota` |
-| Packet format | `struct.pack("<IIII", magic, version, size, crc32) + firmware` | All four header fields are little-endian `uint32_t` |
-| App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Returns `uart_ota_result_t`; only resets after download-buffer and parameter writes pass |
-| ISR handoff | `USART0_IRQHandler(void)` | Appends DMA chunks into `uart_dma_buffer` and sets `rx_flag` |
-| Task polling | `uart_task(void)` | Processes `rx_flag`, handles OTA before normal USART0-to-RS485 forwarding |
+| Stream info | `python tools\make_uart_ota_packet.py --mode stream-info --version <u32> --chunk-size 512` | Reads `MDK/output/Project.bin`, prints size, CRC32, version, chunk size, and chunk count |
+| Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Sends START/DATA/END frames and waits for ACK after every frame |
+| Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `MDK/output/Project.uota` for offline inspection only; current low-RAM USART0 OTA must not send it directly |
+| App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one streaming frame; only returns success after download-buffer CRC and parameter writes pass |
+| ISR handoff | `USART0_IRQHandler(void)` | Copies one IDLE DMA frame into `uart_dma_buffer`, records `uart_dma_length`, and sets `rx_flag` |
+| Task polling | `uart_task(void)` | Handles OTA frames before normal USART0-to-RS485 forwarding |
 
-### 3. Contracts
+### 3. Protocol Contract
 
-#### Packet Header
+All multi-byte fields are little-endian `uint32_t`.
 
-| Offset | Field | Type | Required Value / Meaning |
-|--------|-------|------|--------------------------|
-| `0x00` | `magic` | little-endian `uint32_t` | `0x5AA5C33C` |
-| `0x04` | `appVersion` | little-endian `uint32_t` | Monotonic application version chosen by operator |
-| `0x08` | `firmwareSize` | little-endian `uint32_t` | Raw `Project.bin` byte count, `1..52KB` |
-| `0x0C` | `firmwareCRC32` | little-endian `uint32_t` | CRC32 of raw `Project.bin` bytes |
-| `0x10` | `firmware` | byte array | Raw `Project.bin` linked for `0x0800D000` |
+| Frame | Direction | Size / Format | Required Behavior |
+|-------|-----------|---------------|-------------------|
+| START | PC to App | `magic=0xA55A5AA5`, `type=1`, `appVersion`, `firmwareSize`, `firmwareCRC32`, `headerCRC32` | App validates header CRC and size, erases `0x08073000`, initializes session, then ACKs |
+| DATA | PC to App | `magic=0xA55A5AA5`, `type=2`, `seq`, `offset`, `length`, `chunkCRC32`, `chunk` | App validates sequence, offset, length, chunk CRC, first-chunk vector table, then writes chunk to Flash |
+| END | PC to App | `magic=0xA55A5AA5`, `type=3`, `firmwareSize`, `firmwareCRC32` | App validates total size, running CRC, Flash readback CRC, writes BootLoader parameters, then ACKs and resets |
+| ACK | App to PC | `magic=0xA55A5AA5`, `type=0x80|原帧类型`, `status`, `value0`, `value1` | PC must wait for status `0` before sending the next frame |
 
-#### Flash Layout
+Current App-side limits:
+
+| Constant | Current Value | Reason |
+|----------|---------------|--------|
+| `BSP_USART0_RX_BUFFER_SIZE` | `1024U` | Must hold one DATA frame, not a full firmware image |
+| `UART_OTA_STREAM_CHUNK_SIZE` | `512U` | `512B` payload + `24B` DATA header fits safely in 1KB |
+| `UART_OTA_DOWNLOAD_MAX_SIZE` | `52KB` | Internal Flash download buffer remains `0x08073000..0x0807FFFF` |
+| App start | `0x0800D000` | BootLoader jumps here after copying |
+| Parameter area | `0x0800C000` | App writes update flags; BootLoader reads after reset |
+
+### 4. Flash Layout
 
 | Region | Address | Size | Owner |
 |--------|---------|------|-------|
 | BootLoader | `0x08000000` | `48KB` | BootLoader image |
 | Parameter area | `0x0800C000` | `4KB` | App writes update flags; BootLoader reads them after reset |
 | App area | `0x0800D000` | `0x63000` | BootLoader writes final App image here |
-| Download buffer | `0x08073000` | `52KB` | App writes received firmware here before reset |
+| Download buffer | `0x08073000` | `52KB` | App writes received firmware chunks here before reset |
 
-#### Boot Parameter Fields
+### 5. Boot Parameter Fields
 
 When OTA succeeds, App must write these fields in the BootLoader-compatible parameter layout:
 
@@ -58,91 +69,113 @@ When OTA succeeds, App must write these fields in the BootLoader-compatible para
 | `magicWord` | `0x5AA5C33C` |
 | `updateFlag` | `0x5A` |
 | `updateStatus` | `0x01` |
-| `appSize` | `firmwareSize` from packet header |
-| `appCRC32` | `firmwareCRC32` from packet header |
-| `appVersion` | `appVersion` from packet header |
+| `appSize` | `firmwareSize` from START/END |
+| `appCRC32` | `firmwareCRC32` from START/END |
+| `appVersion` | `appVersion` from START |
 | `appStartAddr` | `0x0800D000` |
 | `appStackAddr` | Word at `0x0800D000` |
 | `appEntryAddr` | Word at `0x0800D004` |
 
-### 4. Validation & Error Matrix
+### 6. Validation & Error Matrix
 
 | Check | Valid Condition | Failure Result | Required Behavior |
 |-------|-----------------|----------------|-------------------|
-| Magic prefix | First bytes match little-endian `0x5AA5C33C` | Not a packet or wait more | Preserve normal serial forwarding unless prefix indicates partial OTA |
-| Packet length | `packet_length == 16 + firmwareSize` | Bad length or wait more | Do not write Flash until complete package is present |
-| Firmware size | `1 <= firmwareSize <= 52KB` | `UART_OTA_RESULT_BAD_LENGTH` | Reject and keep BootLoader parameter flags unchanged |
-| Vector table | MSP in SRAM; entry in App range and Thumb address | `UART_OTA_RESULT_BAD_VECTOR` | Reject before erasing download buffer |
-| Header CRC | CRC32(raw firmware) equals header CRC | `UART_OTA_RESULT_VERIFY_ERROR` | Reject before writing BootLoader parameters |
-| Download writeback CRC | CRC32 at `0x08073000` equals firmware CRC | `UART_OTA_RESULT_VERIFY_ERROR` | Reject before writing BootLoader parameters |
-| Parameter write | Full 4KB parameter area write succeeds | `UART_OTA_RESULT_FLASH_ERROR` | Do not reset if update flags were not written correctly |
-| Success | Download and parameter writes both pass | `UART_OTA_RESULT_SUCCESS` | Print ready log and software-reset into BootLoader |
+| Magic prefix | First 4 bytes match `0xA55A5AA5` | Not an OTA frame, or wait for more bytes if partial prefix | Preserve normal serial forwarding unless prefix indicates partial OTA |
+| START length | `frame_length == 24` | `UART_OTA_RESULT_BAD_LENGTH` | ACK error; do not erase Flash |
+| START header CRC | `CRC32(frame[0..19]) == headerCRC32` | `UART_OTA_RESULT_VERIFY_ERROR` | ACK error; keep BootLoader flags unchanged |
+| Firmware size | `1 <= firmwareSize <= 52KB` | `UART_OTA_RESULT_BAD_LENGTH` | ACK error; do not write Flash |
+| DATA length | `frame_length == 24 + length`, `1 <= length <= 512` | `UART_OTA_RESULT_BAD_LENGTH` | ACK error; keep current session state for operator retry/restart |
+| DATA order | `seq == next_seq`, `offset == received_size` | `UART_OTA_RESULT_BAD_LENGTH` | ACK error; reject out-of-order or duplicated chunks |
+| Chunk CRC | `CRC32(chunk) == chunkCRC32` | `UART_OTA_RESULT_VERIFY_ERROR` | ACK error; do not write the chunk |
+| Vector table | First chunk MSP in SRAM; entry in App range and Thumb address | `UART_OTA_RESULT_BAD_VECTOR` | ACK error before accepting invalid firmware |
+| Flash write | Chunk writes to `0x08073000 + offset` successfully | `UART_OTA_RESULT_FLASH_ERROR` | ACK error; do not advance offset |
+| END size/CRC | END fields match START and all bytes received | `UART_OTA_RESULT_BAD_LENGTH` or `VERIFY_ERROR` | ACK error; do not write BootLoader parameters |
+| Download writeback CRC | CRC32 at `0x08073000` equals firmware CRC | `UART_OTA_RESULT_VERIFY_ERROR` | ACK error; do not write BootLoader parameters |
+| Parameter write | Full 4KB parameter area write succeeds | `UART_OTA_RESULT_FLASH_ERROR` | ACK error; do not reset if update flags were not written correctly |
+| Success | Download and parameter writes both pass | `UART_OTA_RESULT_SUCCESS` | Send END ACK, print ready log, software-reset into BootLoader |
 
-### 5. Good / Base / Bad Cases
+### 7. Good / Base / Bad Cases
 
 | Case | Input | Expected Result |
 |------|-------|-----------------|
-| Good | Fresh `Project.uota`, size below `52KB`, correct CRC and vector table | App prints `OTA: ready, reset to BootLoader`; BootLoader prints `app crc32 check pass` and `app update success` |
-| Base | Normal USART0 data that does not start with OTA magic | Data follows existing transparent forwarding behavior |
-| Base | USB-to-serial splits `.uota` into multiple IDLE chunks | ISR accumulates chunks until full packet is present |
-| Bad | Operator sends `Project.bin` directly | No OTA write is triggered because magic/header are missing |
-| Bad | `firmwareSize > 52KB` | App rejects before writing Flash |
-| Bad | CRC mismatch | App rejects and does not set BootLoader update flags |
-| Bad | Invalid vector table | App rejects before erasing download buffer |
+| Good | `--mode send`, `Project.bin <= 52KB`, correct CRC and vector table | App prints `OTA: stream start ...` and `OTA: ready, reset to BootLoader`; BootLoader prints `app crc32 check pass` and `app update success` |
+| Base | Normal USART0 data that does not start with streaming OTA magic | Data follows existing transparent forwarding behavior |
+| Base | USB-to-serial sends one START/DATA/END frame per IDLE receive | App consumes each frame and returns ACK before the next frame |
+| Bad | Operator sends `Project.bin` directly | No OTA write is triggered because frame magic/type/header are missing |
+| Bad | Operator sends legacy `Project.uota` directly | Current low-RAM streaming parser rejects it because magic is `0x5AA5C33C`, not `0xA55A5AA5` |
+| Bad | `firmwareSize > 52KB` | App rejects START before writing firmware chunks |
+| Bad | CRC mismatch or invalid vector table | App rejects and does not set BootLoader update flags |
 
-### 6. Tests Required
+### 8. Tests Required
 
 Before committing OTA-related changes, run:
 
 ```powershell
-python tools\make_uart_ota_packet.py --version 0x00000002
+python -m unittest tools.test_uart_ota_packet
+python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000003 --chunk-size 512
+python tools\make_uart_ota_packet.py --version 0x00000003
 & 'E:\Keil_v5\UV4\UV4.exe' -b 'MDK\2026706296.uvprojx' -j0
-Select-String -Path 'MDK\output\Project.build_log.htm' -Pattern 'Error\(s\)|Warning\(s\)'
+Select-String -Path 'MDK\output\Project.build_log.htm' -Pattern 'Program Size|Error\(s\)|Warning\(s\)'
+& 'E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe' --text -z 'MDK\output\Project.axf'
 ```
 
 Required assertions:
 
-- Packet tool prints output path, total size, firmware size, CRC32, and version.
-- Keil build log reports `0 Error(s)`.
-- If hardware is available, send `MDK/output/Project.uota`, not `Project.bin`.
-- Hardware log must include `OTA: ready, reset to BootLoader`, then BootLoader `app crc32 check pass` and `app update success`.
+| Assertion | Expected Evidence |
+|-----------|-------------------|
+| Python tests | `OK` from `tools.test_uart_ota_packet` |
+| Stream info | Output contains firmware size, CRC, version, chunk size, and chunk count |
+| Legacy packet mode | Still generates `Project.uota`, but docs must mark it as not recommended for current low-RAM OTA sending |
+| Keil build | Build log reports `0 Error(s)` |
+| RAM usage | `fromelf` shows `usart0_rxbuffer` and `uart_dma_buffer` at `0x400` each, not `52KB+16B` |
+| Hardware, when available | Use `--mode send --port COMx`; log must include `OTA: ready, reset to BootLoader`, then BootLoader `app crc32 check pass` and `app update success` |
 
-### 7. Wrong vs Correct
+### 9. Wrong vs Correct
 
 #### Wrong
 
 ```powershell
-# Sends raw firmware. The App-side OTA parser will not see the required header.
+# Raw firmware has no streaming frame header, so App will not enter OTA mode.
 send-file MDK\output\Project.bin
+```
+
+#### Wrong
+
+```powershell
+# Legacy full package can still be generated, but direct sending is not the current low-RAM OTA flow.
+python tools\make_uart_ota_packet.py --version 0x00000002
+send-file MDK\output\Project.uota
 ```
 
 #### Correct
 
 ```powershell
-# Generate the App-side OTA packet first, then send the .uota file.
-python tools\make_uart_ota_packet.py --version 0x00000002
-send-file MDK\output\Project.uota
+# First check metadata, then send streaming frames and wait for ACK after every frame.
+python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000002 --chunk-size 512
+python tools\make_uart_ota_packet.py --mode send --port COM7 --version 0x00000002 --chunk-size 512
 ```
 
 #### Wrong
 
 ```c
-/* Magic value is right, but field byte order is host-dependent and not explicit. */
-fwrite(&header, sizeof(header), 1, output);
+/* Reducing only the C buffer without changing the PC sender can split one DATA frame. */
+#define BSP_USART0_RX_BUFFER_SIZE 128U
 ```
 
 #### Correct
 
-```python
-# Header byte order is explicit and matches App-side little-endian parsing.
-packet = struct.pack("<IIII", UART_OTA_MAGIC, app_version, len(firmware), firmware_crc32) + firmware
+```c
+/* 512B 数据 + 24B DATA 头可放入 1024B DMA 缓冲，仍保留调试串口余量。 */
+#define BSP_USART0_RX_BUFFER_SIZE 1024U
 ```
 
 ---
 
 ## Common Mistakes
 
-- Do not reduce `BSP_USART0_RX_BUFFER_SIZE` below `52KB + 16B` without changing the OTA transport model.
+- Do not send `Project.bin`, `Project.hex`, or legacy `Project.uota` directly for the current low-RAM OTA flow.
+- Do not reduce `BSP_USART0_RX_BUFFER_SIZE` below the largest DATA frame size plus header.
+- Do not raise `--chunk-size` above `UART_OTA_STREAM_CHUNK_SIZE` unless App and tests are updated together.
 - Do not move `0x0800C000`, `0x0800D000`, or `0x08073000` in one layer only.
 - Do not reset after writing the download buffer if BootLoader parameter flags were not written.
-- Do not treat `.bin`, `.hex`, and `.uota` as interchangeable files.
+- Do not claim App images larger than `52KB` are supported until the download-buffer storage is redesigned.
