@@ -248,3 +248,53 @@ project specs so future low-power or OTA work has concrete guardrails.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Raise UART OTA baudrate and sync workflow docs
+
+**Date**: 2026-05-13
+**Task**: Raise UART OTA baudrate and sync workflow docs
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+Raised UART OTA to 460800, added ACK progress output, and synced repository docs plus maintenance rules.
+
+### Main Changes
+
+| Item | Details |
+|------|---------|
+| Work | Raised the UART OTA path to 460800 baud across the App, BootLoader copy, and PC-side tool, added frame-by-frame ACK progress output, and synchronized the operator docs and maintenance rules. |
+| Firmware Defaults | `USER/Driver/bsp_usart.*`, `BootLoader_Two_Stage/27_0_BootLoader/HardWare/USART/*`, and `BootLoader_Two_Stage/27_1_App/HardWare/USART/*` now use `460800` as the default USART0 OTA baudrate. |
+| Tooling | `tools/make_uart_ota_packet.py` now prints `send stream ...`, `START acked ...`, repeated `DATA acked ...`, and `END acked ...` so OTA progress and the failing frame position are visible during transfer. |
+| Hardware Validation | The operator flow was validated with `python tools\\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512`, which completed with `sent stream frames=68`. |
+| Local Board Adjustment | The user's manual BootLoader LED remap from `GPIOA 4~7` to `GPIOD 10~13` was preserved while syncing the BootLoader-side serial defaults. |
+| Repository Docs | `BootLoader_APP_接入说明.md`, `工程文档.md`, and `BootLoader_Two_Stage_官方例程详解.md` were updated to reflect the 460800 workflow, ACK progress output, version increment expectations, and the current COM29 send command. |
+| Prompt + Spec Rules | `AGENTS.md` now requires code/config/protocol changes to update the matching docs, and `.trellis/spec/backend/quality-guidelines.md` now records the same requirement as a durable review rule. |
+| Scope Control | Unrelated local files in `MDK/*.uvoptx`, the schematic PDF, and `tmp/` remained outside the commits. |
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8ac0be5` | feat(ota-tool): 增加串口发送进度输出 |
+| `7f186d6` | feat(uart): 提升默认升级串口波特率并同步bootloader |
+| `b1c9f07` | docs(ota): 同步升级流程文档与文档维护规则 |
+
+### Testing
+
+- [OK] `python -m unittest tools.test_uart_ota_packet`
+- [OK] App Keil build: `0 Error(s), 1 existing warning`
+- [OK] BootLoader Keil build: `0 Error(s), 0 Warning(s)`
+- [OK] Official `27_1_App` copy build: `0 Error(s), 0 Warning(s)`
+- [OK] `python tools\\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512`
+- [OK] `python tools\\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Keep incrementing `--version` for each OTA attempt.
+- If transfer speed is still not enough, evaluate whether the target UART clock and host adapter remain stable at a higher baudrate before changing defaults again.
