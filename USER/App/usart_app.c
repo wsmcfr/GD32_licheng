@@ -34,22 +34,42 @@ static uint8_t rs485_forward_buffer[UART_APP_RS485_BUFFER_SIZE] = {0};
 
 /*
  * 宏作用：
- *   定义 App 侧串口升级协议的固定魔术字。
+ *   定义 BootLoader 参数区使用的固定魔术字。
  * 说明：
- *   上位机发送的升级文件必须以小端 0x5AA5C33C 开头，避免普通串口转发数据
- *   被误当成固件写入片内 Flash。
+ *   该值必须与 BootLoader 侧 BOOT_PARAM_MAGIC 保持一致；分包串口传输本身
+ *   使用独立的 UART_OTA_STREAM_MAGIC，避免旧完整包和新流式帧混淆。
  */
 #define UART_OTA_MAGIC                 0x5AA5C33CUL
 
 /*
  * 宏作用：
- *   定义升级文件包头长度。
+ *   定义 App 侧流式串口升级协议的固定魔术字。
  * 说明：
- *   包头布局为 magic(4B，小端) + appVersion(4B，小端) +
- *   firmwareSize(4B，小端) + firmwareCRC32(4B，小端)，后续全部字节为
- *   Project.bin 原始内容。
+ *   上位机每个流式升级帧都必须以小端 0xA55A5AA5 开头，App 侧据此把
+ *   OTA 控制帧与普通 USART0 透明转发数据区分开。
  */
-#define UART_OTA_HEADER_SIZE           16U
+#define UART_OTA_STREAM_MAGIC          0xA55A5AA5UL
+
+/* 流式 OTA 帧类型定义，必须与 tools/make_uart_ota_packet.py 保持一致。 */
+#define UART_OTA_FRAME_START           1U
+#define UART_OTA_FRAME_DATA            2U
+#define UART_OTA_FRAME_END             3U
+#define UART_OTA_FRAME_ACK_BASE        0x80U
+
+/* START/DATA/END/ACK 帧头长度定义，所有多字节字段均为小端 uint32_t。 */
+#define UART_OTA_START_FRAME_SIZE      24U
+#define UART_OTA_DATA_HEADER_SIZE      24U
+#define UART_OTA_END_FRAME_SIZE        16U
+#define UART_OTA_ACK_FRAME_SIZE        20U
+
+/*
+ * 宏作用：
+ *   定义当前流式 OTA 默认允许的最大分包数据长度。
+ * 说明：
+ *   后续 USART0 DMA 缓冲会降到 KB 级，单个 DATA 帧必须小于接收缓冲；
+ *   512B 数据 + 24B 帧头能稳妥放入 1KB 缓冲。
+ */
+#define UART_OTA_STREAM_CHUNK_SIZE     512U
 
 /* BootLoader 固定参数区地址，App 写入升级参数后复位交给 BootLoader 搬运。 */
 #define UART_OTA_PARAM_ADDR            0x0800C000UL
@@ -84,8 +104,47 @@ typedef enum
     UART_OTA_RESULT_BAD_VECTOR,
     UART_OTA_RESULT_FLASH_ERROR,
     UART_OTA_RESULT_VERIFY_ERROR,
-    UART_OTA_RESULT_WAIT_MORE
+    UART_OTA_RESULT_WAIT_MORE,
+    UART_OTA_RESULT_FRAME_CONSUMED
 } uart_ota_result_t;
+
+/*
+ * 枚举作用：
+ *   表示流式 OTA 会话当前阶段。
+ * 说明：
+ *   App 必须严格按 START -> DATA* -> END 的顺序接收，避免乱序帧或残留
+ *   普通串口数据被写入下载缓存区。
+ */
+typedef enum
+{
+    UART_OTA_SESSION_IDLE = 0,
+    UART_OTA_SESSION_RECEIVING
+} uart_ota_session_state_t;
+
+/*
+ * 结构体作用：
+ *   保存一次流式 OTA 升级会话的运行状态。
+ * 成员说明：
+ *   state：当前是否处于接收固件状态。
+ *   app_version：START 帧提供的新 App 版本号。
+ *   firmware_size：完整 Project.bin 字节数。
+ *   firmware_crc32：完整 Project.bin 期望 CRC32。
+ *   received_size：已经成功写入下载缓存区的字节数。
+ *   next_seq：下一个期望 DATA 帧序号。
+ *   running_crc：增量 CRC32 中间值，未取反。
+ *   vector_checked：是否已校验首包中的向量表。
+ */
+typedef struct
+{
+    uart_ota_session_state_t state;
+    uint32_t app_version;
+    uint32_t firmware_size;
+    uint32_t firmware_crc32;
+    uint32_t received_size;
+    uint32_t next_seq;
+    uint32_t running_crc;
+    uint8_t vector_checked;
+} uart_ota_session_t;
 
 /*
  * 结构体作用：
@@ -179,6 +238,15 @@ typedef struct __attribute__((packed))
 } uart_ota_parameter_t;
 
 static uint8_t uart_ota_param_buffer[UART_OTA_PARAM_SIZE] = {0};
+
+/*
+ * 变量作用：
+ *   保存当前 USART0 流式 OTA 会话状态。
+ * 说明：
+ *   该状态只在 uart_task() 所在线程上下文中更新，USART0 中断只负责移交
+ *   原始帧数据，避免在 ISR 中执行 Flash 擦写或协议状态切换。
+ */
+static uart_ota_session_t uart_ota_session = {0};
 
 /*
  * 函数作用：
@@ -308,6 +376,27 @@ static uint32_t prv_uart_ota_read_u32_le(const uint8_t *data)
 
 /*
  * 函数作用：
+ *   按小端格式向字节缓冲区写入 32 位无符号整数。
+ * 参数说明：
+ *   data：目标缓冲区地址，必须至少可写 4 字节。
+ *   value：需要写入的小端 uint32_t 值。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_ota_write_u32_le(uint8_t *data, uint32_t value)
+{
+    if(NULL == data){
+        return;
+    }
+
+    data[0] = (uint8_t)(value & 0xFFU);
+    data[1] = (uint8_t)((value >> 8U) & 0xFFU);
+    data[2] = (uint8_t)((value >> 16U) & 0xFFU);
+    data[3] = (uint8_t)((value >> 24U) & 0xFFU);
+}
+
+/*
+ * 函数作用：
  *   判断短数据是否可能是 OTA 魔术字的前缀。
  * 主要流程：
  *   1. 按 OTA 小端魔术字拆出前 4 个字节。
@@ -323,10 +412,10 @@ static uint32_t prv_uart_ota_read_u32_le(const uint8_t *data)
 static uint8_t prv_uart_ota_is_magic_prefix(const uint8_t *data, uint32_t len)
 {
     uint8_t magic_bytes[4] = {
-        (uint8_t)(UART_OTA_MAGIC & 0xFFU),
-        (uint8_t)((UART_OTA_MAGIC >> 8U) & 0xFFU),
-        (uint8_t)((UART_OTA_MAGIC >> 16U) & 0xFFU),
-        (uint8_t)((UART_OTA_MAGIC >> 24U) & 0xFFU)
+        (uint8_t)(UART_OTA_STREAM_MAGIC & 0xFFU),
+        (uint8_t)((UART_OTA_STREAM_MAGIC >> 8U) & 0xFFU),
+        (uint8_t)((UART_OTA_STREAM_MAGIC >> 16U) & 0xFFU),
+        (uint8_t)((UART_OTA_STREAM_MAGIC >> 24U) & 0xFFU)
     };
     uint32_t i;
 
@@ -378,6 +467,43 @@ static uint32_t prv_uart_ota_crc32_calc(const uint8_t *data, uint32_t len)
     }
 
     return crc ^ 0xFFFFFFFFUL;
+}
+
+/*
+ * 函数作用：
+ *   使用 OTA CRC32 算法更新中间 CRC 值。
+ * 主要流程：
+ *   1. 传入未取反的 CRC 中间值。
+ *   2. 逐字节按多项式 0xEDB88320 更新。
+ *   3. 返回新的未取反中间值，供下一分包继续计算。
+ * 参数说明：
+ *   crc：CRC32 中间值；新会话应传入 0xFFFFFFFF。
+ *   data：待追加计算的数据。
+ *   len：数据长度，单位为字节。
+ * 返回值说明：
+ *   返回更新后的 CRC32 中间值，最终结果需要再异或 0xFFFFFFFF。
+ */
+static uint32_t prv_uart_ota_crc32_update(uint32_t crc, const uint8_t *data, uint32_t len)
+{
+    uint32_t i;
+    uint32_t j;
+
+    if((NULL == data) && (len > 0U)){
+        return crc;
+    }
+
+    for(i = 0U; i < len; i++){
+        crc ^= data[i];
+        for(j = 0U; j < 8U; j++){
+            if(0U != (crc & 1U)){
+                crc = (crc >> 1U) ^ 0xEDB88320UL;
+            }else{
+                crc >>= 1U;
+            }
+        }
+    }
+
+    return crc;
 }
 
 /*
@@ -641,32 +767,273 @@ static uint8_t prv_uart_ota_write_boot_param(uint32_t app_version,
 
 /*
  * 函数作用：
- *   处理一个完整 USART0 接收帧中的升级包。
- * 主要流程：
- *   1. 校验包头魔术字，非升级包直接返回 NOT_PACKET。
- *   2. 校验长度和固件向量表。
- *   3. 擦除下载缓存区并写入 Project.bin 内容。
- *   4. 读回下载缓存区计算 CRC，确认 Flash 内容与接收内容一致。
- *   5. 写 BootLoader 参数区，设置升级标志。
+ *   发送流式 OTA 应答帧，供上位机按“发送一帧、等待 ACK”的方式节流。
  * 参数说明：
- *   packet：USART0 接收到的数据缓存，格式为 16 字节包头 + Project.bin。
- *   packet_length：完整数据帧长度，单位为字节。
+ *   frame_type：被应答的帧类型，例如 UART_OTA_FRAME_START。
+ *   status：处理结果，0 表示成功，非 0 表示错误码。
+ *   value0：应答附带值 0；DATA ACK 中表示 seq，START ACK 中表示建议 chunk 大小。
+ *   value1：应答附带值 1；DATA ACK 中表示下一个期望 offset。
  * 返回值说明：
- *   UART_OTA_RESULT_NOT_PACKET：不是升级包，调用者可继续普通串口转发。
- *   UART_OTA_RESULT_WAIT_MORE：已经识别为升级包但尚未收全，调用者应继续等待。
- *   UART_OTA_RESULT_SUCCESS：写入下载缓存区和参数区成功，调用者可以复位。
- *   其它值：升级包格式或 Flash 操作失败。
+ *   无返回值。
+ */
+static void prv_uart_ota_send_ack(uint32_t frame_type,
+                                  uint32_t status,
+                                  uint32_t value0,
+                                  uint32_t value1)
+{
+    uint8_t ack[UART_OTA_ACK_FRAME_SIZE];
+
+    prv_uart_ota_write_u32_le(&ack[0], UART_OTA_STREAM_MAGIC);
+    prv_uart_ota_write_u32_le(&ack[4], UART_OTA_FRAME_ACK_BASE | frame_type);
+    prv_uart_ota_write_u32_le(&ack[8], status);
+    prv_uart_ota_write_u32_le(&ack[12], value0);
+    prv_uart_ota_write_u32_le(&ack[16], value1);
+    (void)prv_uart_send_buffer(DEBUG_USART, ack, (uint16_t)sizeof(ack));
+}
+
+/*
+ * 函数作用：
+ *   清空当前流式 OTA 会话状态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_ota_reset_session(void)
+{
+    memset(&uart_ota_session, 0, sizeof(uart_ota_session));
+    uart_ota_session.state = UART_OTA_SESSION_IDLE;
+    uart_ota_session.running_crc = 0xFFFFFFFFUL;
+}
+
+/*
+ * 函数作用：
+ *   处理流式 OTA START 帧。
+ * 主要流程：
+ *   1. 校验 START 帧长度和头部 CRC。
+ *   2. 校验固件大小不超过内部下载缓存区。
+ *   3. 擦除下载缓存区，并初始化会话状态。
+ * 参数说明：
+ *   frame：START 帧起始地址，长度固定 24 字节。
+ *   frame_length：当前接收帧长度。
+ * 返回值说明：
+ *   UART_OTA_RESULT_FRAME_CONSUMED：START 帧已处理，等待后续 DATA。
+ *   其它错误值：START 帧无效或 Flash 擦除失败。
+ */
+static uart_ota_result_t prv_uart_ota_process_start(const uint8_t *frame, uint32_t frame_length)
+{
+    uint32_t app_version;
+    uint32_t firmware_size;
+    uint32_t firmware_crc32;
+    uint32_t header_crc32;
+    uint32_t calc_crc32;
+
+    if(frame_length != UART_OTA_START_FRAME_SIZE){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_START, UART_OTA_RESULT_BAD_LENGTH, 0U, 0U);
+        return UART_OTA_RESULT_BAD_LENGTH;
+    }
+
+    app_version = prv_uart_ota_read_u32_le(&frame[8]);
+    firmware_size = prv_uart_ota_read_u32_le(&frame[12]);
+    firmware_crc32 = prv_uart_ota_read_u32_le(&frame[16]);
+    header_crc32 = prv_uart_ota_read_u32_le(&frame[20]);
+    calc_crc32 = prv_uart_ota_crc32_calc(frame, 20U);
+    if(calc_crc32 != header_crc32){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_START, UART_OTA_RESULT_VERIFY_ERROR, calc_crc32, header_crc32);
+        return UART_OTA_RESULT_VERIFY_ERROR;
+    }
+
+    if((0U == firmware_size) || (firmware_size > UART_OTA_DOWNLOAD_MAX_SIZE)){
+        my_printf(DEBUG_USART, "OTA: bad stream size %d\r\n", firmware_size);
+        prv_uart_ota_send_ack(UART_OTA_FRAME_START, UART_OTA_RESULT_BAD_LENGTH, firmware_size, UART_OTA_DOWNLOAD_MAX_SIZE);
+        return UART_OTA_RESULT_BAD_LENGTH;
+    }
+
+    nvic_irq_disable(USART0_IRQn);
+    fmc_unlock();
+    if(0U == prv_uart_ota_flash_erase_pages(UART_OTA_DOWNLOAD_ADDR, firmware_size)){
+        fmc_lock();
+        nvic_irq_enable(USART0_IRQn, 0U, 0U);
+        prv_uart_ota_send_ack(UART_OTA_FRAME_START, UART_OTA_RESULT_FLASH_ERROR, 0U, 0U);
+        return UART_OTA_RESULT_FLASH_ERROR;
+    }
+    fmc_lock();
+    nvic_irq_enable(USART0_IRQn, 0U, 0U);
+
+    prv_uart_ota_reset_session();
+    uart_ota_session.state = UART_OTA_SESSION_RECEIVING;
+    uart_ota_session.app_version = app_version;
+    uart_ota_session.firmware_size = firmware_size;
+    uart_ota_session.firmware_crc32 = firmware_crc32;
+
+    my_printf(DEBUG_USART,
+              "OTA: stream start version=0x%08x size=%d crc=0x%08x\r\n",
+              app_version,
+              firmware_size,
+              firmware_crc32);
+    prv_uart_ota_send_ack(UART_OTA_FRAME_START, 0U, UART_OTA_STREAM_CHUNK_SIZE, firmware_size);
+
+    return UART_OTA_RESULT_FRAME_CONSUMED;
+}
+
+/*
+ * 函数作用：
+ *   处理流式 OTA DATA 帧并立即写入下载缓存区。
+ * 参数说明：
+ *   frame：DATA 帧起始地址，格式为 24 字节头 + chunk。
+ *   frame_length：当前 DATA 帧总长度。
+ * 返回值说明：
+ *   UART_OTA_RESULT_FRAME_CONSUMED：当前分包写入成功。
+ *   其它错误值：序号、偏移、长度、CRC、向量表或 Flash 写入失败。
+ */
+static uart_ota_result_t prv_uart_ota_process_data(const uint8_t *frame, uint32_t frame_length)
+{
+    uint32_t seq;
+    uint32_t offset;
+    uint32_t chunk_length;
+    uint32_t chunk_crc32;
+    uint32_t calc_crc32;
+    const uint8_t *chunk;
+
+    if((uart_ota_session.state != UART_OTA_SESSION_RECEIVING) ||
+       (frame_length < UART_OTA_DATA_HEADER_SIZE)){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_DATA, UART_OTA_RESULT_BAD_LENGTH, 0U, uart_ota_session.received_size);
+        return UART_OTA_RESULT_BAD_LENGTH;
+    }
+
+    seq = prv_uart_ota_read_u32_le(&frame[8]);
+    offset = prv_uart_ota_read_u32_le(&frame[12]);
+    chunk_length = prv_uart_ota_read_u32_le(&frame[16]);
+    chunk_crc32 = prv_uart_ota_read_u32_le(&frame[20]);
+    if((chunk_length == 0U) ||
+       (chunk_length > UART_OTA_STREAM_CHUNK_SIZE) ||
+       (frame_length != (UART_OTA_DATA_HEADER_SIZE + chunk_length))){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_DATA, UART_OTA_RESULT_BAD_LENGTH, seq, uart_ota_session.received_size);
+        return UART_OTA_RESULT_BAD_LENGTH;
+    }
+
+    if((seq != uart_ota_session.next_seq) ||
+       (offset != uart_ota_session.received_size) ||
+       ((offset + chunk_length) > uart_ota_session.firmware_size)){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_DATA, UART_OTA_RESULT_BAD_LENGTH, seq, uart_ota_session.received_size);
+        return UART_OTA_RESULT_BAD_LENGTH;
+    }
+
+    chunk = &frame[UART_OTA_DATA_HEADER_SIZE];
+    calc_crc32 = prv_uart_ota_crc32_calc(chunk, chunk_length);
+    if(calc_crc32 != chunk_crc32){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_DATA, UART_OTA_RESULT_VERIFY_ERROR, seq, calc_crc32);
+        return UART_OTA_RESULT_VERIFY_ERROR;
+    }
+
+    if(0U == uart_ota_session.vector_checked){
+        if(0U == prv_uart_ota_is_valid_firmware_vector(chunk, chunk_length)){
+            prv_uart_ota_send_ack(UART_OTA_FRAME_DATA, UART_OTA_RESULT_BAD_VECTOR, seq, offset);
+            return UART_OTA_RESULT_BAD_VECTOR;
+        }
+        uart_ota_session.vector_checked = 1U;
+    }
+
+    nvic_irq_disable(USART0_IRQn);
+    fmc_unlock();
+    if(0U == prv_uart_ota_flash_write_bytes(UART_OTA_DOWNLOAD_ADDR + offset, chunk, chunk_length)){
+        fmc_lock();
+        nvic_irq_enable(USART0_IRQn, 0U, 0U);
+        prv_uart_ota_send_ack(UART_OTA_FRAME_DATA, UART_OTA_RESULT_FLASH_ERROR, seq, offset);
+        return UART_OTA_RESULT_FLASH_ERROR;
+    }
+    fmc_lock();
+    nvic_irq_enable(USART0_IRQn, 0U, 0U);
+
+    uart_ota_session.running_crc = prv_uart_ota_crc32_update(uart_ota_session.running_crc,
+                                                             chunk,
+                                                             chunk_length);
+    uart_ota_session.received_size += chunk_length;
+    uart_ota_session.next_seq++;
+    prv_uart_ota_send_ack(UART_OTA_FRAME_DATA, 0U, seq, uart_ota_session.received_size);
+
+    return UART_OTA_RESULT_FRAME_CONSUMED;
+}
+
+/*
+ * 函数作用：
+ *   处理流式 OTA END 帧，完成整包校验、参数区写入并准备复位。
+ * 参数说明：
+ *   frame：END 帧起始地址，长度固定 16 字节。
+ *   frame_length：当前接收帧长度。
+ * 返回值说明：
+ *   UART_OTA_RESULT_SUCCESS：升级缓存和参数区均已写好，调用者可以复位。
+ *   其它错误值：长度、接收进度、CRC 或 Flash 操作失败。
+ */
+static uart_ota_result_t prv_uart_ota_process_end(const uint8_t *frame, uint32_t frame_length)
+{
+    uint32_t firmware_size;
+    uint32_t firmware_crc32;
+    uint32_t running_crc32;
+    uint32_t flash_crc32;
+
+    if((uart_ota_session.state != UART_OTA_SESSION_RECEIVING) ||
+       (frame_length != UART_OTA_END_FRAME_SIZE)){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_END, UART_OTA_RESULT_BAD_LENGTH, 0U, uart_ota_session.received_size);
+        return UART_OTA_RESULT_BAD_LENGTH;
+    }
+
+    firmware_size = prv_uart_ota_read_u32_le(&frame[8]);
+    firmware_crc32 = prv_uart_ota_read_u32_le(&frame[12]);
+    if((firmware_size != uart_ota_session.firmware_size) ||
+       (firmware_crc32 != uart_ota_session.firmware_crc32) ||
+       (uart_ota_session.received_size != uart_ota_session.firmware_size)){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_END, UART_OTA_RESULT_BAD_LENGTH, firmware_size, uart_ota_session.received_size);
+        return UART_OTA_RESULT_BAD_LENGTH;
+    }
+
+    running_crc32 = uart_ota_session.running_crc ^ 0xFFFFFFFFUL;
+    if(running_crc32 != uart_ota_session.firmware_crc32){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_END, UART_OTA_RESULT_VERIFY_ERROR, running_crc32, uart_ota_session.firmware_crc32);
+        return UART_OTA_RESULT_VERIFY_ERROR;
+    }
+
+    flash_crc32 = prv_uart_ota_flash_crc32_calc(UART_OTA_DOWNLOAD_ADDR, uart_ota_session.firmware_size);
+    if(flash_crc32 != uart_ota_session.firmware_crc32){
+        prv_uart_ota_send_ack(UART_OTA_FRAME_END, UART_OTA_RESULT_VERIFY_ERROR, flash_crc32, uart_ota_session.firmware_crc32);
+        return UART_OTA_RESULT_VERIFY_ERROR;
+    }
+
+    nvic_irq_disable(USART0_IRQn);
+    fmc_unlock();
+    if(0U == prv_uart_ota_write_boot_param(uart_ota_session.app_version,
+                                           uart_ota_session.firmware_size,
+                                           uart_ota_session.firmware_crc32)){
+        fmc_lock();
+        nvic_irq_enable(USART0_IRQn, 0U, 0U);
+        prv_uart_ota_send_ack(UART_OTA_FRAME_END, UART_OTA_RESULT_FLASH_ERROR, 0U, 0U);
+        return UART_OTA_RESULT_FLASH_ERROR;
+    }
+    fmc_lock();
+    nvic_irq_enable(USART0_IRQn, 0U, 0U);
+
+    prv_uart_ota_send_ack(UART_OTA_FRAME_END, 0U, uart_ota_session.firmware_size, uart_ota_session.firmware_crc32);
+    my_printf(DEBUG_USART, "OTA: ready, reset to BootLoader\r\n");
+
+    return UART_OTA_RESULT_SUCCESS;
+}
+
+/*
+ * 函数作用：
+ *   尝试解析并处理一帧 USART0 流式 OTA 数据。
+ * 参数说明：
+ *   packet：USART0 本次 IDLE 移交的数据。
+ *   packet_length：本次移交的数据长度，单位为字节。
+ * 返回值说明：
+ *   UART_OTA_RESULT_NOT_PACKET：不是 OTA 帧，可按普通串口数据转发。
+ *   UART_OTA_RESULT_FRAME_CONSUMED：OTA 帧已消费，等待下一帧。
+ *   UART_OTA_RESULT_SUCCESS：完整升级已准备好，调用者应复位。
+ *   其它错误值：协议或 Flash 操作失败，调用者应丢弃会话。
  */
 static uart_ota_result_t prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)
 {
     uint32_t magic;
-    uint32_t app_version;
-    uint32_t firmware_size;
-    uint32_t firmware_crc32;
-    uint32_t expected_crc32;
-    uint32_t expected_packet_length;
-    uint32_t flash_crc32;
-    const uint8_t *firmware;
+    uint32_t frame_type;
 
     if(NULL == packet){
         return UART_OTA_RESULT_NOT_PACKET;
@@ -679,102 +1046,27 @@ static uart_ota_result_t prv_uart_ota_try_process_packet(const uint8_t *packet, 
         return UART_OTA_RESULT_NOT_PACKET;
     }
 
-    if(packet_length < UART_OTA_HEADER_SIZE){
-        magic = prv_uart_ota_read_u32_le(&packet[0]);
-        if(UART_OTA_MAGIC == magic){
-            return UART_OTA_RESULT_WAIT_MORE;
-        }
-        return UART_OTA_RESULT_NOT_PACKET;
-    }
-
     magic = prv_uart_ota_read_u32_le(&packet[0]);
-    if(UART_OTA_MAGIC != magic){
+    if(UART_OTA_STREAM_MAGIC != magic){
         return UART_OTA_RESULT_NOT_PACKET;
     }
 
-    app_version = prv_uart_ota_read_u32_le(&packet[4]);
-    firmware_size = prv_uart_ota_read_u32_le(&packet[8]);
-    expected_crc32 = prv_uart_ota_read_u32_le(&packet[12]);
-
-    if((0U == firmware_size) || (firmware_size > UART_OTA_DOWNLOAD_MAX_SIZE)){
-        my_printf(DEBUG_USART, "OTA: bad size %d\r\n", firmware_size);
-        return UART_OTA_RESULT_BAD_LENGTH;
-    }
-
-    expected_packet_length = UART_OTA_HEADER_SIZE + firmware_size;
-    if(packet_length < expected_packet_length){
+    if(packet_length < 8U){
         return UART_OTA_RESULT_WAIT_MORE;
     }
 
-    if(packet_length > expected_packet_length){
-        my_printf(DEBUG_USART,
-                  "OTA: extra data length=%d expect=%d\r\n",
-                  packet_length,
-                  expected_packet_length);
-        return UART_OTA_RESULT_BAD_LENGTH;
+    frame_type = prv_uart_ota_read_u32_le(&packet[4]);
+    if(UART_OTA_FRAME_START == frame_type){
+        return prv_uart_ota_process_start(packet, packet_length);
+    }
+    if(UART_OTA_FRAME_DATA == frame_type){
+        return prv_uart_ota_process_data(packet, packet_length);
+    }
+    if(UART_OTA_FRAME_END == frame_type){
+        return prv_uart_ota_process_end(packet, packet_length);
     }
 
-    firmware = &packet[UART_OTA_HEADER_SIZE];
-    if(0U == prv_uart_ota_is_valid_firmware_vector(firmware, firmware_size)){
-        return UART_OTA_RESULT_BAD_VECTOR;
-    }
-
-    firmware_crc32 = prv_uart_ota_crc32_calc(firmware, firmware_size);
-    if(firmware_crc32 != expected_crc32){
-        my_printf(DEBUG_USART,
-                  "OTA: packet crc fail header=0x%08x calc=0x%08x\r\n",
-                  expected_crc32,
-                  firmware_crc32);
-        return UART_OTA_RESULT_VERIFY_ERROR;
-    }
-
-    my_printf(DEBUG_USART,
-              "OTA: package version=0x%08x size=%d crc=0x%08x\r\n",
-              app_version,
-              firmware_size,
-              firmware_crc32);
-
-    /*
-     * 写片内 Flash 期间关闭 USART0 中断，避免接收新数据覆盖升级缓存；
-     * 全局中断不长期关闭，SysTick 等系统节拍仍可运行。
-     */
-    nvic_irq_disable(USART0_IRQn);
-
-    fmc_unlock();
-    if(0U == prv_uart_ota_flash_erase_pages(UART_OTA_DOWNLOAD_ADDR, firmware_size)){
-        fmc_lock();
-        nvic_irq_enable(USART0_IRQn, 0U, 0U);
-        return UART_OTA_RESULT_FLASH_ERROR;
-    }
-
-    if(0U == prv_uart_ota_flash_write_bytes(UART_OTA_DOWNLOAD_ADDR, firmware, firmware_size)){
-        fmc_lock();
-        nvic_irq_enable(USART0_IRQn, 0U, 0U);
-        return UART_OTA_RESULT_FLASH_ERROR;
-    }
-
-    flash_crc32 = prv_uart_ota_flash_crc32_calc(UART_OTA_DOWNLOAD_ADDR, firmware_size);
-    if(flash_crc32 != firmware_crc32){
-        my_printf(DEBUG_USART,
-                  "OTA: verify fail recv=0x%08x flash=0x%08x\r\n",
-                  firmware_crc32,
-                  flash_crc32);
-        fmc_lock();
-        nvic_irq_enable(USART0_IRQn, 0U, 0U);
-        return UART_OTA_RESULT_VERIFY_ERROR;
-    }
-
-    if(0U == prv_uart_ota_write_boot_param(app_version, firmware_size, firmware_crc32)){
-        fmc_lock();
-        nvic_irq_enable(USART0_IRQn, 0U, 0U);
-        return UART_OTA_RESULT_FLASH_ERROR;
-    }
-
-    fmc_lock();
-    nvic_irq_enable(USART0_IRQn, 0U, 0U);
-    my_printf(DEBUG_USART, "OTA: ready, reset to BootLoader\r\n");
-
-    return UART_OTA_RESULT_SUCCESS;
+    return UART_OTA_RESULT_BAD_LENGTH;
 }
 
 /*
@@ -946,6 +1238,17 @@ void uart_task(void)
             __enable_irq();
             delay_ms(50);
             prv_uart_ota_system_reset();
+        }else if(UART_OTA_RESULT_FRAME_CONSUMED == ota_result){
+            /*
+             * 流式 OTA 每个 START/DATA 帧都已经被即时处理并回 ACK。
+             * 清空本帧长度后，上位机才能发送下一帧，避免 App 为完整固件
+             * 保留 52KB 级 RAM 缓冲。
+             */
+            __disable_irq();
+            if(rx_snapshot_length == uart_dma_length){
+                uart_dma_length = 0U;
+            }
+            __enable_irq();
         }else if(UART_OTA_RESULT_NOT_PACKET == ota_result){
             rx_length = (uint16_t)rx_snapshot_length;
             if(rx_length > sizeof(uart_forward_buffer)){
@@ -975,6 +1278,7 @@ void uart_task(void)
             }
             __enable_irq();
             my_printf(DEBUG_USART, "OTA: failed result=%d\r\n", ota_result);
+            prv_uart_ota_reset_session();
         }
     }
 }

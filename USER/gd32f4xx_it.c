@@ -160,7 +160,7 @@ void PendSV_Handler(void)
  * 主要流程：
  *   1. 判断并清除 IDLE 中断标志。
  *   2. 暂停 DMA，按剩余传输计数计算本帧有效长度。
- *   3. 做长度边界检查后追加到 uart_dma_buffer，并置位 rx_flag。
+ *   3. 做长度边界检查后复制到 uart_dma_buffer，并置位 rx_flag。
  *   4. 重新装载 DMA 计数，准备下一帧接收。
  * 参数说明：
  *   无参数。
@@ -182,16 +182,16 @@ void USART0_IRQHandler(void)
         if((rx_len > 0U) && (rx_len <= sizeof(usart0_rxbuffer))){
             copy_len = rx_len;
             /*
-             * 大文件通过 USB 转串口发送时可能被拆成多个 IDLE 小块。
-             * 这里把每个小块追加到 App 缓冲区，直到任务层识别出完整 OTA 包；
-             * 如果缓冲区满，只保留已经收到的数据并等待任务层按错误处理。
+             * 流式 OTA 由上位机按帧发送并等待 ACK，ISR 只保存当前 IDLE 帧。
+             * 这样 App 不再为完整固件保留 52KB 缓冲；若上位机未等待 ACK 导致
+             * 上一帧尚未消费，本帧会被钳位覆盖为当前可处理长度。
              */
-            if((uint32_t)uart_dma_length + copy_len > sizeof(uart_dma_buffer)){
-                copy_len = sizeof(uart_dma_buffer) - (uint32_t)uart_dma_length;
+            if(copy_len > sizeof(uart_dma_buffer)){
+                copy_len = sizeof(uart_dma_buffer);
             }
             if(copy_len > 0U){
-                memcpy(&uart_dma_buffer[uart_dma_length], usart0_rxbuffer, copy_len);
-                uart_dma_length = (uint16_t)((uint32_t)uart_dma_length + copy_len);
+                memcpy(uart_dma_buffer, usart0_rxbuffer, copy_len);
+                uart_dma_length = (uint16_t)copy_len;
                 rx_flag = 1;
             }
         }

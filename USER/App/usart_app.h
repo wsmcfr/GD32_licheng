@@ -17,14 +17,13 @@ extern "C" {
  * 宏作用：
  *   定义 USART0 应用层接收缓冲区长度。
  * 说明：
- *   串口升级采用“16 字节包头 + 固件内容”的接收方式，下载缓存区最大
- *   52KB，因此这里预留 52KB 固件和 16 字节包头。该缓冲位于 192KB 主 SRAM，
- *   用于当前最小可用升级流程；若后续固件超过 52KB，应改为分包协议。
+ *   串口升级采用 START/DATA/END 分包协议，App 每收到一个小 DATA 帧就写入
+ *   片内下载缓存区，因此这里跟随 Driver 层 USART0 DMA 缓冲大小即可。
  */
 #if defined(BSP_USART0_RX_BUFFER_SIZE)
 #define UART_APP_DMA_BUFFER_SIZE       BSP_USART0_RX_BUFFER_SIZE
 #else
-#define UART_APP_DMA_BUFFER_SIZE       (52U * 1024U + 16U)
+#define UART_APP_DMA_BUFFER_SIZE       1024U
 #endif
 
 /*
