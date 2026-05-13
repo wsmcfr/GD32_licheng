@@ -242,6 +242,117 @@ Required build artifacts for the App target:
 </AfterMake>
 ```
 
+### Deep-sleep wakeup must preserve the App vector table and wake IRQ state
+
+Deep-sleep recovery is a cross-layer contract between the PMU, GPIO/EXTI, NVIC, SysTick,
+BootLoader App relocation, and board-level re-initialization. Do not treat a wake button
+as only a GPIO problem.
+
+#### 1. Scope / Trigger
+
+- Trigger: editing `USER/Driver/bsp_power.c`, `USER/Driver/bsp_key.c`, `USER/gd32f4xx_it.c`, `USER/boot_app_config.c`, or any wakeup/low-power path.
+- Trigger: changing the App start address, BootLoader handoff, vector-table setup, SysTick setup, or EXTI wake source.
+- Project example: the App runs at `0x0800D000`, but `SystemInit()` resets `SCB->VTOR` to the default Flash base. If wake recovery does not switch VTOR back before interrupts resume, SysTick/EXTI/USART can dispatch through the BootLoader vector table and look like "wake button does not return".
+
+#### 2. Signatures
+
+Expected low-power entries and ownership:
+
+```c
+void bsp_wkup_key_exti_init(void);
+void bsp_enter_deepsleep(void);
+static void bsp_deepsleep_reinit_after_wakeup(void);
+void boot_app_vector_table_init(void);
+void EXTI0_IRQHandler(void);
+```
+
+Expected App relocation contract:
+
+| Symbol / Function | Required Value / Behavior |
+|-------------------|---------------------------|
+| `BOOT_APP_START_ADDRESS` | App vector table base, currently `0x0800D000` |
+| `boot_app_vector_table_init()` | Writes `SCB->VTOR = BOOT_APP_START_ADDRESS`, then executes `__DSB()` and `__ISB()` |
+| `SystemInit()` | May restore clock tree and default `SCB->VTOR`; callers in relocated App code must correct VTOR immediately afterward |
+| `bsp_wkup_key_exti_init()` | Configures PA0/WK_UP as EXTI0 wake source and clears stale EXTI/NVIC pending state |
+| `EXTI0_IRQHandler()` | Clears EXTI0 interrupt flag only; heavy re-init stays in the WFI return path |
+
+#### 3. Contracts
+
+- WK_UP hardware polarity must be checked against the board schematic before choosing EXTI trigger edge.
+- For the current board, WK_UP is externally pulled up and the button shorts to ground, so the wake trigger is `EXTI_TRIG_FALLING`.
+- Clear both `exti_interrupt_flag_clear(EXTI_0)` and `NVIC_ClearPendingIRQ(EXTI0_IRQn)` before entering WFI so stale events are not consumed as the wake event.
+- If `SystemInit()` is called after wake in a relocated App, wrap the clock/vector-table recovery in a short interrupt-disabled section.
+- After `SystemInit()`, call `boot_app_vector_table_init()` before enabling interrupts or allowing SysTick/peripheral IRQs to run.
+- Prefer `PMU_LOWDRIVER_DISABLE` while validating wake reliability. Re-enable low-driver mode only after hardware smoke tests prove the board wakes consistently.
+- Keep `EXTI0_IRQHandler()` small: clear the flag and return. Do not rebuild clocks, storage, OLED, or serial drivers inside the ISR.
+
+#### 4. Validation & Error Matrix
+
+| Observation | Likely Meaning | First Check |
+|-------------|----------------|-------------|
+| KEY2 enters deep sleep, WK_UP press has no visible effect | EXTI0 did not wake, stale pending was consumed, wrong edge, or PMU low-driver issue | Check WK_UP polarity, EXTI trigger, and EXTI/NVIC pending clear |
+| WK_UP wakes once but later interrupts or serial logs stop | VTOR may still point to BootLoader after `SystemInit()` | Check `boot_app_vector_table_init()` is called immediately after `SystemInit()` |
+| Wake returns only with debugger attached | Timing or pending interrupt race is hiding the issue | Add LED/RAM markers before WFI and after WFI return |
+| Wake returns but OLED/UART/ADC stay broken | Re-init order or disabled peripheral clock is incomplete | Compare `bsp_deepsleep_reinit_after_wakeup()` against `system_init()` dependency order |
+| Wake works with normal LDO but fails with low-driver | Low-driver mode is not reliable for this board state | Keep `PMU_LOWDRIVER_DISABLE` until current measurements justify changing it |
+
+#### 5. Good / Base / Bad Cases
+
+| Case | Expected Result |
+|------|-----------------|
+| Good | KEY2 enters deep sleep; WK_UP falling edge wakes; App restores VTOR to `0x0800D000`; UART/OLED/tasks resume |
+| Base | Normal reset still prints BootLoader/App logs and App starts at `0x0800D000` |
+| Bad | Calling `SystemInit()` after wake and leaving VTOR at `0x08000000` |
+| Bad | Using both-edge wake for a pulled-up button and letting release generate an unnecessary EXTI0 interrupt |
+| Bad | Clearing only EXTI flag but not NVIC pending before WFI |
+
+#### 6. Tests Required
+
+- Build the App and confirm Keil reports `0 Error(s)`.
+- Upgrade or flash the App, then reset and confirm the boot log reports the expected `appVersion`.
+- Press KEY2 and confirm the board enters the intended low-power state.
+- Press WK_UP and confirm the App visibly returns: debug UART logs resume, OLED/tasks recover, and the board remains responsive.
+- If wake still fails, add one-shot markers in this order: before WFI, inside `EXTI0_IRQHandler()`, immediately after WFI return, after `boot_app_vector_table_init()`, and after peripheral re-init.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```c
+/* Wrong: SystemInit() can point VTOR back to 0x08000000 in a BootLoader App. */
+SystemInit();
+SystemCoreClockUpdate();
+systick_config();
+```
+
+##### Correct
+
+```c
+/* Correct: keep interrupts closed while the relocated App restores clock and VTOR. */
+__disable_irq();
+SystemInit();
+boot_app_vector_table_init();
+SystemCoreClockUpdate();
+systick_config();
+__enable_irq();
+```
+
+##### Wrong
+
+```c
+/* Wrong for the current board: release edge adds a second wake interrupt. */
+exti_init(EXTI_0, EXTI_INTERRUPT, EXTI_TRIG_BOTH);
+```
+
+##### Correct
+
+```c
+/* Correct for the current WK_UP circuit: external pull-up, press shorts to ground. */
+exti_interrupt_flag_clear(EXTI_0);
+NVIC_ClearPendingIRQ(EXTI0_IRQn);
+exti_init(EXTI_0, EXTI_INTERRUPT, EXTI_TRIG_FALLING);
+```
+
 ---
 
 ## Required Patterns

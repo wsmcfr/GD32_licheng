@@ -33,7 +33,9 @@ void bsp_btn_init(void)
  * 主要流程：
  *   1. 重新确保 GPIOA 和 SYSCFG 时钟已开启。
  *   2. 将 PA0 映射到 EXTI0。
- *   3. 配置双边沿触发，支持按下和释放都唤醒。
+ *   3. 清除 EXTI/NVIC 残留挂起位。
+ *   4. 按原理图将 WK_UP 配置为下降沿触发：平时 R6 上拉到 3V3，
+ *      按下 K2 后被拉到 DGND。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -47,7 +49,19 @@ void bsp_wkup_key_exti_init(void)
     gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEYW_PIN);
 
     syscfg_exti_line_config(EXTI_SOURCE_GPIOA, EXTI_SOURCE_PIN0);
-    exti_init(EXTI_0, EXTI_INTERRUPT, EXTI_TRIG_BOTH);
+
+    /*
+     * 进入 WFI 前必须同时清 EXTI 和 NVIC pending。
+     * 如果上一次按键释放或配置过程留下挂起位，内核可能在真正睡下前
+     * 立即消费掉旧中断，后续按键下降沿就不再唤醒本次深睡。
+     */
     exti_interrupt_flag_clear(EXTI_0);
+    NVIC_ClearPendingIRQ(EXTI0_IRQn);
+
+    /*
+     * WK_UP 电路为外部 10K 上拉、按下接地，因此有效唤醒边沿是下降沿。
+     * 只开下降沿可避免释放按键时又产生一次无意义的 EXTI0 中断。
+     */
+    exti_init(EXTI_0, EXTI_INTERRUPT, EXTI_TRIG_FALLING);
     nvic_irq_enable(EXTI0_IRQn, 1U, 0U);
 }

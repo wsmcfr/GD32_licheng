@@ -190,10 +190,32 @@ static void bsp_gpio_enter_deepsleep_state(void)
  */
 static void bsp_deepsleep_reinit_after_wakeup(void)
 {
+    /*
+     * WFI 被 EXTI0 唤醒后，全局中断已经处于打开状态。
+     * SystemInit() 会短暂把 VTOR 恢复到默认 Flash 起始地址，因此这里先关中断，
+     * 避免 SysTick 或外设中断在向量表切换窗口内跳到 BootLoader 的入口。
+     */
+    __disable_irq();
+
     SystemInit();
+
+    /*
+     * 当前工程作为 BootLoader App 运行，真实向量表在 0x0800D000。
+     * GD32 标准库的 SystemInit() 会按默认工程假设把 VTOR 重新设回
+     * 0x08000000；如果不立刻切回 App 向量表，后续 SysTick/EXTI/USART
+     * 中断会从 BootLoader 向量表取入口，表现为“已经唤醒但回不来”。
+     */
+    boot_app_vector_table_init();
+
     SystemCoreClockUpdate();
     systick_config();
     update_perf_counter();
+
+    /*
+     * 时钟、SysTick 和 App 向量表已经恢复后再开中断。
+     * 后续外设初始化即使产生中断，也会使用 App 自己的中断入口。
+     */
+    __enable_irq();
 
     bsp_led_init();
     bsp_btn_init();
@@ -250,9 +272,20 @@ void bsp_enter_deepsleep(void)
     before_cycle_counter_reconfiguration();
     SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
 
+    /*
+     * 唤醒中断已经配置好后，再清一次 NVIC pending，确保 WFI 等待的是
+     * 之后按下 WK_UP 产生的新下降沿，而不是配置阶段残留的旧挂起位。
+     */
+    NVIC_ClearPendingIRQ(EXTI0_IRQn);
+
     __enable_irq();
 
-    pmu_to_deepsleepmode(PMU_LDO_LOWPOWER, PMU_LOWDRIVER_ENABLE, WFI_CMD);
+    /*
+     * 先关闭 low-driver 模式，优先验证外部 EXTI0 唤醒可靠性。
+     * 若后续需要进一步压低功耗，再在硬件实测基础上评估是否重新启用
+     * PMU_LOWDRIVER_ENABLE。
+     */
+    pmu_to_deepsleepmode(PMU_LDO_LOWPOWER, PMU_LOWDRIVER_DISABLE, WFI_CMD);
 
     bsp_deepsleep_reinit_after_wakeup();
 }

@@ -130,7 +130,39 @@ Required assertions:
 | RAM usage | `fromelf` shows `usart0_rxbuffer` and `uart_dma_buffer` at `0x400` each, not `52KB+16B` |
 | Hardware, when available | Use `--mode send --port COMx`; log must include `OTA: ready, reset to BootLoader`, then BootLoader `app crc32 check pass` and `app update success` |
 
-### 9. Wrong vs Correct
+### 9. Operator Procedure
+
+Use this procedure whenever sending a new App image through USART0 streaming OTA.
+Always increment `--version` for each hardware trial so the BootLoader log proves the
+new image was actually installed.
+
+| Step | Command / Action | Required Evidence |
+|------|------------------|-------------------|
+| 1 | Build the Keil target | Build log reports `0 Error(s)` and `MDK/output/Project.bin` is non-empty |
+| 2 | `python tools\make_uart_ota_packet.py --mode stream-info --version <new_version> --chunk-size 512` | Output shows firmware size, CRC, version, chunk size, and chunk count |
+| 3 | `python tools\make_uart_ota_packet.py --mode send --port <COMx> --version <new_version> --chunk-size 512` | PC prints `sent stream frames=<n>` |
+| 4 | Watch the debug UART | App prints `OTA: ready, reset to BootLoader` |
+| 5 | Watch the BootLoader UART log after reset | BootLoader prints `app crc32 check pass`, `app update success`, and the new `appVersion` |
+
+Current known-good hardware command for the local board:
+
+```powershell
+python tools\make_uart_ota_packet.py --mode send --port COM29 --version 0x00000005 --chunk-size 512
+```
+
+For the next trial, keep the same port and chunk size unless the board wiring changes,
+but increase the version, for example:
+
+```powershell
+python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512
+python tools\make_uart_ota_packet.py --mode send --port COM29 --version 0x00000006 --chunk-size 512
+```
+
+Do not reuse an old version number when validating a bug fix. A repeated version makes it
+hard to tell whether the observed behavior came from the new binary or the previously
+installed App.
+
+### 10. Wrong vs Correct
 
 #### Wrong
 
@@ -151,8 +183,8 @@ send-file MDK\output\Project.uota
 
 ```powershell
 # First check metadata, then send streaming frames and wait for ACK after every frame.
-python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000002 --chunk-size 512
-python tools\make_uart_ota_packet.py --mode send --port COM7 --version 0x00000002 --chunk-size 512
+python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512
+python tools\make_uart_ota_packet.py --mode send --port COM29 --version 0x00000006 --chunk-size 512
 ```
 
 #### Wrong
@@ -179,3 +211,4 @@ python tools\make_uart_ota_packet.py --mode send --port COM7 --version 0x0000000
 - Do not move `0x0800C000`, `0x0800D000`, or `0x08073000` in one layer only.
 - Do not reset after writing the download buffer if BootLoader parameter flags were not written.
 - Do not claim App images larger than `52KB` are supported until the download-buffer storage is redesigned.
+- Do not reuse the same `--version` while validating a fix; increment it so the BootLoader log confirms the tested image.
