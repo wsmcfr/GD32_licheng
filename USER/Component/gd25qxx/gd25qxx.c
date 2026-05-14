@@ -9,6 +9,8 @@
 #define RDID 0x9F /* read identification */
 #define SE 0x20   /* sector erase instruction */
 #define BE 0xC7   /* bulk erase instruction */
+#define DP 0xB9   /* deep power-down instruction */
+#define RDP 0xAB  /* release from deep power-down instruction */
 
 #define WIP_FLAG 0x01 /* write in progress(wip)flag */
 #define DUMMY_BYTE 0xA5
@@ -210,6 +212,50 @@ void spi_flash_wait_for_write_end(void)
     } while ((flash_status & WIP_FLAG) == 0x01);
 
     SPI_FLASH_CS_HIGH();
+}
+
+/*
+ * 函数作用：
+ *   发送 GD25QXX 深掉电指令，让 Flash 本体在 MCU 深度睡眠期间停止正常待机耗电。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   当前板级没有 Flash 物理断电路径，因此这里采用 JEDEC 通用 deep power-down
+ *   指令把芯片切到最省电的软件可达状态。
+ */
+void spi_flash_enter_deep_power_down(void)
+{
+    /*
+     * 若当前 Flash 仍在页编程/擦除内部忙状态，先等 WIP 清零再进入 deep power-down。
+     * 这样可以避免把器件硬切到深掉电时打断内部写流程，导致下一次唤醒后出现
+     * 状态寄存器异常或最近一次写入不完整。
+     */
+    spi_flash_wait_for_write_end();
+
+    SPI_FLASH_CS_LOW();
+    spi_flash_send_byte_dma(DP);
+    SPI_FLASH_CS_HIGH();
+}
+
+/*
+ * 函数作用：
+ *   发送 GD25QXX 释放深掉电指令，使 Flash 在唤醒后恢复到可通信状态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   这里额外保留一个很短的阻塞等待，给芯片留出从 deep power-down 返回
+ *   standby 的恢复时间，避免唤醒后第一笔访问偶发读到无效值。
+ */
+void spi_flash_release_from_deep_power_down(void)
+{
+    SPI_FLASH_CS_LOW();
+    spi_flash_send_byte_dma(RDP);
+    SPI_FLASH_CS_HIGH();
+    delay_1ms(1U);
 }
 
 /**

@@ -13,6 +13,50 @@ static uint8_t spi3_send_array[GD30AD3344_DMA_BUFFER_SIZE];
 /* GD30AD3344 DMA 临时接收缓冲区。 */
 static uint8_t spi3_receive_array[GD30AD3344_DMA_BUFFER_SIZE];
 
+/*
+ * 函数作用：
+ *   提前声明本文件内部会在后文实现的 SPI 半字发送函数，避免 ArmClang 在静态 helper
+ *   中先使用、后定义时按“隐式声明”处理并直接报错。
+ * 参数说明：
+ *   half_word：待通过 SPI3 发送给 GD30AD3344 的 16 位配置字。
+ * 返回值说明：
+ *   返回器件在同一帧内回传的 16 位数据。
+ */
+uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word);
+
+/*
+ * 函数作用：
+ *   将一份配置结构体写入 GD30AD3344 配置寄存器。
+ * 参数说明：
+ *   config：待下发的配置结构体指针，必须指向有效配置。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   该器件的低功耗模式依赖 MODE/NOP 等配置位切换，因此把写配置动作独立封装，
+ *   便于运行态初始化和深睡前待机复用同一条下发路径。
+ */
+static void prv_gd30ad3344_apply_config(const GD30AD3344 *config)
+{
+    uint16_t config_value;
+
+    if(NULL == config) {
+        return;
+    }
+
+    config_value = (uint16_t)((config->SS << 15) |
+                              (config->MUX << 12) |
+                              (config->PGA << 9) |
+                              (config->MODE << 8) |
+                              (config->DR << 5) |
+                              (config->RESERVED_1 << 4) |
+                              (config->PULL_UP_EN << 3) |
+                              (config->NOP << 1) |
+                              (config->RESERVED << 0));
+
+    spi_enable(SPI_GD30AD3344);
+    spi_gd30ad3344_send_halfword_dma(config_value);
+}
+
 /**
  * @brief 使用 DMA 发送并接收一个字节
  * @param byte 要发送的字节
@@ -243,10 +287,44 @@ void GD30AD3344_Init(void)
     GD30AD3344_InitStruct.PULL_UP_EN = 0;        //0:关闭DOUT引脚上拉电阻(默认)    1:开启DOUT引脚上拉电阻
     GD30AD3344_InitStruct.NOP        = 1;        //0:不更新配置寄存器的数据  1:更新配置寄存器的数据(默认)  2:无效数据，且不更新配置寄存器数据
     GD30AD3344_InitStruct.RESERVED   = 1;        //保留:写的时候写1，读的时候返回0或1 
-    
-    spi_enable(SPI_GD30AD3344);
-    spi_gd30ad3344_send_halfword_dma(GD30AD3344_InitStruct_Value);
+
+    prv_gd30ad3344_apply_config(&GD30AD3344_InitStruct);
     my_printf(DEBUG_USART, "0x%4X", GD30AD3344_InitStruct_Value);
+}
+
+/*
+ * 函数作用：
+ *   将 GD30AD3344 切换到掉电/单次转换模式，减少 MCU 深睡期间 ADC 芯片自身待机电流。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   当前硬件没有给 GD30AD3344 做独立电源开关，因此这里利用器件本身 MODE=1
+ *   的掉电/单次转换模式作为芯片级待机手段。
+ */
+void GD30AD3344_Enter_LowPower(void)
+{
+    GD30AD3344 sleep_config = GD30AD3344_InitStruct;
+
+    sleep_config.SS = 0U;
+    sleep_config.MODE = 1U;
+    sleep_config.NOP = 1U;
+
+    prv_gd30ad3344_apply_config(&sleep_config);
+}
+
+/*
+ * 函数作用：
+ *   让 GD30AD3344 退出低功耗配置并恢复到工程默认运行态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void GD30AD3344_Exit_LowPower(void)
+{
+    GD30AD3344_Init();
 }
 
 float PGA_DATA = 0.0;

@@ -62,7 +62,7 @@
 | 步骤 | 代码位置 | 作用 |
 |---|---|---|
 | 1 | `USER/Driver/bsp_power.c` -> `bsp_enter_deepsleep()` | 调用 `before_cycle_counter_reconfiguration()`，通知 perf_counter 即将重配/停止系统定时器。 |
-| 2 | `USER/Driver/bsp_power.c` -> `bsp_enter_deepsleep()` | 关闭 SysTick 中断，进入深度睡眠。 |
+| 2 | `USER/Driver/bsp_power.c` -> `bsp_enter_deepsleep()` | 完整停止 SysTick 的中断与计数器本体，避免深睡阶段残留 SysTick 时钟活动。 |
 | 3 | `USER/Driver/bsp_power.c` -> `bsp_deepsleep_reinit_after_wakeup()` | 唤醒后重新执行 `SystemInit()`、`SystemCoreClockUpdate()` 和 `systick_config()`。 |
 | 4 | `USER/Driver/bsp_power.c` -> `bsp_deepsleep_reinit_after_wakeup()` | 调用 `update_perf_counter()`，让 perf_counter 重新读取当前系统定时器频率并更新换算参数。 |
 

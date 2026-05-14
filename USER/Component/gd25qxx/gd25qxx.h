@@ -25,6 +25,14 @@
 #define SPI_FLASH_CS_LOW()            gpio_bit_reset(GD25QXX_SPI_CS_GPIO_PORT, GD25QXX_SPI_CS_PIN)
 #define SPI_FLASH_CS_HIGH()           gpio_bit_set(GD25QXX_SPI_CS_GPIO_PORT, GD25QXX_SPI_CS_PIN)
 
+/*
+ * 函数作用：
+ *   对 SPI Flash 做基础初始化，并确保片选保持非激活态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void test_spi_flash(void);
 void spi_flash_init(void);
 void spi_flash_sector_erase(uint32_t sector_addr);
@@ -40,6 +48,26 @@ uint8_t spi_flash_send_byte_dma(uint8_t byte);
 uint16_t spi_flash_send_halfword_dma(uint16_t half_word);
 void spi_flash_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer, uint16_t size);
 void spi_flash_wait_for_dma_end(void);
+
+/*
+ * 函数作用：
+ *   发送深掉电指令，让 GD25QXX 在深度睡眠期间进入芯片级低功耗状态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void spi_flash_enter_deep_power_down(void);
+
+/*
+ * 函数作用：
+ *   发送释放深掉电指令，让 GD25QXX 从芯片级低功耗状态恢复可访问状态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void spi_flash_release_from_deep_power_down(void);
 
 #endif /* GD25QXX_H */
 

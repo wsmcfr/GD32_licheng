@@ -552,9 +552,14 @@ void OLED_Display_On(void)
 }
 void OLED_Display_Off(void)
 {
+    /*
+     * 先关闭电荷泵，再发送 Display OFF 命令。
+     * 这里必须使用 0xAE 关屏；若误发 0xAF，只会保持显示开启，
+     * 深度睡眠前的 OLED 息屏和降功耗就都不会真正生效。
+     */
     OLED_Write_cmd(0x8D);
     OLED_Write_cmd(0x10);
-    OLED_Write_cmd(0xAF);
+    OLED_Write_cmd(0xAE);
 }
 
 /**

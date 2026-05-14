@@ -69,6 +69,13 @@ static void bsp_oled_disable_for_deepsleep(void)
  */
 static void bsp_spi_disable_for_deepsleep(void)
 {
+    /*
+     * 板上没有给 SPI Flash / GD30AD3344 做物理断电，因此在关 SPI 总线前先让
+     * 两颗芯片各自进入芯片级待机，避免 MCU 睡下去后它们仍保持正常待机电流。
+     */
+    spi_flash_enter_deep_power_down();
+    GD30AD3344_Enter_LowPower();
+
     SPI_FLASH_CS_HIGH();
     SPI_GD30AD3344_CS_HIGH();
 
@@ -83,6 +90,39 @@ static void bsp_spi_disable_for_deepsleep(void)
 
     spi_disable(SPI0);
     spi_disable(SPI3);
+}
+
+/*
+ * 函数作用：
+ *   在进入深度睡眠前关闭不再需要的外设时钟，减少仅靠“外设 disable”遗留的时钟树功耗。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   这里保留 PMU、RTC、唤醒键所在 GPIOA 与唤醒配置相关时钟，优先保证本轮
+ *   低功耗优化仍然保持稳定唤醒；其余已被收拢的串口、SPI、I2C、DMA、ADC、
+ *   DAC、TIMER、LED/普通按键 GPIO 时钟统一关闭。
+ */
+static void bsp_clock_disable_for_deepsleep(void)
+{
+    rcu_periph_clock_disable(RCU_USART0);
+    rcu_periph_clock_disable(RCU_USART1);
+    rcu_periph_clock_disable(RCU_USART2);
+    rcu_periph_clock_disable(RCU_USART5);
+    rcu_periph_clock_disable(RCU_I2C0);
+    rcu_periph_clock_disable(RCU_SPI0);
+    rcu_periph_clock_disable(RCU_SPI3);
+    rcu_periph_clock_disable(RCU_SDIO);
+    rcu_periph_clock_disable(RCU_ADC0);
+    rcu_periph_clock_disable(RCU_DAC);
+    rcu_periph_clock_disable(RCU_TIMER5);
+    rcu_periph_clock_disable(RCU_DMA0);
+    rcu_periph_clock_disable(RCU_DMA1);
+    rcu_periph_clock_disable(RCU_GPIOB);
+    rcu_periph_clock_disable(RCU_GPIOC);
+    rcu_periph_clock_disable(RCU_GPIOD);
+    rcu_periph_clock_disable(RCU_GPIOE);
 }
 
 /*
@@ -235,6 +275,12 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
     bsp_adc_init();
     bsp_dac_init();
     bsp_gd25qxx_init();
+    /*
+     * SPI0/GPIO/DMA 时钟恢复后，再发送 release 指令唤醒 Flash 本体。
+     * 若在总线资源尚未重建前发命令，SPI 寄存器和片选 GPIO 还不可用，释放动作
+     * 实际不会落到器件上，后续第一次访问就可能拿到无效响应。
+     */
+    spi_flash_release_from_deep_power_down();
     bsp_gd30ad3344_init();
     bsp_rtc_init();
     sd_fatfs_init();
@@ -282,12 +328,19 @@ void bsp_enter_deepsleep(void)
 
     bsp_gpio_enter_deepsleep_state();
     bsp_wkup_key_exti_init();
+    bsp_clock_disable_for_deepsleep();
 
     pmu_flag_clear(PMU_FLAG_RESET_WAKEUP);
     pmu_flag_clear(PMU_FLAG_RESET_STANDBY);
 
     before_cycle_counter_reconfiguration();
-    SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
+    /*
+     * 不仅关掉 SysTick 中断，还一并停掉计数器本体。
+     * 这样深睡阶段不会残留无意义的 SysTick 时钟活动，唤醒后再统一重建 1ms 基准。
+     */
+    SysTick->CTRL = 0U;
+    SysTick->LOAD = 0U;
+    SysTick->VAL = 0U;
 
     /*
      * 唤醒中断已经配置好后，再清一次 NVIC pending，确保 WFI 等待的是
@@ -297,12 +350,8 @@ void bsp_enter_deepsleep(void)
 
     __enable_irq();
 
-    /*
-     * 先关闭 low-driver 模式，优先验证外部 EXTI0 唤醒可靠性。
-     * 若后续需要进一步压低功耗，再在硬件实测基础上评估是否重新启用
-     * PMU_LOWDRIVER_ENABLE。
-     */
-    pmu_to_deepsleepmode(PMU_LDO_LOWPOWER, PMU_LOWDRIVER_DISABLE, WFI_CMD);
+    /* 本轮进入低功耗优化阶段，尝试启用 low-driver 进一步压低 MCU 深睡电流。 */
+    pmu_to_deepsleepmode(PMU_LDO_LOWPOWER, PMU_LOWDRIVER_ENABLE, WFI_CMD);
 
     bsp_deepsleep_reinit_after_wakeup();
 }

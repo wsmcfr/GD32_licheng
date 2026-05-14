@@ -85,9 +85,45 @@ typedef enum
 
 extern GD30AD3344 GD30AD3344_InitStruct;
 
-
+/*
+ * 函数作用：
+ *   按工程默认采样参数初始化 GD30AD3344，使其回到运行态配置。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void GD30AD3344_Init(void);
 
+/*
+ * 函数作用：
+ *   将 GD30AD3344 切换到掉电/单次转换配置，用于深度睡眠前降低芯片本体功耗。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void GD30AD3344_Enter_LowPower(void);
+
+/*
+ * 函数作用：
+ *   按当前工程默认配置重新恢复 GD30AD3344 运行态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void GD30AD3344_Exit_LowPower(void);
+
+/*
+ * 函数作用：
+ *   读取指定通道和量程下的电压值。
+ * 参数说明：
+ *   CH：待采样的输入通道选择。
+ *   Ref：待使用的 PGA 量程配置。
+ * 返回值说明：
+ *   返回按照当前 PGA 量程换算后的电压值，单位为伏特。
+ */
 float GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH,GD30AD3344_PGA_TypeDef Ref);
 
 #ifdef __cplusplus
