@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
-- **Last Active**: 2026-05-14
+- **Total Sessions**: 12
+- **Last Active**: 2026-05-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~464 | Active |
+| `journal-1.md` | ~564 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-05-15 | LittleFS接入与BootLoader脱机跳转修复 | `e407a08` | `fix-wkup-deepsleep` |
+| 11 | 2026-05-14 | 低功耗深睡优化与GitHub推送 | `0562e89` | `fix-wkup-deepsleep` |
 | 10 | 2026-05-14 | 修复低功耗唤醒与VBAT RTC续时 | `34f0431` | `fix-wkup-deepsleep` |
 | 9 | 2026-05-13 | 完成 USART2 OTA 通道迁移并通过硬件升级验证 | `577cb98` | `fix-wkup-deepsleep` |
 | 8 | 2026-05-13 | 整理Flash分区原理与OTA容量限制说明 | `44e9ec2` | `fix-wkup-deepsleep` |

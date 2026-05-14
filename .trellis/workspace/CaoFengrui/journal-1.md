@@ -109,7 +109,7 @@
 
 ### Summary
 
-(Add summary)
+完成深睡前外设收拢、芯片级低功耗配置和 GitHub 推送。该轮重点验证低功耗链路不会破坏 `WK_UP` 唤醒恢复，且构建产物可正常生成。
 
 ### Main Changes
 
@@ -142,7 +142,9 @@
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] Keil 命令行构建 `MDK/2026706296.uvprojx` 通过并生成 `Project.axf/bin/hex`。
+- [OK] 用户硬件实测睡眠电流约从 `0.116A` 降到 `0.115A`。
+- [OK] 用户硬件实测 `WK_UP` 可在约 0.6s 内恢复显示。
 
 ### Status
 
@@ -308,7 +310,7 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 
 ### Summary
 
-(Add summary)
+完成 GD25QXX LittleFS 安全接入、OTA 下载缓存区重新规划、BootLoader 跳转诊断增强，以及 AC6 semihosting 脱机卡死修复。该轮同时把 `BKPT 0xAB` 根因、map 符号检查和不可优先修改厂家系统文件的规则沉淀到 `.trellis/spec`。
 
 ### Main Changes
 
@@ -333,7 +335,9 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] Keil 命令行构建 `MDK/2026706296.uvprojx` 通过：`0 Error(s), 1 Warning(s)`。
+- [OK] `MDK/Listings/Project.map` 中 `__use_no_semihosting` 存在，`_sys_open/_sys_write/_sys_exit/_ttywrch` 解析到 `main.o`。
+- [OK] 用户硬件验证脱机复位后可从 `BootLoader : jump app ...` 继续进入 App，输出 `BOOT: handoff start` 和 LittleFS 自检 PASS。
 
 ### Status
 
@@ -454,6 +458,110 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Testing
 
 - [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 11: 低功耗深睡优化与GitHub推送
+
+**Date**: 2026-05-14
+**Task**: 低功耗深睡优化与GitHub推送
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+完成深睡前外设收拢、芯片级低功耗配置和 GitHub 推送。该轮重点验证低功耗链路不会破坏 `WK_UP` 唤醒恢复，且构建产物可正常生成。
+
+### Main Changes
+
+| 项目 | 说明 |
+|---|---|
+| 深睡优化 | 修复 `OLED_Display_Off()` 关屏命令，补充 `GD25QXX` deep power-down / release，补充 `GD30AD3344` 芯片级低功耗配置。 |
+| MCU 侧收拢 | 在 `bsp_power.c` 中新增统一深睡关钟函数，进入深睡前关闭 USART / SPI / I2C / DMA / ADC / DAC / TIMER / GPIOB-E 时钟门控，并完整停止 `SysTick`，启用 `PMU_LOWDRIVER_ENABLE`。 |
+| 唤醒恢复 | 调整 Flash 唤醒时序，确保在 SPI0/GPIO/DMA 恢复后再发送 release 指令；保留 `WK_UP` 唤醒链路并完成外设重建。 |
+| 文档同步 | 更新 `工程文档.md` 与 `PACK/perf_counter用途说明.md`，同步深睡流程、芯片级待机与 SysTick 停止说明。 |
+| 验证结果 | 使用 `E:\Keil_v5\UV4\UV4.exe` 构建 `MDK/2026706296.uvprojx`，生成 `Project.axf/bin/hex`；用户实测睡眠电流由 `0.116A` 降到 `0.115A`，`WK_UP` 可在约 0.6s 内恢复显示。 |
+| 版本控制 | 已提交 `0562e89 feat(power): 优化深睡外设收拢与芯片级待机`，并推送到 `origin/fix-wkup-deepsleep`。 |
+
+**涉及文件**：
+- `USER/Driver/bsp_power.c`
+- `USER/Component/oled/oled.c`
+- `USER/Component/gd25qxx/gd25qxx.c`
+- `USER/Component/gd25qxx/gd25qxx.h`
+- `USER/Component/gd30ad3344/gd30ad3344.c`
+- `USER/Component/gd30ad3344/gd30ad3344.h`
+- `工程文档.md`
+- `PACK/perf_counter用途说明.md`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0562e89` | (see git log) |
+
+### Testing
+
+- [OK] Keil 命令行构建 `MDK/2026706296.uvprojx` 通过并生成 `Project.axf/bin/hex`。
+- [OK] 用户硬件实测睡眠电流约从 `0.116A` 降到 `0.115A`。
+- [OK] 用户硬件实测 `WK_UP` 可在约 0.6s 内恢复显示。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 12: LittleFS接入与BootLoader脱机跳转修复
+
+**Date**: 2026-05-15
+**Task**: LittleFS接入与BootLoader脱机跳转修复
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+完成 GD25QXX LittleFS 安全接入、OTA 下载缓存区重新规划、BootLoader 跳转诊断增强，以及 AC6 semihosting 脱机卡死修复。该轮同时把 `BKPT 0xAB` 根因、map 符号检查和不可优先修改厂家系统文件的规则沉淀到 `.trellis/spec`。
+
+### Main Changes
+
+| 项目 | 说明 |
+|---|---|
+| LittleFS 接入 | 为 GD25QXX 增加 LittleFS 静态缓存移植层，保留末尾 4KB 裸 Flash 测试区，避免 raw test 覆盖文件系统超级块。 |
+| 原始 Flash 测试 | `test_spi_flash()` 改为 `SPI_FLASH_RAW_TEST_ENABLE` 控制的可选测试，默认跳过，降低误擦写风险。 |
+| SPI Flash DMA | 明确 GD25QXX 驱动使用 `DMA1 CH2/CH3`，补充 DMA 初始化、释放和文档约束。 |
+| OTA 缓存区 | 重新规划内部 Flash：BootLoader `0x08000000`，参数区 `0x0800C000`，App `0x0800D000..0x0806FFFF`，下载缓存 `0x08070000..0x0807FFFF`。 |
+| BootLoader 跳转 | 增加跳转诊断日志和跳转前现场清理，确认参数区空不是卡死根因，BootLoader 已正确读到 App 向量表并跳转。 |
+| AC6 semihosting 修复 | 在 `USER/main.c` 增加 `__use_no_semihosting` 与 `_sys_open/_sys_write/_sys_exit/_ttywrch/fputc` retarget，修复脱机停在 `BKPT 0xAB` 的问题。 |
+| 经验沉淀 | 更新 `.trellis/spec`，新增 `BootLoader Handoff Standalone Hang` 场景，要求下次先查 map 符号和 `BKPT 0xAB`，不能先改 BootLoader 地址或厂家系统文件。 |
+| 文档同步 | 更新工程文档、BootLoader 接入说明、实际升级流程、Flash 分区说明和 OTA 容量限制说明。 |
+
+### 验证结果
+
+- Keil 命令行构建 `MDK/2026706296.uvprojx` 通过：`0 Error(s), 1 Warning(s)`。
+- `MDK/Listings/Project.map` 中 `__use_no_semihosting` 存在，`_sys_open/_sys_write/_sys_exit/_ttywrch` 解析到 `main.o`。
+- 用户硬件验证脱机复位后可从 `BootLoader : jump app ...` 继续进入 App，输出 `BOOT: handoff start`、LittleFS 自检 PASS、raw Flash/SD 测试默认跳过。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e407a08` | (see git log) |
+
+### Testing
+
+- [OK] Keil 命令行构建 `MDK/2026706296.uvprojx` 通过：`0 Error(s), 1 Warning(s)`。
+- [OK] `MDK/Listings/Project.map` 中 `__use_no_semihosting` 存在，`_sys_open/_sys_write/_sys_exit/_ttywrch` 解析到 `main.o`。
+- [OK] 用户硬件验证脱机复位后可从 `BootLoader : jump app ...` 继续进入 App，输出 `BOOT: handoff start` 和 LittleFS 自检 PASS。
 
 ### Status
 
