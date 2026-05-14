@@ -83,3 +83,27 @@ Example rule:
 - `uart_task()` may log or echo the completed frame later
 
 This keeps interrupt latency predictable and avoids flooding the serial console.
+
+---
+
+## ARMCLANG Retargeting And Semihosting
+
+For the BootLoader App target, `printf()` support must remain usable without a debugger attached.
+
+| Contract | Required Behavior |
+|----------|-------------------|
+| `__use_no_semihosting` | Must be present for ARMCLANG / AC6 builds so the C library does not use debugger-hosted semihosting services |
+| `_sys_open()` | May only accept `stdin`, `stdout`, and `stderr`; normal file opens must fail instead of falling back to host files |
+| `_sys_write()` / `fputc()` / `_ttywrch()` | Must route to the debug UART only when USART0 is already configured, and must otherwise drop early characters without blocking |
+| `_sys_read()` | Must return immediately when no input backend exists; startup code must never wait for host input |
+| `_sys_exit()` | Must not attempt to return to a host process; use a fail-stop loop for bare-metal firmware |
+
+Validation:
+
+| Check | Expected Evidence |
+|-------|-------------------|
+| Build log | `MDK/output/Project.build_log.htm` reports `0 Error(s)` |
+| Link map | `MDK/Listings/Project.map` resolves `_sys_open`, `_sys_write`, `_sys_exit`, and `_ttywrch` to `main.o` |
+| Standalone boot | After `BootLoader : jump app ...`, the serial log continues with `BOOT: handoff start` |
+
+If a debugger stops at `BKPT 0xAB` with a stack such as `_sys_open -> freopen -> __rt_lib_init`, treat it as semihosting leakage. Do not work around that symptom by changing BootLoader jump addresses or vendor `SystemInit()` code.

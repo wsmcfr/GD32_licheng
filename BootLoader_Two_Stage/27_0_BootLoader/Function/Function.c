@@ -36,9 +36,9 @@ pFunction jump2app;
 #define BOOT_APP_START_ADDR         (0x0800D000UL)
 #define BOOT_APP_REGION_SIZE        (0x00063000UL)
 
-/* 官方 Two Stage 方案的下载缓存区，旧 App 先把新固件写到这里，再复位交给 BootLoader 搬运。 */
-#define APP_DOWNLOAD_ADDR           (0x08073000UL)
-#define APP_DOWNLOAD_MAX_SIZE       (52U * 1024U)
+/* 当前工程的下载缓存区从 App 区末尾开始，占用内部 Flash 最后 64KB，旧 App 先把新固件写到这里，再复位交给 BootLoader 搬运。 */
+#define APP_DOWNLOAD_ADDR           (0x08070000UL)
+#define APP_DOWNLOAD_MAX_SIZE       (64U * 1024U)
 
 /* GD32F4xx 本工程按 4KB 页粒度擦写 App 区，分块搬运避免占用大 RAM 缓冲区。 */
 #define FLASH_PAGE_SIZE             (4096U)
@@ -388,7 +388,7 @@ static bool boot_is_valid_app_entry(uint32_t entry_addr)
  *                  2. 按 App 实际大小计算需要擦除的 4KB 页数。
  *                  3. 分块从下载缓存区读取数据，再写入 App 区，避免使用大 RAM 缓冲区。
  *                  4. 从写入后的 App 区重新读取数据计算 CRC32，确认 Flash 写入结果正确。
- * Parameter:       DownLoad_Addr 下载缓存区起始地址，当前工程固定为 0x08073000。
+ * Parameter:       DownLoad_Addr 下载缓存区起始地址，当前工程固定为 0x08070000。
  * Return   :       TRUE 表示搬运和 CRC 校验成功；FALSE 表示参数非法、写入越界或 CRC 不一致。
  * Author   :       Jialei Zhao
  * Date     :       2026-02-4 V0.1 original
@@ -592,6 +592,8 @@ void iap_load_app(uint32_t appxaddr)
 		while (1);
 	}
 
+	printf("BootLoader : jump app vtor:0x%08x msp:0x%08x entry:0x%08x\r\n" , appxaddr , app_stack_addr , app_entry_addr);
+
 	/* 关闭所有中断，避免跳转过程中仍执行 BootLoader 的外设 ISR。 */
 	__disable_irq();
 
@@ -599,6 +601,12 @@ void iap_load_app(uint32_t appxaddr)
 	SysTick->CTRL = 0;
 	SysTick->LOAD = 0;
 	SysTick->VAL = 0;
+
+	/*
+	 * SysTick 挂起位不在 NVIC->ICPR 外设中断数组里。
+	 * 这里单独清掉 PENDST，避免 App 一恢复全局中断就处理 BootLoader 遗留的节拍异常。
+	 */
+	SCB->ICSR = SCB_ICSR_PENDSTCLR_Msk;
 
 	/* 清除所有 NVIC 中断使能和挂起位，给 App 一个干净的中断现场。 */
 	for (uint32_t i = 0U; i < 8U; i++)
@@ -614,11 +622,24 @@ void iap_load_app(uint32_t appxaddr)
 	/* 设置新的中断向量表。App 侧仍会再次设置 VTOR，用于兼容直接调试 App 的场景。 */
 	SCB->VTOR = appxaddr;
 
+	/*
+	 * 先把入口函数指针写入全局变量，再切换 MSP。
+	 * 切换 MSP 之后不能再依赖当前函数的局部栈变量，否则编译器在低优化等级下
+	 * 可能从“新的 App 栈”去取 BootLoader 旧栈里的局部变量，导致跳转地址异常。
+	 */
+	jump2app = (pFunction)app_entry_addr;
+
+	/*
+	 * 确保进入 App 时使用 MSP 作为线程栈，保持和硬复位进入 Reset_Handler 的现场一致。
+	 * 当前 BootLoader 本身没有使用 PSP，但这里显式复位 CONTROL 可避免后续扩展引入隐患。
+	 */
+	__set_CONTROL(0U);
+	__ISB();
+
 	/* 设置新的栈指针。普通函数跳转不会自动切换 MSP，必须手动加载 App 向量表第 0 项。 */
 	__set_MSP(app_stack_addr);
 
 	/* 跳转到应用程序。入口地址来自 App 向量表第 1 项。 */
-	jump2app = (pFunction)app_entry_addr;
 	jump2app();
 
 	/* 如果执行到这里说明跳转失败。 */

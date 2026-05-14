@@ -3,8 +3,17 @@
 
 #include "system_all.h"
 
-/* SPI Flash 页大小。 */
+/* SPI Flash 页大小，必须与 LittleFS 移植层的 LFS_FLASH_PAGE_SIZE 保持一致。 */
 #define SPI_FLASH_PAGE_SIZE             0x100U
+
+/*
+ * 宏作用：
+ *   控制是否在启动阶段执行裸地址 SPI Flash 擦写测试。
+ * 说明：
+ *   默认关闭，避免裸擦写破坏 LittleFS 文件系统；只有排查底层 GD25Qxx 驱动
+ *   或全新硬件焊接问题时才临时置 1。
+ */
+#define SPI_FLASH_RAW_TEST_ENABLE       0U
 
 /* SPI Flash 所在 SPI0 引脚资源定义。 */
 #define GD25QXX_SPI_GPIO_PORT          GPIOB
@@ -20,6 +29,19 @@
 /* SPI Flash 使用的 SPI 外设和 DMA 临时缓冲区长度。 */
 #define SPI_FLASH                     SPI0
 #define GD25QXX_DMA_BUFFER_SIZE       12U
+
+/*
+ * GD25QXX 使用 SPI0 的 DMA 映射资源。
+ * 说明：
+ *   当前驱动所有 SPI 收发都通过 DMA1 完成，其中 RX 使用 CH2，TX 使用 CH3，
+ *   两个通道都选择 SUBPERI3。时钟、通道和子外设统一放在这里定义，避免
+ *   初始化代码和传输代码分别硬编码后出现 DMA 时钟开错的问题。
+ */
+#define GD25QXX_SPI_DMA_CLOCK         RCU_DMA1
+#define GD25QXX_SPI_DMA_PERIPH        DMA1
+#define GD25QXX_SPI_DMA_RX_CHANNEL    DMA_CH2
+#define GD25QXX_SPI_DMA_TX_CHANNEL    DMA_CH3
+#define GD25QXX_SPI_DMA_SUBPERIPH     DMA_SUBPERI3
 
 /* 片选控制宏定义。 */
 #define SPI_FLASH_CS_LOW()            gpio_bit_reset(GD25QXX_SPI_CS_GPIO_PORT, GD25QXX_SPI_CS_PIN)

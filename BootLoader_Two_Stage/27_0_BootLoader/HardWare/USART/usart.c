@@ -113,6 +113,12 @@ int fputc(int ch , FILE* f)
 {
 	usart_data_transmit(USART0 , (uint8_t)ch);
 	while (RESET == usart_flag_get(USART0 , USART_FLAG_TBE));
+	/*
+	 * 等待 TC 置位，确认最后一个字符已经从移位寄存器真正发出。
+	 * BootLoader 在打印完日志后可能马上切换时钟并跳转 App；如果只等 TBE，
+	 * 最后一两个字节还在发送途中就被 App 重新初始化 USART，串口终端会看到乱码。
+	 */
+	while (RESET == usart_flag_get(USART0 , USART_FLAG_TC));
 	return ch;
 }
 

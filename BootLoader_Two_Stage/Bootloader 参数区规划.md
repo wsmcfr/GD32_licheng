@@ -145,7 +145,7 @@ typedef struct __attribute__((packed)) {
 0x0018  | lastUpdateTime     | 4B   | 0x65B9A8C0    | Unix时间
 0x001C  | reserved1          | 4B   | 0x00000000    |
 ────────┼────────────────────┼──────┼───────────────┼─────────────
-0x0020  | appSize            | 4B   | 0x0000D000    | 53248
+0x0020  | appSize            | 4B   | 0x00010000    | 65536
 0x0024  | appCRC32           | 4B   | 0x1A2B3C4D    | ★CRC校验
 0x0028  | appVersion         | 4B   | 0x02010000    | v2.1.0.0
 0x002C  | appBuildDate       | 4B   | 0x20260129    |

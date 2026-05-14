@@ -21,21 +21,23 @@ static uint8_t spi1_send_array[GD25QXX_DMA_BUFFER_SIZE];
 /* SPI Flash DMA 临时接收缓冲区。 */
 static uint8_t spi1_receive_array[GD25QXX_DMA_BUFFER_SIZE];
 
-/**
- * @brief Initializes the SPI Flash chip.
- * @note This function assumes that the SPI2 peripheral and CS GPIO (PB12)
- *       have already been initialized elsewhere in the application code.
- *       It primarily ensures the CS pin is high (chip deselected) initially.
- *       You can add a Flash ID read here for an initial check if desired.
+/*
+ * 函数作用：
+ *   初始化 GD25QXX 片选状态并使能绑定的 SPI 外设。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   GPIO、SPI 参数和 DMA 时钟由 bsp_gd25qxx_init() 负责配置，本函数只做
+ *   Flash 组件级别的收尾初始化，避免组件层重复持有板级资源配置。
  */
 void spi_flash_init(void)
 {
     SPI_FLASH_CS_HIGH();
     
-    /* Enable SPI1 */
+    /* 使能当前 SPI Flash 绑定的 SPI 外设。 */
     spi_enable(SPI_FLASH);
-    
-    // uint32_t id = spi_flash_read_id();
 }
 
 void spi_flash_sector_erase(uint32_t sector_addr)
@@ -258,157 +260,175 @@ void spi_flash_release_from_deep_power_down(void)
     delay_1ms(1U);
 }
 
-/**
- * @brief Send and receive one byte by DMA.
- * @param byte Byte to transmit.
- * @return Byte received from SPI bus.
+/*
+ * 函数作用：
+ *   通过 GD25QXX_SPI_DMA_PERIPH 的 TX/RX DMA 通道完成 1 字节 SPI 全双工收发。
+ * 参数说明：
+ *   byte：需要通过 MOSI 发送给 GD25QXX 的 1 字节数据。
+ * 返回值说明：
+ *   返回 MISO 同步接收到的 1 字节数据。
  */
 uint8_t spi_flash_send_byte_dma(uint8_t byte)
 {
-    /* Put outgoing byte into TX buffer */
+    /* 发送前先写入静态 DMA 发送缓冲区，避免 DMA 直接访问栈上临时变量。 */
     spi1_send_array[0] = byte;
     
-    /* Configure TX DMA channel for one-byte transfer */
+    /* DMA 配置结构体在 TX/RX 两个通道间复用，后续按方向覆盖必要字段。 */
     dma_single_data_parameter_struct dma_init_struct;
     
-    /* Configure DMA TX channel */
-    dma_deinit(DMA1, DMA_CH3);
+    /* 配置 TX 通道：SPI 数据寄存器固定，内存地址按字节自增。 */
+    dma_deinit(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_FLASH);
     dma_init_struct.memory0_addr        = (uint32_t)spi1_send_array;
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
     dma_init_struct.periph_memory_width = DMA_PERIPH_WIDTH_8BIT;
     dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_init_struct.number              = 1; /* Send one byte */
+    dma_init_struct.number              = 1; /* 本次只发送 1 字节。 */
     dma_init_struct.periph_inc          = DMA_PERIPH_INCREASE_DISABLE;
     dma_init_struct.memory_inc          = DMA_MEMORY_INCREASE_ENABLE;
     dma_init_struct.circular_mode       = DMA_CIRCULAR_MODE_DISABLE;
-    dma_single_data_mode_init(DMA1, DMA_CH3, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH3, DMA_SUBPERI3);
+    dma_single_data_mode_init(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL, &dma_init_struct);
+    dma_channel_subperipheral_select(GD25QXX_SPI_DMA_PERIPH,
+                                     GD25QXX_SPI_DMA_TX_CHANNEL,
+                                     GD25QXX_SPI_DMA_SUBPERIPH);
     
-    /* Configure DMA RX channel */
-    dma_deinit(DMA1, DMA_CH2);
+    /* 配置 RX 通道：SPI 全双工发送时必须同步接收，否则 RXNE 可能阻塞后续传输。 */
+    dma_deinit(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_FLASH);
     dma_init_struct.memory0_addr        = (uint32_t)spi1_receive_array;
     dma_init_struct.direction           = DMA_PERIPH_TO_MEMORY;
     dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_single_data_mode_init(DMA1, DMA_CH2, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH2, DMA_SUBPERI3);
+    dma_single_data_mode_init(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, &dma_init_struct);
+    dma_channel_subperipheral_select(GD25QXX_SPI_DMA_PERIPH,
+                                     GD25QXX_SPI_DMA_RX_CHANNEL,
+                                     GD25QXX_SPI_DMA_SUBPERIPH);
     
-    /* Enable RX and TX DMA channels */
-    dma_channel_enable(DMA1, DMA_CH2);
-    dma_channel_enable(DMA1, DMA_CH3);
+    /* 先打开 RX，再打开 TX，避免首字节回读数据来不及搬运。 */
+    dma_channel_enable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL);
+    dma_channel_enable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
     
-    /* Enable SPI RX/TX DMA requests */
+    /* 打开 SPI 的 DMA 请求后，SPI 数据收发由 DMA 通道触发完成。 */
     spi_dma_enable(SPI_FLASH, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_FLASH, SPI_DMA_TRANSMIT);
     
     /* Wait for DMA transfer complete */
-    while(RESET == dma_flag_get(DMA1, DMA_CH2, DMA_FLAG_FTF));
+    while(RESET == dma_flag_get(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, DMA_FLAG_FTF));
     
-    /* Disable DMA */
+    /* 传输结束立即关闭 SPI DMA 请求和通道，避免影响下一次重新配置。 */
     spi_dma_disable(SPI_FLASH, SPI_DMA_RECEIVE);
     spi_dma_disable(SPI_FLASH, SPI_DMA_TRANSMIT);
-    dma_channel_disable(DMA1, DMA_CH2);
-    dma_channel_disable(DMA1, DMA_CH3);
+    dma_channel_disable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL);
+    dma_channel_disable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
     
     /* Clear DMA flags */
-    dma_flag_clear(DMA1, DMA_CH2, DMA_FLAG_FTF);
-    dma_flag_clear(DMA1, DMA_CH3, DMA_FLAG_FTF);
+    dma_flag_clear(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, DMA_FLAG_FTF);
+    dma_flag_clear(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL, DMA_FLAG_FTF);
     
-    /* Return received byte */
+    /* 返回同步收到的字节，用于 JEDEC ID、状态寄存器等读操作。 */
     return spi1_receive_array[0];
 }
 
-/**
- * @brief Send and receive one halfword by DMA (16-bit data).
- * @param half_word Halfword to transmit.
- * @return Halfword received from SPI bus.
+/*
+ * 函数作用：
+ *   通过 GD25QXX 的 DMA 收发链路连续发送 2 字节，并组合返回同步接收的半字。
+ * 参数说明：
+ *   half_word：需要发送的 16 位数据，高 8 位先发送，低 8 位后发送。
+ * 返回值说明：
+ *   返回 MISO 同步接收到的 16 位数据，高 8 位对应第一字节。
  */
 uint16_t spi_flash_send_halfword_dma(uint16_t half_word)
 {
     uint16_t rx_data;
     
-    /* Send high 8 bits first */
+    /* SPI Flash 按 MSB 先行发送半字，高 8 位先进入 DMA 发送缓冲区。 */
     spi1_send_array[0] = (uint8_t)(half_word >> 8);
     spi1_send_array[1] = (uint8_t)half_word;
     
-    /* Configure DMA parameters */
+    /* DMA 配置结构体在 TX/RX 两个通道间复用，后续按方向覆盖必要字段。 */
     dma_single_data_parameter_struct dma_init_struct;
     
-    /* Configure DMA TX channel */
-    dma_deinit(DMA1, DMA_CH3);
+    /* 配置 TX 通道，发送缓冲区连续提供 2 字节。 */
+    dma_deinit(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_FLASH);
     dma_init_struct.memory0_addr        = (uint32_t)spi1_send_array;
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
     dma_init_struct.periph_memory_width = DMA_PERIPH_WIDTH_8BIT;
     dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_init_struct.number              = 2; /* Send two bytes */
+    dma_init_struct.number              = 2; /* 本次发送 2 字节。 */
     dma_init_struct.periph_inc          = DMA_PERIPH_INCREASE_DISABLE;
     dma_init_struct.memory_inc          = DMA_MEMORY_INCREASE_ENABLE;
     dma_init_struct.circular_mode       = DMA_CIRCULAR_MODE_DISABLE;
-    dma_single_data_mode_init(DMA1, DMA_CH3, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH3, DMA_SUBPERI3);
+    dma_single_data_mode_init(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL, &dma_init_struct);
+    dma_channel_subperipheral_select(GD25QXX_SPI_DMA_PERIPH,
+                                     GD25QXX_SPI_DMA_TX_CHANNEL,
+                                     GD25QXX_SPI_DMA_SUBPERIPH);
     
-    /* Configure DMA RX channel */
-    dma_deinit(DMA1, DMA_CH2);
+    /* 配置 RX 通道，同步接收 2 字节回读数据。 */
+    dma_deinit(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_FLASH);
     dma_init_struct.memory0_addr        = (uint32_t)spi1_receive_array;
     dma_init_struct.direction           = DMA_PERIPH_TO_MEMORY;
     dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_single_data_mode_init(DMA1, DMA_CH2, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH2, DMA_SUBPERI3);
+    dma_single_data_mode_init(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, &dma_init_struct);
+    dma_channel_subperipheral_select(GD25QXX_SPI_DMA_PERIPH,
+                                     GD25QXX_SPI_DMA_RX_CHANNEL,
+                                     GD25QXX_SPI_DMA_SUBPERIPH);
     
-    /* Enable RX and TX DMA channels */
-    dma_channel_enable(DMA1, DMA_CH2);
-    dma_channel_enable(DMA1, DMA_CH3);
+    /* 先打开 RX，再打开 TX，保证 SPI 全双工回读不会丢首字节。 */
+    dma_channel_enable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL);
+    dma_channel_enable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
     
-    /* Enable SPI RX/TX DMA requests */
+    /* 打开 SPI 的 DMA 请求后，SPI 数据收发由 DMA 通道触发完成。 */
     spi_dma_enable(SPI_FLASH, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_FLASH, SPI_DMA_TRANSMIT);
     
-    /* Wait for DMA transfer complete */
-    while(RESET == dma_flag_get(DMA1, DMA_CH2, DMA_FLAG_FTF));
+    /* 等 RX 完成代表 2 字节全双工收发已经完成。 */
+    while(RESET == dma_flag_get(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, DMA_FLAG_FTF));
     
-    /* Disable DMA */
+    /* 传输结束后关闭 DMA 请求和通道，下一次调用会重新配置通道参数。 */
     spi_dma_disable(SPI_FLASH, SPI_DMA_RECEIVE);
     spi_dma_disable(SPI_FLASH, SPI_DMA_TRANSMIT);
-    dma_channel_disable(DMA1, DMA_CH2);
-    dma_channel_disable(DMA1, DMA_CH3);
+    dma_channel_disable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL);
+    dma_channel_disable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
     
-    /* Clear DMA flags */
-    dma_flag_clear(DMA1, DMA_CH2, DMA_FLAG_FTF);
-    dma_flag_clear(DMA1, DMA_CH3, DMA_FLAG_FTF);
+    /* 清除 RX/TX 完成标志，避免下一次传输误判。 */
+    dma_flag_clear(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, DMA_FLAG_FTF);
+    dma_flag_clear(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL, DMA_FLAG_FTF);
     
-    /* Combine received bytes */
+    /* 按发送顺序组合接收到的两个字节。 */
     rx_data = (uint16_t)(spi1_receive_array[0] << 8);
     rx_data |= spi1_receive_array[1];
     
     return rx_data;
 }
 
-/**
- * @brief Transmit and receive multiple bytes by DMA.
- * @param tx_buffer TX buffer pointer.
- * @param rx_buffer RX buffer pointer.
- * @param size Transfer size in bytes.
+/*
+ * 函数作用：
+ *   通过 GD25QXX 的 DMA 收发链路执行最多 GD25QXX_DMA_BUFFER_SIZE 字节的 SPI 全双工传输。
+ * 参数说明：
+ *   tx_buffer：发送数据缓冲区指针，函数会先复制到内部静态 DMA 缓冲区。
+ *   rx_buffer：接收数据输出缓冲区指针，传输完成后写入同步接收到的数据。
+ *   size：请求传输字节数，超过 GD25QXX_DMA_BUFFER_SIZE 时会被截断。
+ * 返回值说明：
+ *   无返回值。
  */
 void spi_flash_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer, uint16_t size)
 {
-    /* Clamp size to local buffer length */
+    /* 该驱动使用固定静态 DMA 缓冲区，超长请求必须截断，避免越界写。 */
     if (size > GD25QXX_DMA_BUFFER_SIZE) {
         size = GD25QXX_DMA_BUFFER_SIZE;
     }
     
-    /* Prepare TX data */
+    /* 先复制到内部 DMA 缓冲区，保证 DMA 访问的内存生命周期稳定。 */
     for (uint16_t i = 0; i < size; i++) {
         spi1_send_array[i] = tx_buffer[i];
     }
     
-    /* Configure DMA parameters */
+    /* DMA 配置结构体在 TX/RX 两个通道间复用，后续按方向覆盖必要字段。 */
     dma_single_data_parameter_struct dma_init_struct;
     
-    /* Configure DMA TX channel */
-    dma_deinit(DMA1, DMA_CH3);
+    /* 配置 TX 通道，按 size 连续发送内部缓冲区数据。 */
+    dma_deinit(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_FLASH);
     dma_init_struct.memory0_addr        = (uint32_t)spi1_send_array;
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
@@ -418,83 +438,110 @@ void spi_flash_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer, uint
     dma_init_struct.periph_inc          = DMA_PERIPH_INCREASE_DISABLE;
     dma_init_struct.memory_inc          = DMA_MEMORY_INCREASE_ENABLE;
     dma_init_struct.circular_mode       = DMA_CIRCULAR_MODE_DISABLE;
-    dma_single_data_mode_init(DMA1, DMA_CH3, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH3, DMA_SUBPERI3);
+    dma_single_data_mode_init(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL, &dma_init_struct);
+    dma_channel_subperipheral_select(GD25QXX_SPI_DMA_PERIPH,
+                                     GD25QXX_SPI_DMA_TX_CHANNEL,
+                                     GD25QXX_SPI_DMA_SUBPERIPH);
     
-    /* Configure DMA RX channel */
-    dma_deinit(DMA1, DMA_CH2);
+    /* 配置 RX 通道，按 size 接收同步回读数据。 */
+    dma_deinit(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_FLASH);
     dma_init_struct.memory0_addr        = (uint32_t)spi1_receive_array;
     dma_init_struct.direction           = DMA_PERIPH_TO_MEMORY;
     dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_single_data_mode_init(DMA1, DMA_CH2, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH2, DMA_SUBPERI3);
+    dma_single_data_mode_init(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, &dma_init_struct);
+    dma_channel_subperipheral_select(GD25QXX_SPI_DMA_PERIPH,
+                                     GD25QXX_SPI_DMA_RX_CHANNEL,
+                                     GD25QXX_SPI_DMA_SUBPERIPH);
     
-    /* Enable RX and TX DMA channels */
-    dma_channel_enable(DMA1, DMA_CH2);
-    dma_channel_enable(DMA1, DMA_CH3);
+    /* 先启用 RX，再启用 TX，避免 SPI 开始传输后 RX DMA 尚未就绪。 */
+    dma_channel_enable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL);
+    dma_channel_enable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
     
     spi_dma_enable(SPI_FLASH, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_FLASH, SPI_DMA_TRANSMIT);
     
-    /* Wait for DMA transfer complete */
-    while(RESET == dma_flag_get(DMA1, DMA_CH2, DMA_FLAG_FTF));
+    /* 等 RX 完成代表本次多字节全双工收发已经完成。 */
+    while(RESET == dma_flag_get(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, DMA_FLAG_FTF));
     
-    /* Disable DMA */
+    /* 传输结束后关闭 DMA 请求和通道，释放给下一次重新配置。 */
     spi_dma_disable(SPI_FLASH, SPI_DMA_RECEIVE);
     spi_dma_disable(SPI_FLASH, SPI_DMA_TRANSMIT);
-    dma_channel_disable(DMA1, DMA_CH2);
-    dma_channel_disable(DMA1, DMA_CH3);
+    dma_channel_disable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL);
+    dma_channel_disable(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
     
-    /* Clear DMA flags */
-    dma_flag_clear(DMA1, DMA_CH2, DMA_FLAG_FTF);
-    dma_flag_clear(DMA1, DMA_CH3, DMA_FLAG_FTF);
+    /* 清除 RX/TX 完成标志，避免下一次传输误判。 */
+    dma_flag_clear(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, DMA_FLAG_FTF);
+    dma_flag_clear(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL, DMA_FLAG_FTF);
     
-    /* Copy received data to user RX buffer */
+    /* 最后把内部 DMA 接收缓冲区的数据复制给调用者。 */
     for (uint16_t i = 0; i < size; i++) {
         rx_buffer[i] = spi1_receive_array[i];
     }
 }
 
-/**
- * @brief Wait for DMA transfer to complete.
+/*
+ * 函数作用：
+ *   等待 GD25QXX SPI DMA 接收通道完成，并清理 RX/TX 通道完成标志。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
  */
 void spi_flash_wait_for_dma_end(void)
 {
-    /* Wait for DMA transfer complete */
-    while(RESET == dma_flag_get(DMA1, DMA_CH2, DMA_FLAG_FTF));
+    /* 等待 RX 通道完成，RX 完成代表 SPI 全双工收发已经闭环。 */
+    while(RESET == dma_flag_get(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, DMA_FLAG_FTF));
     
-    /* Clear DMA flags */
-    dma_flag_clear(DMA1, DMA_CH2, DMA_FLAG_FTF);
-    dma_flag_clear(DMA1, DMA_CH3, DMA_FLAG_FTF);
+    /* 清除 RX/TX 完成标志，为后续 DMA 传输留下干净状态。 */
+    dma_flag_clear(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_RX_CHANNEL, DMA_FLAG_FTF);
+    dma_flag_clear(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL, DMA_FLAG_FTF);
 }
 
+/*
+ * 函数作用：
+ *   执行 GD25QXX 裸地址擦写读回测试，用于排查底层 SPI Flash 驱动和硬件链路。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   该测试会擦除一个 4KB 扇区，只能在 SPI_FLASH_RAW_TEST_ENABLE 打开时调用，
+ *   并且必须使用 LittleFS 管理区之外的 LFS_FLASH_RAW_TEST_START_ADDR。
+ */
 void test_spi_flash(void)
 {
     uint32_t flash_id;
     uint8_t write_buffer[SPI_FLASH_PAGE_SIZE];
     uint8_t read_buffer[SPI_FLASH_PAGE_SIZE];
 
-    uint32_t test_addr = 0x000000; // Test address, choose a sector start
+    /*
+     * 裸 Flash 测试会擦除 4KB 扇区，必须固定使用 LittleFS 管理区之外的
+     * 末尾保留扇区，不能再使用 0x000000，避免破坏 LittleFS 超级块。
+     */
+    uint32_t test_addr = LFS_FLASH_RAW_TEST_START_ADDR;
 
     my_printf(DEBUG_USART, "SPI FLASH Test Start\r\n");
 
-    // 1. Initialize SPI Flash driver (mainly CS pin state)
+    /* 第一步：重新确认 SPI Flash 驱动处于片选释放和 SPI 使能状态。 */
     spi_flash_init();
     my_printf(DEBUG_USART, "SPI Flash Initialized.\r\n");
 
-    // 2. Read Flash ID
+    /* 第二步：读取 JEDEC ID，确认 SPI 通信链路和芯片响应正常。 */
     flash_id = spi_flash_read_id();
     my_printf(DEBUG_USART, "Flash ID: 0x%lX\r\n", flash_id);
-    // You can check the ID against your chip manual, e.g., GD25Q64 ID might be 0xC84017
 
-    // 3. Erase a sector (typically 4KB)
-    // Note: Erase operation takes time
-    my_printf(DEBUG_USART, "Erasing sector at address 0x%lX...\r\n", test_addr);
+    /*
+     * 第三步：擦除专用裸测保留扇区。
+     * 注意：扇区擦除耗时较长，底层函数会阻塞等待 WIP 清零后再返回。
+     */
+    my_printf(DEBUG_USART,
+              "Erasing raw-test reserved sector at address 0x%lX...\r\n",
+              test_addr);
     spi_flash_sector_erase(test_addr);
     my_printf(DEBUG_USART, "Sector erased.\r\n");
 
-    // (Optional) Verify erase: read a page and check if all bytes are 0xFF
+    /* 擦除后先读回一页确认全为 0xFF，避免在擦除失败的扇区上继续写入。 */
     spi_flash_buffer_read(read_buffer, test_addr, SPI_FLASH_PAGE_SIZE);
     int erased_check_ok = 1;
     for (int i = 0; i < SPI_FLASH_PAGE_SIZE; i++)
@@ -514,32 +561,29 @@ void test_spi_flash(void)
         my_printf(DEBUG_USART, "Erase check FAILED.\r\n");
     }
 
-    // 4. Prepare data to write (one page)
-    const char *message = "Hello from STM32 to SPI FLASH! Microunion Studio Test - 12345.";
+    /* 第四步：准备一页测试数据，后续整页写入并读回比较。 */
+    const char *message = "Hello from GD32 raw SPI FLASH reserved sector.";
     uint16_t data_len = strlen(message);
     if (data_len >= SPI_FLASH_PAGE_SIZE)
     {
-        data_len = SPI_FLASH_PAGE_SIZE - 1; // Ensure not exceeding page size
+        data_len = SPI_FLASH_PAGE_SIZE - 1;
     }
     memset(write_buffer, 0, SPI_FLASH_PAGE_SIZE);
     memcpy(write_buffer, message, data_len);
-    write_buffer[data_len] = '\0'; // Ensure string termination
+    write_buffer[data_len] = '\0';
 
     my_printf(DEBUG_USART, "Writing data to address 0x%lX: \"%s\"\r\n", test_addr, write_buffer);
-    // Use spi_flash_buffer_write (can handle cross-page, but here we're writing within one page)
-    // Or use spi_flash_page_write directly if certain it's within one page
-    spi_flash_buffer_write(write_buffer, test_addr, SPI_FLASH_PAGE_SIZE); // Write entire page with padding
+    /* 写入完整一页，尾部填 0，便于读回后做定长 memcmp。 */
+    spi_flash_buffer_write(write_buffer, test_addr, SPI_FLASH_PAGE_SIZE);
     my_printf(DEBUG_USART, "Data written.\r\n");
 
-    // 5. Read back the written data
+    /* 第五步：重新从 Flash 读回，验证数据确实落到外部存储芯片。 */
     my_printf(DEBUG_USART, "Reading data from address 0x%lX...\r\n", test_addr);
     memset(read_buffer, 0x00, SPI_FLASH_PAGE_SIZE);
     spi_flash_buffer_read(read_buffer, test_addr, SPI_FLASH_PAGE_SIZE);
-//    spi_flash_buffer_read(read_2_buffer, test_addr, SPI_FLASH_PAGE_SIZE + 1);
     my_printf(DEBUG_USART, "Data read: \"%.*s\"\r\n", SPI_FLASH_PAGE_SIZE, read_buffer);
-//    my_printf(&huart1, "write_buffer \"%p\"\r\n", (void *)write_buffer);
-//    my_printf(&huart1, "read_buffer \"%p\"\r\n", (void *)read_buffer);
-    // 6. Verify data
+
+    /* 第六步：按整页比较，任何字节不一致都视为裸 Flash 驱动测试失败。 */
     if (memcmp(write_buffer, read_buffer, SPI_FLASH_PAGE_SIZE) == 0)
     {
         my_printf(DEBUG_USART, "Data VERIFIED! Write and Read successful.\r\n");

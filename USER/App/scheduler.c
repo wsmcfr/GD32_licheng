@@ -82,21 +82,33 @@ void system_init(void)
 		 * 3. 全局中断状态已经从 BootLoader 关闭态恢复。
 		 */
 		boot_app_handoff_init();
+		/*
+		 * 调试串口必须尽早初始化。这样 BootLoader 跳到 App 后，哪怕后续 SPI Flash、
+		 * OLED、SD 卡或 LittleFS 初始化卡住，也能从 USART0 日志判断已经进入 App。
+		 */
+		bsp_usart_init();
+		my_printf(DEBUG_USART, "BOOT: handoff start\r\n");
 
 		systick_config();
 		init_cycle_counter(false);
+		my_printf(DEBUG_USART, "BOOT: systick/perfc done\r\n");
+
 		/* 上电后保留短延时，给下载器和调试器重新连接 SWIO 留出窗口。 */
 		delay_ms(200);
+		my_printf(DEBUG_USART, "BOOT: delay done\r\n");
 
 	#ifdef __FIRMWARE_VERSION_DEFINE
 		fw_ver = gd32f4xx_firmware_version_get();
 	#endif /* __FIRMWARE_VERSION_DEFINE */
 
 		bsp_led_init();
+		my_printf(DEBUG_USART, "BOOT: led done\r\n");
 		bsp_btn_init();
+		my_printf(DEBUG_USART, "BOOT: btn done\r\n");
 		bsp_oled_init();
+		my_printf(DEBUG_USART, "BOOT: oled bus done\r\n");
 		bsp_gd25qxx_init();
-		bsp_usart_init();
+		my_printf(DEBUG_USART, "BOOT: gd25qxx bus done\r\n");
 		bsp_usart2_init();
 		uart_ota_reset_runtime();
 		uart_ota_emit_startup_probe();
@@ -126,10 +138,27 @@ void system_init(void)
 		OLED_Init();
 		my_printf(DEBUG_USART, "BOOT: oled done\r\n");
 
+#if LFS_STORAGE_BOOT_SELF_TEST_ENABLE
+		/*
+		 * LittleFS 自检只访问文件系统管理区，并把裸 Flash 测试保留区排除在外。
+		 * 这样既能验证 GD25QXX 文件读写链路，又不会被旧的裸地址擦写测试破坏。
+		 */
+		if (LFS_ERR_OK != lfs_storage_self_test()) {
+			my_printf(DEBUG_USART, "BOOT: lfs_storage_self_test failed\r\n");
+		}
+#else
+		my_printf(DEBUG_USART, "BOOT: lfs_storage_self_test skipped (LFS_STORAGE_BOOT_SELF_TEST_ENABLE=0)\r\n");
+#endif
+
+#if SPI_FLASH_RAW_TEST_ENABLE
 		test_spi_flash();
-	#if SD_FATFS_DEMO_ENABLE
+#else
+		my_printf(DEBUG_USART, "BOOT: test_spi_flash skipped (SPI_FLASH_RAW_TEST_ENABLE=0)\r\n");
+#endif
+
+#if SD_FATFS_DEMO_ENABLE
 		sd_fatfs_test();
-	#else
+#else
 		my_printf(DEBUG_USART, "BOOT: sd_fatfs_test skipped (SD_FATFS_DEMO_ENABLE=0)\r\n");
 	#endif
 

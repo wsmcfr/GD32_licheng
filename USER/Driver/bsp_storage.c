@@ -20,7 +20,13 @@ void bsp_gd25qxx_init(void)
     rcu_periph_clock_enable(GD25QXX_SPI_GPIO_CLOCK);
     rcu_periph_clock_enable(GD25QXX_SPI_CS_GPIO_CLOCK);
     rcu_periph_clock_enable(RCU_SPI0);
-    rcu_periph_clock_enable(RCU_DMA0);
+    /*
+     * GD25QXX 驱动实际使用 GD25QXX_SPI_DMA_PERIPH 的 RX/TX 通道。
+     * 这里按 gd25qxx.h 的统一资源宏打开 DMA 时钟，不能依赖 USART0
+     * 初始化顺带打开 DMA1；否则初始化顺序调整后，SPI Flash 读写会卡在
+     * DMA FTF 等待循环。
+     */
+    rcu_periph_clock_enable(GD25QXX_SPI_DMA_CLOCK);
 
     gpio_af_set(GD25QXX_SPI_GPIO_PORT,
                 GD25QXX_SPI_AF,

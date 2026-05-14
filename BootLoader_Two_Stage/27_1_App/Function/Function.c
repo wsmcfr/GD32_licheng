@@ -17,7 +17,10 @@
 
 
 /************************* 宏定义 *************************/
-#define DOWNLOAD_ADDR 0x8073000
+#define DOWNLOAD_ADDR 0x8070000
+
+/* 下载缓存区占用内部 Flash 最后 64KB，也就是 16 个 4KB 页。 */
+#define DOWNLOAD_PAGE_COUNT 16U
 
 #define CONFIG_SIZE 1024*4
 
@@ -174,7 +177,7 @@ void UsrFunction(void)
 			printf("Received %d bytes, CRC32: 0x%08X\r\n" , usart0_tmp_buf_len , config_crc32);
 
 			/* Flash擦除操作 */
-			for (uint8_t i = 0; i < 13; i++)
+			for (uint8_t i = 0; i < DOWNLOAD_PAGE_COUNT; i++)
 			{
 				internal_flash_erase(DOWNLOAD_ADDR + i * 4 * 1024);
 			}

@@ -183,7 +183,7 @@ void USART0_IRQHandler(void)
             copy_len = rx_len;
             /*
              * 流式 OTA 由上位机按帧发送并等待 ACK，ISR 只保存当前 IDLE 帧。
-             * 这样 App 不再为完整固件保留 52KB 缓冲；若上位机未等待 ACK 导致
+             * 这样 App 不再为完整固件保留 64KB 缓冲；若上位机未等待 ACK 导致
              * 上一帧尚未消费，本帧会被钳位覆盖为当前可处理长度。
              */
             if(copy_len > sizeof(uart_dma_buffer)){

@@ -12,7 +12,6 @@ extern "C" {
 
 // #define EBTN_CONFIG_TIMER_16
 
-// 如果你想减少 RAM 大小，这里可以改为 uint16_t
 #ifdef EBTN_CONFIG_TIMER_16
 typedef uint16_t ebtn_time_t;
 typedef int16_t ebtn_time_sign_t;

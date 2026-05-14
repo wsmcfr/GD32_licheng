@@ -52,6 +52,7 @@
 
 /* Component 层头文件。 */
 #include "gd25qxx.h"
+#include "lfs_port.h"
 #include "gd30ad3344.h"
 #include "oled.h"
 

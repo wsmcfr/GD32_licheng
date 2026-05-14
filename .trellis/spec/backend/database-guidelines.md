@@ -58,6 +58,28 @@ This project avoids heap allocation in storage configuration:
 
 are all static arrays in `USER/Component/gd25qxx/lfs_port.c`.
 
+The GD25QXX LittleFS layout reserves the final erase block for optional raw
+Flash smoke tests. The filesystem must only expose `LFS_FLASH_FS_SIZE` through
+`cfg->block_count`; do not let LittleFS allocate the reserved block.
+
+| Region | Contract |
+|--------|----------|
+| LittleFS managed area | Starts at `0x000000`, length `LFS_FLASH_FS_SIZE` |
+| Raw-test reserved area | Starts at `LFS_FLASH_RAW_TEST_START_ADDR`, length `LFS_FLASH_RAW_TEST_RESERVED_SIZE` |
+
+`lfs_storage_self_test()` is the preferred boot-time storage smoke test. It must:
+
+- mount the filesystem first
+- format only after mount fails
+- write and read back a small file
+- check both byte count and content
+- unmount before returning
+
+`test_spi_flash()` is a raw-address driver test. Keep it disabled by default and
+ensure it only erases the raw-test reserved area. It must never erase address
+`0x000000` while LittleFS is used, because that can destroy the LittleFS
+superblock and metadata.
+
 ### Readback Verification
 
 When a storage path is used as a demo, smoke test, or migration safety check, verify both:
@@ -143,3 +165,8 @@ If long filenames matter, verify `ffconf.h` instead of assuming the configuratio
 
 Follow the static-buffer pattern from `lfs_port.c`.
 This project does not use `malloc()` for its storage configuration path.
+
+LittleFS file handles also need explicit static file buffers when opened through
+`lfs_file_opencfg()`. Calling `lfs_file_open()` without a file buffer can make
+LittleFS allocate a per-file cache through `lfs_malloc()`, which is not allowed
+in this project's low-level storage paths.

@@ -572,9 +572,15 @@ Minimum expected checks depend on the changed area:
 
 Use the existing self-test paths where possible:
 
-- `test_spi_flash()`
+- `lfs_storage_self_test()` for normal GD25QXX LittleFS validation
+- `test_spi_flash()` only for raw GD25QXX driver validation, and only when its reserved test sector cannot overlap the LittleFS managed area
 - `sd_fatfs_test()`
 - boot logs in `system_init()`
+
+When LittleFS is enabled on GD25QXX, raw Flash erase/write tests must be opt-in.
+Keep `SPI_FLASH_RAW_TEST_ENABLE` disabled by default, and never let raw tests
+erase address `0x000000` because LittleFS stores its superblock and metadata at
+the beginning of the managed area.
 
 ---
 

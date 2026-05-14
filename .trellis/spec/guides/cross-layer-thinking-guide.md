@@ -83,6 +83,12 @@ After implementation:
 - [ ] Verified error handling at each boundary
 - [ ] Checked data survives round-trip
 
+For embedded boot/runtime boundaries:
+- [ ] Treated BootLoader logs, App first logs, linker map symbols, and debugger PC/call stack as separate evidence layers
+- [ ] Verified standalone reset behavior, not only debugger-run behavior
+- [ ] Checked C runtime/retarget contracts before changing vector-table addresses or vendor startup code
+- [ ] If a debugger stops at `BKPT 0xAB`, checked the backend OTA/logging specs for ARMCLANG semihosting rules
+
 ---
 
 ## When to Create Flow Documentation

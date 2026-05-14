@@ -10,7 +10,6 @@ extern "C" {
 
 // #define BIT_ARRAY_CONFIG_64
 
-// 如果你的系统是 64 位的，这里可以改为 uint64_t
 #ifdef BIT_ARRAY_CONFIG_64
 typedef uint64_t bit_array_t;
 #define BIT_ARRAY_BIT(n) (1ULL << (n))
