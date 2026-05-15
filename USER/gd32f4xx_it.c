@@ -209,11 +209,12 @@ void USART0_IRQHandler(void)
 
 /*
  * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，并在当前版本中直接丢弃本帧 RS485 数据。
+ *   处理 USART1/RS485 IDLE 中断，并将 DMA 接收到的一帧 RS485 数据移交给应用层回显任务。
  * 主要流程：
  *   1. 判断并清除 USART1 IDLE 中断标志。
- *   2. 暂停 DMA，丢弃当前帧内容，不再向应用层共享缓冲区复制。
- *   3. 重新装载 DMA 计数，准备下一帧 RS485 接收。
+ *   2. 暂停 DMA，按剩余传输计数计算本帧有效长度。
+ *   3. 做长度边界检查后复制到 rs485_dma_buffer，并置位 rs485_rx_flag。
+ *   4. 重新装载 DMA 计数，准备下一帧 RS485 接收。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -221,16 +222,31 @@ void USART0_IRQHandler(void)
  */
 void USART1_IRQHandler(void)
 {
+    uint32_t rx_len;
+    uint32_t copy_len;
+
     if(RESET != usart_interrupt_flag_get(USART1, USART_INT_FLAG_IDLE)){
         /* 清除 IDLE 标志：读数据寄存器用于结束本次空闲中断状态。 */
         usart_data_receive(USART1);
         dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
-        /*
-         * 当前 USART0 已改为 LittleFS 调试口，应用层不再消费 USART1 帧。
-         * 因此这里不再复制到共享缓冲区，只负责尽快重装 DMA，保持 RS485 外设
-         * 初始化状态与其他模块兼容，同时避免无意义的内存拷贝。
-         */
+        rx_len = sizeof(usart1_rxbuffer) - dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+        if((rx_len > 0U) && (rx_len <= sizeof(usart1_rxbuffer))){
+            copy_len = rx_len;
+            /*
+             * USART1 当前按“整帧原样回显”处理，因此 ISR 只做一次限长复制，
+             * 具体发送动作留给任务上下文，避免在中断里执行阻塞串口发送。
+             */
+            if(copy_len > sizeof(rs485_dma_buffer)){
+                copy_len = sizeof(rs485_dma_buffer);
+            }
+            if(copy_len > 0U){
+                memcpy(rs485_dma_buffer, usart1_rxbuffer, copy_len);
+                rs485_dma_length = (uint16_t)copy_len;
+                rs485_rx_flag = 1U;
+            }
+        }
+
         /* 重新装载 DMA 计数并打开通道，准备接收下一帧 RS485 数据。 */
         dma_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_FLAG_FTF);
         dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, sizeof(usart1_rxbuffer));

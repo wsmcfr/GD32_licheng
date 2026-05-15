@@ -76,7 +76,8 @@
 | `MDK/output/Project.sct` | `LR_IROM1 0x0800D000 0x0005A000` | 与 Keil IROM 配置保持一致 |
 | `MDK/2026706296.uvprojx` | 打开 HEX 输出，并在构建后生成 `Project.bin` | `Project.bin` 用于 BootLoader 搬运写入 App 区，`Project.hex` 用于调试/烧录工具 |
 | `USER/main.c` | 提供 `__use_no_semihosting` 和 `_sys_open/_sys_write/_sys_exit/_ttywrch/fputc` retarget | 禁止 AC6 C 库 semihosting，避免脱机运行在 `BKPT 0xAB` 处 HardFault |
-| `USER/App/usart_app.c` | 调整为 `USART0` LittleFS 类 Linux 调试命令和日志输出 | `USART0` 不再解析 OTA 帧，也不再承担 RS485 透传，调试时通过 `pwd/ls/cd/cat/write [-a]/mkdir/touch/stat/df` 操作 LittleFS |
+| `USER/App/usart_app.c` | 调整为 `USART0` 文本调试命令和日志输出 | `USART0` 不再解析 OTA 帧，也不再承担 RS485 透传，调试时通过 `gettime/settime/pwd/ls/cd/cat/write [-a]/mkdir/touch/stat/df` 读取 RTC 或操作 LittleFS |
+| `USER/App/rs485_app.c` | 新增 `USART1` RS485 原样回显任务 | 外部工具向 `RS485/USART1` 发送一帧数据后，App 在任务上下文中按原字节内容回显，不额外添加前后缀 |
 | `USER/App/uart_ota_app.c` | 新增 `USART2` START/DATA/END 分包 OTA、CRC 校验、下载缓存区写入和参数区写入 | App 每收到一个 OTA DATA 帧就写 `0x08067000`，最后写 `0x0800C000` 并复位交给 BootLoader 搬运 |
 | `USER/Driver/bootloader_port.c/.h` | 新增 BootLoader 交接层封装 | 统一管理共享地址、CRC32、向量表校验、下载区擦写、参数区回写和软件复位 |
 | `tools/make_uart_ota_packet.py` | 根据 `Project.bin` 生成旧 `.uota` 包，或通过 `--mode send` 按 ACK 分包发送 | 推荐使用 `--mode send --port COMx --baudrate 460800`，避免 App 侧占用整包级 RAM 缓冲，并可观察发送进度 |

@@ -29,6 +29,7 @@ Good examples:
 - `adc_task()`
 - `oled_task()`
 - `btn_task()`
+- `rs485_task()`
 - `uart_task()`
 - `rtc_task()`
 
@@ -62,6 +63,8 @@ Reference pair:
 
 - `USER/gd32f4xx_it.c::USART0_IRQHandler()`
 - `USER/App/usart_app.c::uart_task()`
+- `USER/gd32f4xx_it.c::USART1_IRQHandler()`
+- `USER/App/rs485_app.c::rs485_task()`
 
 ---
 
@@ -78,6 +81,7 @@ Examples:
 
 - `adc_task()` consumes `adc_value[]`
 - `rtc_task()` reads current RTC data and formats it for display
+- `rs485_task()` consumes `rs485_dma_buffer` after ISR handoff and echoes the frame later
 - `uart_task()` consumes `uart_dma_buffer` after ISR handoff
 
 ---

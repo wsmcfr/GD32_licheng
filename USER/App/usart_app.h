@@ -42,11 +42,13 @@ int my_printf(uint32_t usart_periph, const char *format, ...);
 
 /*
  * 函数作用：
- *   周期性处理 USART0 上收到的 LittleFS 调试命令。
+ *   周期性处理 USART0 上收到的文本调试命令。
  * 参数说明：
  *   无参数。
  * 返回值说明：
  *   无返回值。
+ * 说明：
+ *   当前命令集合同时覆盖 LittleFS 文件系统调试命令，以及 RTC 年月日时分秒的读取/设置命令。
  */
 void uart_task(void);
 

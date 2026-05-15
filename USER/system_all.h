@@ -61,6 +61,7 @@
 #include "btn_app.h"
 #include "led_app.h"
 #include "oled_app.h"
+#include "rs485_app.h"
 #include "rtc_app.h"
 #include "sd_app.h"
 #include "usart_app.h"

@@ -136,6 +136,9 @@ LFS: STAT path=/path type=dir size=<bytes>
 
 write <file> <text>      -> overwrite
 write -a <file> <text>   -> append
+
+RTC: YYYY-MM-DD HH:MM:SS
+settime YYYY-MM-DD HH:MM:SS -> RTC: SET OK YYYY-MM-DD HH:MM:SS
 ```
 
 #### 3. Contracts

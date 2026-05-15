@@ -34,11 +34,13 @@ static char g_uart_current_dir[UART_LFS_PATH_BUFFER_SIZE] = "/";
  * 变量作用：
  *   固定帮助文本，供 `help` 和未知命令回包使用。
  * 说明：
- *   当前协议完全切到类 Linux 文本命令，因此帮助文本同步展示新的命令集合。
+ *   当前协议统一走 USART0 文本命令壳层，因此帮助文本需要同时展示 LittleFS 与 RTC 命令集合。
  */
 static const char g_uart_help_text[] =
     "LFS SHELL:\r\n"
     "help\r\n"
+    "gettime\r\n"
+    "settime <yyyy-mm-dd> <hh:mm:ss>\r\n"
     "pwd\r\n"
     "ls [path]\r\n"
     "cd <path>\r\n"
@@ -98,6 +100,23 @@ typedef struct
     char *path;
     char *text;
 } uart_shell_write_args_t;
+
+/*
+ * 枚举作用：
+ *   描述 `settime` 参数解析的结果类型，便于串口层回显更明确的错误原因。
+ * 枚举说明：
+ *   UART_RTC_PARSE_OK：参数解析成功。
+ *   UART_RTC_PARSE_MISSING_ARGS：缺少完整时间参数。
+ *   UART_RTC_PARSE_BAD_FORMAT：参数格式不符合 `yyyy-mm-dd hh:mm:ss`。
+ *   UART_RTC_PARSE_OUT_OF_RANGE：年月日时分秒数值超出允许范围。
+ */
+typedef enum
+{
+    UART_RTC_PARSE_OK = 0,
+    UART_RTC_PARSE_MISSING_ARGS,
+    UART_RTC_PARSE_BAD_FORMAT,
+    UART_RTC_PARSE_OUT_OF_RANGE,
+} uart_rtc_parse_result_t;
 
 /*
  * 函数作用：
@@ -400,6 +419,122 @@ static bool prv_uart_parse_write_args(char *args, uart_shell_write_args_t *resul
 
 /*
  * 函数作用：
+ *   判断指定年份是否为公历闰年，供串口层输入范围校验使用。
+ * 参数说明：
+ *   year：完整年份，例如 2026。
+ * 返回值说明：
+ *   true：表示闰年。
+ *   false：表示平年。
+ */
+static bool prv_uart_is_leap_year(uint16_t year)
+{
+    if((0U == (year % 400U)) || ((0U == (year % 4U)) && (0U != (year % 100U)))){
+        return true;
+    }
+
+    return false;
+}
+
+/*
+ * 函数作用：
+ *   获取指定年月对应月份的最大天数，供 `settime` 参数校验使用。
+ * 参数说明：
+ *   year：完整年份，例如 2026。
+ *   month：十进制月份，范围预期为 1~12。
+ * 返回值说明：
+ *   28~31：表示该月允许的最大日期。
+ *   0：表示月份不在有效范围内。
+ */
+static uint8_t prv_uart_get_days_in_month(uint16_t year, uint8_t month)
+{
+    static const uint8_t days_in_month[] = {31U, 28U, 31U, 30U, 31U, 30U, 31U, 31U, 30U, 31U, 30U, 31U};
+
+    if((month < 1U) || (month > 12U)){
+        return 0U;
+    }
+
+    if((2U == month) && prv_uart_is_leap_year(year)){
+        return 29U;
+    }
+
+    return days_in_month[month - 1U];
+}
+
+/*
+ * 函数作用：
+ *   解析 `settime` 命令的日期时间参数，并在串口层先做一轮用户输入校验。
+ * 主要流程：
+ *   1. 检查参数是否为空，给出“缺参”错误。
+ *   2. 按 `yyyy-mm-dd hh:mm:ss` 格式解析年月日时分秒。
+ *   3. 先在命令层校验数值范围，这样可以向操作者返回更明确的错误提示。
+ * 参数说明：
+ *   args：`settime` 命令参数字符串，允许前导空白，但必须包含完整时间文本。
+ *   result：解析成功后的十进制时间结构体输出指针，必须非空。
+ * 返回值说明：
+ *   UART_RTC_PARSE_OK：解析成功。
+ *   UART_RTC_PARSE_MISSING_ARGS：参数为空。
+ *   UART_RTC_PARSE_BAD_FORMAT：格式不是 `yyyy-mm-dd hh:mm:ss`。
+ *   UART_RTC_PARSE_OUT_OF_RANGE：存在非法年月日时分秒值。
+ */
+static uart_rtc_parse_result_t prv_uart_parse_datetime_args(char *args, bsp_rtc_datetime_t *result)
+{
+    unsigned int year;
+    unsigned int month;
+    unsigned int date;
+    unsigned int hour;
+    unsigned int minute;
+    unsigned int second;
+    unsigned int matched;
+    char extra_char;
+    uint8_t max_day;
+
+    if(NULL == result){
+        return UART_RTC_PARSE_BAD_FORMAT;
+    }
+
+    args = prv_uart_skip_spaces(args);
+    if((NULL == args) || ('\0' == *args)){
+        return UART_RTC_PARSE_MISSING_ARGS;
+    }
+    /* 接受串口终端在命令尾部附带的多余空格，避免人工输入时被误判为格式错误。 */
+    prv_uart_rstrip_spaces(args);
+
+    matched = (unsigned int)sscanf(args,
+                                   "%u-%u-%u %u:%u:%u %c",
+                                   &year,
+                                   &month,
+                                   &date,
+                                   &hour,
+                                   &minute,
+                                   &second,
+                                   &extra_char);
+    if(6U != matched){
+        return UART_RTC_PARSE_BAD_FORMAT;
+    }
+
+    if((year < 2000U) || (year > 2099U) ||
+       (month < 1U) || (month > 12U) ||
+       (hour > 23U) || (minute > 59U) || (second > 59U)){
+        return UART_RTC_PARSE_OUT_OF_RANGE;
+    }
+
+    max_day = prv_uart_get_days_in_month((uint16_t)year, (uint8_t)month);
+    if((0U == max_day) || (date < 1U) || (date > (unsigned int)max_day)){
+        return UART_RTC_PARSE_OUT_OF_RANGE;
+    }
+
+    result->year = (uint16_t)year;
+    result->month = (uint8_t)month;
+    result->date = (uint8_t)date;
+    result->hour = (uint8_t)hour;
+    result->minute = (uint8_t)minute;
+    result->second = (uint8_t)second;
+    result->day_of_week = 0U;
+    return UART_RTC_PARSE_OK;
+}
+
+/*
+ * 函数作用：
  *   向调试串口发送一段以 '\0' 结尾的纯文本。
  * 参数说明：
  *   text：待发送的文本字符串指针，允许为空；为空时直接返回。
@@ -449,6 +584,32 @@ static void prv_uart_send_bytes(const uint8_t *data, uint16_t length)
 static void prv_uart_send_help(void)
 {
     prv_uart_send_text(g_uart_help_text);
+}
+
+/*
+ * 函数作用：
+ *   按统一格式输出一组十进制 RTC 日期时间，避免 `gettime` 和 `settime` 各自维护一套格式串。
+ * 参数说明：
+ *   prefix：输出前缀，例如 `RTC: ` 或 `RTC: SET OK `，必须非空。
+ *   datetime：待输出时间结构体指针，必须非空。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_send_rtc_datetime(const char *prefix, const bsp_rtc_datetime_t *datetime)
+{
+    if((NULL == prefix) || (NULL == datetime)){
+        return;
+    }
+
+    my_printf(DEBUG_USART,
+              "%s%04u-%02u-%02u %02u:%02u:%02u\r\n",
+              prefix,
+              (unsigned int)datetime->year,
+              (unsigned int)datetime->month,
+              (unsigned int)datetime->date,
+              (unsigned int)datetime->hour,
+              (unsigned int)datetime->minute,
+              (unsigned int)datetime->second);
 }
 
 /*
@@ -627,6 +788,72 @@ static void prv_uart_handle_df(void)
               (unsigned long)info.block_count,
               (unsigned long)info.used_blocks,
               g_uart_current_dir);
+}
+
+/*
+ * 函数作用：
+ *   读取当前 RTC 的完整年月日时分秒，并按串口协议格式回显给操作者。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_gettime(void)
+{
+    bsp_rtc_datetime_t datetime;
+
+    if(0 != bsp_rtc_get_datetime(&datetime)){
+        my_printf(DEBUG_USART, "RTC: read failed\r\n");
+        return;
+    }
+
+    prv_uart_send_rtc_datetime("RTC: ", &datetime);
+}
+
+/*
+ * 函数作用：
+ *   解析并设置 RTC 的完整年月日时分秒，成功后立即读回确认最终生效值。
+ * 主要流程：
+ *   1. 在串口命令层解析 `yyyy-mm-dd hh:mm:ss` 文本，并区分缺参、格式错、范围错。
+ *   2. 调用驱动层接口写 RTC，避免命令层直接碰底层寄存器格式。
+ *   3. 成功后读回一遍时间并按统一格式输出，便于操作者确认最终结果。
+ * 参数说明：
+ *   args：`settime` 命令参数字符串，必须包含完整年月日时分秒。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_settime(char *args)
+{
+    bsp_rtc_datetime_t datetime;
+    uart_rtc_parse_result_t parse_result;
+
+    parse_result = prv_uart_parse_datetime_args(args, &datetime);
+    if(UART_RTC_PARSE_MISSING_ARGS == parse_result){
+        my_printf(DEBUG_USART, "RTC: settime usage: settime yyyy-mm-dd hh:mm:ss\r\n");
+        return;
+    }
+
+    if(UART_RTC_PARSE_BAD_FORMAT == parse_result){
+        my_printf(DEBUG_USART, "RTC: bad format, use yyyy-mm-dd hh:mm:ss\r\n");
+        return;
+    }
+
+    if(UART_RTC_PARSE_OUT_OF_RANGE == parse_result){
+        my_printf(DEBUG_USART, "RTC: out of range\r\n");
+        return;
+    }
+
+    if(0 != bsp_rtc_set_datetime(&datetime)){
+        my_printf(DEBUG_USART, "RTC: set failed\r\n");
+        return;
+    }
+
+    if(0 != bsp_rtc_get_datetime(&datetime)){
+        my_printf(DEBUG_USART, "RTC: set ok but readback failed\r\n");
+        return;
+    }
+
+    prv_uart_send_rtc_datetime("RTC: SET OK ", &datetime);
 }
 
 /*
@@ -1124,10 +1351,10 @@ static void prv_uart_handle_rm(char *args)
 
 /*
  * 函数作用：
- *   对一帧 USART0 文本命令做解析并分发到对应 LittleFS 壳层操作。
+ *   对一帧 USART0 文本命令做解析，并分发到对应的 LittleFS 或 RTC 操作。
  * 主要流程：
  *   1. 去掉命令尾部回车换行，得到纯命令字符串。
- *   2. 识别 `help/pwd/ls/cd/cat/write/mkdir/touch/rm/stat/df` 等命令。
+ *   2. 识别 `help/gettime/settime/pwd/ls/cd/cat/write/mkdir/touch/rm/stat/df` 等命令。
  *   3. 对未知命令返回错误提示并附带帮助文本。
  * 参数说明：
  *   command_buffer：待解析命令缓冲区，必须非空。
@@ -1157,6 +1384,16 @@ static void prv_uart_process_command(uint8_t *command_buffer, uint16_t command_l
 
     if(0 == strcmp(parsed.command, "help")){
         prv_uart_send_help();
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "gettime")){
+        prv_uart_handle_gettime();
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "settime")){
+        prv_uart_handle_settime(parsed.args);
         return;
     }
 
@@ -1216,11 +1453,11 @@ static void prv_uart_process_command(uint8_t *command_buffer, uint16_t command_l
 
 /*
  * 函数作用：
- *   周期性处理 USART0 上收到的 LittleFS 调试命令。
+ *   周期性处理 USART0 上收到的文本调试命令。
  * 主要流程：
  *   1. 从 USART0 共享缓冲区原子取出一帧命令到任务层私有缓冲区。
- *   2. 在任务上下文完成类 Linux 文件系统命令解析、LittleFS 操作和串口回显。
- *   3. 不再把 USART0 数据转发到 RS485，保持串口0专用于文件系统调试。
+ *   2. 在任务上下文完成文件系统命令解析、RTC 校时命令处理和串口回显。
+ *   3. 不再把 USART0 数据转发到 RS485，保持串口0专用于调试命令壳层。
  * 参数说明：
  *   无参数。
  * 返回值说明：

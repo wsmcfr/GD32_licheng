@@ -129,7 +129,7 @@ void USART0_IRQHandler(void);
 
 /*
  * 函数作用：
- *   处理 USART1/RS485 IDLE 中断并移交 DMA 接收帧。
+ *   处理 USART1/RS485 IDLE 中断，并移交 DMA 接收帧给 RS485 应用层。
  * 参数说明：
  *   无参数。
  * 返回值说明：

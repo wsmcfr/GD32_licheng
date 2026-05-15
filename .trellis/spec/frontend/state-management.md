@@ -35,6 +35,8 @@ Examples:
 
 - `rx_flag`
 - `uart_dma_buffer`
+- `rs485_rx_flag`
+- `rs485_dma_buffer`
 - `ucLed[6]`
 
 ### Module-Private Cached State
@@ -61,6 +63,7 @@ Do **not** create global state just to avoid passing one parameter through a pri
 Good example:
 
 - `rx_flag` is global because it is written in `USART0_IRQHandler()` and consumed in `uart_task()`
+- `rs485_rx_flag` is global because it is written in `USART1_IRQHandler()` and consumed in `rs485_task()`
 
 Bad example:
 
