@@ -9,9 +9,10 @@ extern "C" {
 
 /*
  * 宏作用：
- *   定义 USART0 应用层普通桥接缓冲区长度。
+ *   定义 USART0 应用层命令帧缓冲区长度。
  * 说明：
- *   USART0 现在只承担普通透传，不再接收 OTA 帧，因此这里只保留桥接所需的缓冲。
+ *   USART0 当前承担 LittleFS 调试口，不再接收 OTA 帧，因此保留 1KB 文本命令缓冲
+ *   用于承接一次 IDLE 帧即可。
  */
 #if defined(BSP_USART0_RX_BUFFER_SIZE)
 #define UART_APP_DMA_BUFFER_SIZE       BSP_USART0_RX_BUFFER_SIZE
@@ -20,30 +21,12 @@ extern "C" {
 #endif
 
 /*
- * 宏作用：
- *   定义 USART1/RS485 应用层接收缓冲区长度。
- * 说明：
- *   RS485 仍保持普通透明转发，不需要占用升级包级别的大缓冲。
- */
-#define UART_APP_RS485_BUFFER_SIZE     512U
-
-/*
  * 变量作用：
- *   USART0 IDLE 中断接收到的一帧普通串口数据缓存，以及完成标志位。
+ *   USART0 IDLE 中断接收到的一帧调试命令缓存，以及完成标志位。
  */
 extern __IO uint8_t rx_flag;
 extern __IO uint16_t uart_dma_length;
 extern uint8_t uart_dma_buffer[UART_APP_DMA_BUFFER_SIZE];
-
-/*
- * 变量作用：
- *   RS485/USART1 IDLE 中断接收到的一帧数据缓存、有效长度和完成标志。
- * 说明：
- *   USART1 使用独立缓存，避免和 USART0 默认串口转发缓存互相覆盖。
- */
-extern __IO uint8_t rs485_rx_flag;
-extern __IO uint16_t rs485_dma_length;
-extern uint8_t rs485_dma_buffer[UART_APP_RS485_BUFFER_SIZE];
 
 /*
  * 函数作用：
@@ -59,7 +42,7 @@ int my_printf(uint32_t usart_periph, const char *format, ...);
 
 /*
  * 函数作用：
- *   周期性处理 USART0 与 RS485 的双向透明转发。
+ *   周期性处理 USART0 上收到的 LittleFS 调试命令。
  * 参数说明：
  *   无参数。
  * 返回值说明：

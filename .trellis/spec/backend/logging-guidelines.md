@@ -26,7 +26,7 @@ Instead, the project uses message prefixes and context.
 | `BOOT:` | startup sequencing and init milestones | `BOOT: adc init...` |
 | Module prefix | module-specific diagnostics or demos | `FATFS long-name PASS:` |
 | `ASSERT:` | fatal assertion reporting | `ASSERT: expr, file, line` |
-| Plain echo | simple demo behavior such as UART pass-through | `my_printf(DEBUG_USART, "%s", uart_dma_buffer);` |
+| Plain echo | simple shell behavior such as `cat` file-content echo or `ls` output | `bsp_usart_send_buffer(DEBUG_USART, uart_file_buffer, len);` |
 
 If you add a new repeated log stream, prefer a short stable prefix instead of free-form text.
 
@@ -80,7 +80,7 @@ Good examples:
 Example rule:
 
 - `USART0_IRQHandler()` should capture data and re-arm DMA
-- `uart_task()` may log or echo the completed frame later
+- `uart_task()` may log or echo the completed shell command result later
 
 This keeps interrupt latency predictable and avoids flooding the serial console.
 

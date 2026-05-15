@@ -156,7 +156,7 @@ void PendSV_Handler(void)
 
 /*
  * 函数作用：
- *   处理 USART0 IDLE 中断，将 DMA 接收到的一帧调试串口数据移交给应用层。
+ *   处理 USART0 IDLE 中断，将 DMA 接收到的一帧调试命令移交给应用层。
  * 主要流程：
  *   1. 判断并清除 IDLE 中断标志。
  *   2. 暂停 DMA，按剩余传输计数计算本帧有效长度。
@@ -182,9 +182,9 @@ void USART0_IRQHandler(void)
         if((rx_len > 0U) && (rx_len <= sizeof(usart0_rxbuffer))){
             copy_len = rx_len;
             /*
-             * 流式 OTA 由上位机按帧发送并等待 ACK，ISR 只保存当前 IDLE 帧。
-             * 这样 App 不再为完整固件保留 64KB 缓冲；若上位机未等待 ACK 导致
-             * 上一帧尚未消费，本帧会被钳位覆盖为当前可处理长度。
+             * USART0 当前承担 LittleFS 调试口，任务层会把本帧当作文本命令解析。
+             * 这里仍只保存一帧数据，若上位机连续灌入更长内容，则按应用层可处理
+             * 缓冲区大小截断，避免 ISR 写越界。
              */
             if(copy_len > sizeof(uart_dma_buffer)){
                 copy_len = sizeof(uart_dma_buffer);
@@ -209,12 +209,11 @@ void USART0_IRQHandler(void)
 
 /*
  * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，将 DMA 接收到的一帧 RS485 数据移交给应用层。
+ *   处理 USART1/RS485 IDLE 中断，并在当前版本中直接丢弃本帧 RS485 数据。
  * 主要流程：
  *   1. 判断并清除 USART1 IDLE 中断标志。
- *   2. 暂停 DMA，计算 RS485 本帧有效长度。
- *   3. 做长度边界检查后复制到 rs485_dma_buffer，并置位 rs485_rx_flag。
- *   4. 重新装载 DMA 计数，准备下一帧 RS485 接收。
+ *   2. 暂停 DMA，丢弃当前帧内容，不再向应用层共享缓冲区复制。
+ *   3. 重新装载 DMA 计数，准备下一帧 RS485 接收。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -222,32 +221,15 @@ void USART0_IRQHandler(void)
  */
 void USART1_IRQHandler(void)
 {
-    uint32_t rx_len;
-    uint32_t copy_len;
-
     if(RESET != usart_interrupt_flag_get(USART1, USART_INT_FLAG_IDLE)){
         /* 清除 IDLE 标志：读数据寄存器用于结束本次空闲中断状态。 */
         usart_data_receive(USART1);
         dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
         /*
-         * 根据 DMA 剩余传输数计算 RS485 本帧长度。
-         * 中断内只做边界检查、内存拷贝和置标志，具体桥接转发交给 uart_task()。
-         */
-        rx_len = sizeof(usart1_rxbuffer) - dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-        if((rx_len > 0U) && (rx_len <= sizeof(usart1_rxbuffer))){
-            copy_len = rx_len;
-            if(copy_len >= sizeof(rs485_dma_buffer)){
-                copy_len = sizeof(rs485_dma_buffer) - 1U;
-            }
-            memcpy(rs485_dma_buffer, usart1_rxbuffer, copy_len);
-            rs485_dma_length = (uint16_t)copy_len;
-            rs485_rx_flag = 1U;
-        }
-
-        /*
-         * 应用层严格依赖 rs485_dma_length 取有效数据，这里不再整块清空缓冲区，
-         * 以缩短 RS485 中断占用时间，避免影响下一帧 DMA 重装。
+         * 当前 USART0 已改为 LittleFS 调试口，应用层不再消费 USART1 帧。
+         * 因此这里不再复制到共享缓冲区，只负责尽快重装 DMA，保持 RS485 外设
+         * 初始化状态与其他模块兼容，同时避免无意义的内存拷贝。
          */
         /* 重新装载 DMA 计数并打开通道，准备接收下一帧 RS485 数据。 */
         dma_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_FLAG_FTF);

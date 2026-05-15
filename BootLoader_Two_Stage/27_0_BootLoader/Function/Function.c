@@ -34,11 +34,11 @@ pFunction jump2app;
 
 /* 当前工程作为 App 时的固定运行地址，必须与 App 工程 IROM/Scatter 地址一致。 */
 #define BOOT_APP_START_ADDR         (0x0800D000UL)
-#define BOOT_APP_REGION_SIZE        (0x00063000UL)
+#define BOOT_APP_REGION_SIZE        (0x0005A000UL)
 
-/* 当前工程的下载缓存区从 App 区末尾开始，占用内部 Flash 最后 64KB，旧 App 先把新固件写到这里，再复位交给 BootLoader 搬运。 */
-#define APP_DOWNLOAD_ADDR           (0x08070000UL)
-#define APP_DOWNLOAD_MAX_SIZE       (64U * 1024U)
+/* 当前工程的下载缓存区前移到 0x08067000，占用内部 Flash 最后 100KB，旧 App 先把新固件写到这里，再复位交给 BootLoader 搬运。 */
+#define APP_DOWNLOAD_ADDR           (0x08067000UL)
+#define APP_DOWNLOAD_MAX_SIZE       (100U * 1024U)
 
 /* GD32F4xx 本工程按 4KB 页粒度擦写 App 区，分块搬运避免占用大 RAM 缓冲区。 */
 #define FLASH_PAGE_SIZE             (4096U)
@@ -388,7 +388,7 @@ static bool boot_is_valid_app_entry(uint32_t entry_addr)
  *                  2. 按 App 实际大小计算需要擦除的 4KB 页数。
  *                  3. 分块从下载缓存区读取数据，再写入 App 区，避免使用大 RAM 缓冲区。
  *                  4. 从写入后的 App 区重新读取数据计算 CRC32，确认 Flash 写入结果正确。
- * Parameter:       DownLoad_Addr 下载缓存区起始地址，当前工程固定为 0x08070000。
+ * Parameter:       DownLoad_Addr 下载缓存区起始地址，当前工程固定为 0x08067000。
  * Return   :       TRUE 表示搬运和 CRC 校验成功；FALSE 表示参数非法、写入越界或 CRC 不一致。
  * Author   :       Jialei Zhao
  * Date     :       2026-02-4 V0.1 original

@@ -17,10 +17,10 @@
 
 
 /************************* 宏定义 *************************/
-#define DOWNLOAD_ADDR 0x8070000
+#define DOWNLOAD_ADDR 0x08067000UL
 
-/* 下载缓存区占用内部 Flash 最后 64KB，也就是 16 个 4KB 页。 */
-#define DOWNLOAD_PAGE_COUNT 16U
+/* 下载缓存区占用内部 Flash 最后 100KB，也就是 25 个 4KB 页。 */
+#define DOWNLOAD_PAGE_COUNT 25U
 
 #define CONFIG_SIZE 1024*4
 

@@ -3,26 +3,86 @@
 __IO uint8_t rx_flag = 0;
 __IO uint16_t uart_dma_length = 0;
 uint8_t uart_dma_buffer[UART_APP_DMA_BUFFER_SIZE] = {0};
-__IO uint8_t rs485_rx_flag = 0;
-__IO uint16_t rs485_dma_length = 0;
-uint8_t rs485_dma_buffer[UART_APP_RS485_BUFFER_SIZE] = {0};
 
 /*
  * 变量作用：
- *   任务层专用快照缓冲区。
+ *   USART0 命令处理专用快照缓冲区和文件回显缓冲区。
  * 说明：
- *   先从 ISR 共享缓冲区复制，再执行阻塞发送，避免发送过程中共享缓冲区被下一次中断改写。
+ *   先从 ISR 共享缓冲区复制命令帧，再在任务层执行 LittleFS 文件与目录操作，
+ *   避免处理过程中共享缓冲区被下一次串口中断改写。
  */
-static uint8_t uart_forward_buffer[UART_APP_DMA_BUFFER_SIZE] = {0};
-static uint8_t rs485_forward_buffer[UART_APP_RS485_BUFFER_SIZE] = {0};
+static uint8_t uart_command_buffer[UART_APP_DMA_BUFFER_SIZE] = {0};
+static uint8_t uart_file_buffer[UART_APP_DMA_BUFFER_SIZE] = {0};
+
+/*
+ * 宏作用：
+ *   定义 UART 文件系统壳层当前工作目录缓冲区长度。
+ * 说明：
+ *   该值需要同时覆盖 LittleFS 绝对路径和串口命令层的拼接空间，因此与命令帧缓冲独立。
+ */
+#define UART_LFS_PATH_BUFFER_SIZE      256U
+
+/*
+ * 变量作用：
+ *   保存当前串口文件系统壳层的工作目录。
+ * 说明：
+ *   上电默认位于根目录 `/`；`cd` 成功后会更新这里，后续相对路径命令都基于该目录解析。
+ */
+static char g_uart_current_dir[UART_LFS_PATH_BUFFER_SIZE] = "/";
+
+/*
+ * 变量作用：
+ *   固定帮助文本，供 `help` 和未知命令回包使用。
+ * 说明：
+ *   当前协议完全切到类 Linux 文本命令，因此帮助文本同步展示新的命令集合。
+ */
+static const char g_uart_help_text[] =
+    "LFS SHELL:\r\n"
+    "help\r\n"
+    "pwd\r\n"
+    "ls [path]\r\n"
+    "cd <path>\r\n"
+    "cat <file>\r\n"
+    "write <file> <text>\r\n"
+    "mkdir <dir>\r\n"
+    "touch <file>\r\n"
+    "rm <path>\r\n"
+    "stat [path]\r\n"
+    "df\r\n";
 
 /*
  * 宏作用：
  *   定义 my_printf() 的格式化缓冲区长度。
  * 说明：
- *   日志格式化不需要跟随 OTA 缓冲扩展，因此单独限制单行日志长度。
+ *   单行日志主要用于命令状态和错误提示，不承载大块文件正文。
  */
 #define UART_APP_PRINTF_BUFFER_SIZE    512U
+
+/*
+ * 结构体作用：
+ *   描述一次命令解析后得到的“命令名 + 剩余参数字符串”。
+ * 成员说明：
+ *   command：命令关键字起始地址，指向命令缓冲区内部。
+ *   args：参数字符串起始地址；无参数时指向空串。
+ */
+typedef struct
+{
+    char *command;
+    char *args;
+} uart_shell_command_t;
+
+/*
+ * 结构体作用：
+ *   描述需要拆成两个参数的命令解析结果。
+ * 成员说明：
+ *   arg1：第一个参数，例如路径。
+ *   arg2：第二个参数，例如写入文本。
+ */
+typedef struct
+{
+    char *arg1;
+    char *arg2;
+} uart_shell_two_args_t;
 
 /*
  * 函数作用：
@@ -57,13 +117,16 @@ static uint16_t prv_uart_take_frame(__IO uint8_t *ready_flag,
     __disable_irq();
     if(0U != *ready_flag){
         valid_length = *shared_length;
-        if(valid_length > task_buf_size){
-            valid_length = task_buf_size;
+        /*
+         * 命令层按 C 字符串解析，因此这里强制预留 1 字节 '\0'，避免整帧满载时越界扫描。
+         */
+        if(valid_length >= task_buf_size){
+            valid_length = task_buf_size - 1U;
         }
         if(valid_length > 0U){
             memcpy(task_buffer, shared_buffer, valid_length);
         }
-        /* 复制与清标志放在同一个临界区，避免任务层重复消费同一帧。 */
+        task_buffer[valid_length] = '\0';
         *shared_length = 0U;
         *ready_flag = 0U;
     }
@@ -102,54 +165,951 @@ int my_printf(uint32_t usart_periph, const char *format, ...)
     }
 
     if(length >= (int)sizeof(buffer)){
-        /* vsnprintf 已截断输出，发送时不把结尾 '\0' 当作串口数据发送。 */
         send_length = (uint16_t)(sizeof(buffer) - 1U);
     }else{
         send_length = (uint16_t)length;
     }
 
     (void)bsp_usart_send_buffer(usart_periph, (const uint8_t *)buffer, send_length);
-
     return length;
 }
 
 /*
  * 函数作用：
- *   通过 RS485 总线发送一段原始字节流。
- * 主要流程：
- *   1. 发送前先切换收发器到发送态。
- *   2. 使用 Driver 层串口发送接口把数据发到 USART1。
- *   3. 等待最后一字节发送完成后切回接收态。
+ *   去掉串口帧末尾的回车、换行和已有字符串结尾，得到纯命令内容。
  * 参数说明：
- *   data：待发送数据起始地址。
- *   length：待发送字节数，单位为字节。
+ *   buffer：待裁剪的命令缓冲区，必须非空。
+ *   length：当前命令有效长度，单位为字节。
  * 返回值说明：
- *   返回实际完成发送流程的字节数；0 表示参数无效或未能开始发送。
+ *   返回裁剪后的有效命令长度；0 表示裁剪后为空命令或参数无效。
  */
-static uint16_t prv_rs485_send_buffer(const uint8_t *data, uint16_t length)
+static uint16_t prv_uart_trim_command(uint8_t *buffer, uint16_t length)
 {
-    uint16_t sent_length;
-
-    if((NULL == data) || (0U == length)){
+    if((NULL == buffer) || (0U == length)){
         return 0U;
     }
 
-    bsp_rs485_direction_transmit();
-    sent_length = bsp_usart_send_buffer(RS485_USART, data, length);
-    /* 等发送函数返回后再切回接收态，避免最后一字节还在移位时提前释放 DE。 */
-    bsp_rs485_direction_receive();
+    while(length > 0U){
+        if(('\r' != buffer[length - 1U]) &&
+           ('\n' != buffer[length - 1U]) &&
+           ('\0' != buffer[length - 1U])){
+            break;
+        }
+        length--;
+    }
 
-    return sent_length;
+    buffer[length] = '\0';
+    return length;
 }
 
 /*
  * 函数作用：
- *   周期性处理 USART0 与 RS485 的双向透明转发。
+ *   去掉字符串前导空格和制表符，便于统一解析参数。
+ * 参数说明：
+ *   text：待处理字符串起始地址，可为空。
+ * 返回值说明：
+ *   非空：返回跳过前导空白后的新起始地址。
+ *   空：当输入为空指针时返回空指针。
+ */
+static char *prv_uart_skip_spaces(char *text)
+{
+    if(NULL == text){
+        return NULL;
+    }
+
+    while((' ' == *text) || ('\t' == *text)){
+        text++;
+    }
+
+    return text;
+}
+
+/*
+ * 函数作用：
+ *   就地裁掉字符串尾部空格和制表符。
+ * 参数说明：
+ *   text：待裁剪字符串，必须非空。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_rstrip_spaces(char *text)
+{
+    size_t length;
+
+    if(NULL == text){
+        return;
+    }
+
+    length = strlen(text);
+    while(length > 0U){
+        if((' ' != text[length - 1U]) && ('\t' != text[length - 1U])){
+            break;
+        }
+        text[length - 1U] = '\0';
+        length--;
+    }
+}
+
+/*
+ * 函数作用：
+ *   把一帧命令拆成“命令关键字 + 参数串”。
  * 主要流程：
- *   1. 若 RS485 收到一帧，则原样转发到 USART0 调试串口。
- *   2. 若 USART0 收到一帧，则原样转发到 RS485 总线。
- * 说明：
- *   当前 OTA 已完全迁移到 USART2，本函数只处理普通串口透传，不再尝试解析 OTA 协议。
+ *   1. 跳过帧首空白。
+ *   2. 以第一个空白分隔命令关键字和参数串。
+ *   3. 对参数串再做一次前导空白裁剪。
+ * 参数说明：
+ *   command_text：可修改的命令字符串缓冲区，必须非空。
+ *   parsed：解析结果输出结构体指针，必须非空。
+ * 返回值说明：
+ *   true：表示成功得到命令关键字。
+ *   false：表示空命令或参数无效。
+ */
+static bool prv_uart_parse_command(char *command_text, uart_shell_command_t *parsed)
+{
+    char *cursor;
+
+    if((NULL == command_text) || (NULL == parsed)){
+        return false;
+    }
+
+    command_text = prv_uart_skip_spaces(command_text);
+    if('\0' == *command_text){
+        return false;
+    }
+
+    parsed->command = command_text;
+    parsed->args = command_text + strlen(command_text);
+
+    cursor = command_text;
+    while('\0' != *cursor){
+        if((' ' == *cursor) || ('\t' == *cursor)){
+            *cursor = '\0';
+            parsed->args = prv_uart_skip_spaces(cursor + 1);
+            return true;
+        }
+        cursor++;
+    }
+
+    parsed->args = cursor;
+    return true;
+}
+
+/*
+ * 函数作用：
+ *   把参数字符串拆成两个部分，用于 `write <path> <text>` 这类命令。
+ * 主要流程：
+ *   1. 跳过参数串前导空白。
+ *   2. 找到第一个空白作为分隔点，将路径和正文断开。
+ *   3. 对正文保留原始内部空格，只去掉前导空白。
+ * 参数说明：
+ *   args：待拆分参数字符串，必须非空。
+ *   result：两参数输出结构体指针，必须非空。
+ * 返回值说明：
+ *   true：表示成功拿到两个参数。
+ *   false：表示参数不足。
+ */
+static bool prv_uart_split_two_args(char *args, uart_shell_two_args_t *result)
+{
+    char *cursor;
+
+    if((NULL == args) || (NULL == result)){
+        return false;
+    }
+
+    args = prv_uart_skip_spaces(args);
+    if('\0' == *args){
+        return false;
+    }
+
+    cursor = args;
+    while(('\0' != *cursor) && (' ' != *cursor) && ('\t' != *cursor)){
+        cursor++;
+    }
+
+    if('\0' == *cursor){
+        return false;
+    }
+
+    *cursor = '\0';
+    result->arg1 = args;
+    result->arg2 = prv_uart_skip_spaces(cursor + 1);
+    if(('\0' == *result->arg1) || ('\0' == *result->arg2)){
+        return false;
+    }
+
+    return true;
+}
+
+/*
+ * 函数作用：
+ *   向调试串口发送一段以 '\0' 结尾的纯文本。
+ * 参数说明：
+ *   text：待发送的文本字符串指针，允许为空；为空时直接返回。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_send_text(const char *text)
+{
+    uint16_t send_length;
+
+    if(NULL == text){
+        return;
+    }
+
+    send_length = (uint16_t)strlen(text);
+    if(send_length > 0U){
+        (void)bsp_usart_send_buffer(DEBUG_USART, (const uint8_t *)text, send_length);
+    }
+}
+
+/*
+ * 函数作用：
+ *   向调试串口发送一段原始字节流。
+ * 参数说明：
+ *   data：待发送数据起始地址，必须非空。
+ *   length：待发送字节数，单位为字节。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_send_bytes(const uint8_t *data, uint16_t length)
+{
+    if((NULL == data) || (0U == length)){
+        return;
+    }
+
+    (void)bsp_usart_send_buffer(DEBUG_USART, data, length);
+}
+
+/*
+ * 函数作用：
+ *   发送当前调试口支持的命令帮助信息。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_send_help(void)
+{
+    prv_uart_send_text(g_uart_help_text);
+}
+
+/*
+ * 函数作用：
+ *   按统一格式输出 LittleFS 命令失败信息。
+ * 参数说明：
+ *   action：失败动作描述，例如 "cat"、"ls"、"mkdir"。
+ *   err：对应的 LittleFS 错误码或本模块错误码。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_report_lfs_error(const char *action, int err)
+{
+    my_printf(DEBUG_USART,
+              "LFS: %s failed (%d)\r\n",
+              (NULL != action) ? action : "unknown",
+              err);
+}
+
+/*
+ * 函数作用：
+ *   把用户传入的相对路径或绝对路径解析成规范绝对路径。
+ * 主要流程：
+ *   1. 绝对路径直接复制。
+ *   2. 相对路径基于当前工作目录拼接。
+ *   3. 处理 `.`、`..` 和重复 `/`，最终归一化成 LittleFS 绝对路径。
+ * 参数说明：
+ *   input_path：用户输入路径，必须非空。
+ *   output_path：输出绝对路径缓冲区，必须非空。
+ *   output_size：输出缓冲区大小，单位为字节。
+ * 返回值说明：
+ *   true：表示解析成功。
+ *   false：表示路径为空、超长或归一化失败。
+ */
+static bool prv_uart_resolve_path(const char *input_path, char *output_path, uint16_t output_size)
+{
+    char working[UART_LFS_PATH_BUFFER_SIZE];
+    char normalized[UART_LFS_PATH_BUFFER_SIZE];
+    char *src;
+    char *segment_start;
+    char *next_slash;
+    size_t normalized_len;
+
+    if((NULL == input_path) || (NULL == output_path) || (output_size < 2U)){
+        return false;
+    }
+
+    while((' ' == *input_path) || ('\t' == *input_path)){
+        input_path++;
+    }
+
+    if('\0' == *input_path){
+        return false;
+    }
+
+    if('/' == input_path[0]){
+        if(strlen(input_path) >= sizeof(working)){
+            return false;
+        }
+        (void)strcpy(working, input_path);
+    }else{
+        if(0 == strcmp(g_uart_current_dir, "/")){
+            if(snprintf(working, sizeof(working), "/%s", input_path) >= (int)sizeof(working)){
+                return false;
+            }
+        }else{
+            if(snprintf(working, sizeof(working), "%s/%s", g_uart_current_dir, input_path) >= (int)sizeof(working)){
+                return false;
+            }
+        }
+    }
+
+    normalized[0] = '/';
+    normalized[1] = '\0';
+    normalized_len = 1U;
+    src = working;
+
+    while('\0' != *src){
+        while('/' == *src){
+            src++;
+        }
+
+        if('\0' == *src){
+            break;
+        }
+
+        segment_start = src;
+        next_slash = src;
+        while(('\0' != *next_slash) && ('/' != *next_slash)){
+            next_slash++;
+        }
+
+        if((1 == (next_slash - segment_start)) && ('.' == segment_start[0])){
+            src = next_slash;
+            continue;
+        }
+
+        if((2 == (next_slash - segment_start)) &&
+           ('.' == segment_start[0]) &&
+           ('.' == segment_start[1])){
+            if(normalized_len > 1U){
+                normalized_len--;
+                while((normalized_len > 1U) && ('/' != normalized[normalized_len - 1U])){
+                    normalized_len--;
+                }
+                normalized[normalized_len] = '\0';
+            }
+            src = next_slash;
+            continue;
+        }
+
+        if(normalized_len > 1U){
+            if((normalized_len + 1U) >= sizeof(normalized)){
+                return false;
+            }
+            normalized[normalized_len++] = '/';
+        }
+
+        if((normalized_len + (size_t)(next_slash - segment_start)) >= sizeof(normalized)){
+            return false;
+        }
+        memcpy(&normalized[normalized_len],
+               segment_start,
+               (size_t)(next_slash - segment_start));
+        normalized_len += (size_t)(next_slash - segment_start);
+        normalized[normalized_len] = '\0';
+        src = next_slash;
+    }
+
+    if(normalized_len >= output_size){
+        return false;
+    }
+
+    (void)strcpy(output_path, normalized);
+    return true;
+}
+
+/*
+ * 函数作用：
+ *   输出当前工作目录。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_pwd(void)
+{
+    my_printf(DEBUG_USART, "%s\r\n", g_uart_current_dir);
+}
+
+/*
+ * 函数作用：
+ *   输出当前文件系统总容量、已用容量和当前工作目录。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_df(void)
+{
+    lfs_storage_info_t info;
+    int err;
+
+    err = lfs_storage_get_info(NULL, &info);
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("df", err);
+        return;
+    }
+
+    my_printf(DEBUG_USART,
+              "LFS: DF total=%lu used=%lu free=%lu block=%lu blocks=%lu used_blocks=%lu cwd=%s\r\n",
+              (unsigned long)info.total_bytes,
+              (unsigned long)info.used_bytes,
+              (unsigned long)(info.total_bytes - info.used_bytes),
+              (unsigned long)info.block_size,
+              (unsigned long)info.block_count,
+              (unsigned long)info.used_blocks,
+              g_uart_current_dir);
+}
+
+/*
+ * 函数作用：
+ *   输出指定路径或当前目录的类型和大小信息。
+ * 参数说明：
+ *   args：可选路径参数；为空时默认查询当前工作目录。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_stat(char *args)
+{
+    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    lfs_storage_path_info_t path_info;
+    char *target_path;
+    int err;
+
+    target_path = prv_uart_skip_spaces(args);
+    if((NULL == target_path) || ('\0' == *target_path)){
+        target_path = g_uart_current_dir;
+    }
+
+    prv_uart_rstrip_spaces(target_path);
+    if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
+        my_printf(DEBUG_USART, "LFS: stat bad path\r\n");
+        return;
+    }
+
+    err = lfs_storage_get_path_info(resolved_path, &path_info);
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("stat", err);
+        return;
+    }
+
+    if(0U == path_info.exists){
+        my_printf(DEBUG_USART, "LFS: stat no entry %s\r\n", resolved_path);
+        return;
+    }
+
+    my_printf(DEBUG_USART,
+              "LFS: STAT path=%s type=%s size=%lu\r\n",
+              resolved_path,
+              (LFS_TYPE_DIR == path_info.type) ? "dir" : "file",
+              (unsigned long)path_info.size);
+}
+
+/*
+ * 函数作用：
+ *   `ls` 目录遍历回调，把单个目录项格式化输出到串口。
+ * 参数说明：
+ *   entry：当前目录项信息指针，必须非空。
+ *   context：预留上下文，本实现未使用。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_ls_entry_callback(const lfs_storage_dir_entry_t *entry, void *context)
+{
+    (void)context;
+
+    if(NULL == entry){
+        return;
+    }
+
+    my_printf(DEBUG_USART,
+              "%s\t%lu\t%s\r\n",
+              (LFS_TYPE_DIR == entry->info.type) ? "dir" : "file",
+              (unsigned long)entry->display_size,
+              entry->info.name);
+}
+
+/*
+ * 函数作用：
+ *   列出指定目录或当前目录下的文件和子目录。
+ * 参数说明：
+ *   args：可选目录参数；为空时默认列当前目录。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_ls(char *args)
+{
+    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    lfs_storage_path_info_t path_info;
+    char *target_path;
+    uint32_t entry_count;
+    int err;
+
+    target_path = prv_uart_skip_spaces(args);
+    if((NULL == target_path) || ('\0' == *target_path)){
+        target_path = g_uart_current_dir;
+    }
+
+    prv_uart_rstrip_spaces(target_path);
+    if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
+        my_printf(DEBUG_USART, "LFS: ls bad path\r\n");
+        return;
+    }
+
+    err = lfs_storage_get_path_info(resolved_path, &path_info);
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("ls", err);
+        return;
+    }
+
+    if(0U == path_info.exists){
+        my_printf(DEBUG_USART, "LFS: ls no entry %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_TYPE_DIR != path_info.type){
+        my_printf(DEBUG_USART, "LFS: ls not dir %s\r\n", resolved_path);
+        return;
+    }
+
+    my_printf(DEBUG_USART, "LFS: LS %s\r\n", resolved_path);
+    err = lfs_storage_list_dir(resolved_path,
+                               prv_uart_ls_entry_callback,
+                               NULL,
+                               &entry_count);
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("ls", err);
+        return;
+    }
+
+    my_printf(DEBUG_USART, "LFS: LS done count=%lu\r\n", (unsigned long)entry_count);
+}
+
+/*
+ * 函数作用：
+ *   切换当前工作目录。
+ * 参数说明：
+ *   args：目录参数字符串，必须包含目标路径。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_cd(char *args)
+{
+    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    lfs_storage_path_info_t path_info;
+    char *target_path;
+    int err;
+
+    target_path = prv_uart_skip_spaces(args);
+    if((NULL == target_path) || ('\0' == *target_path)){
+        my_printf(DEBUG_USART, "LFS: cd missing path\r\n");
+        return;
+    }
+
+    prv_uart_rstrip_spaces(target_path);
+    if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
+        my_printf(DEBUG_USART, "LFS: cd bad path\r\n");
+        return;
+    }
+
+    err = lfs_storage_get_path_info(resolved_path, &path_info);
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("cd", err);
+        return;
+    }
+
+    if(0U == path_info.exists){
+        my_printf(DEBUG_USART, "LFS: cd no dir %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_TYPE_DIR != path_info.type){
+        my_printf(DEBUG_USART, "LFS: cd not dir %s\r\n", resolved_path);
+        return;
+    }
+
+    (void)strcpy(g_uart_current_dir, resolved_path);
+    my_printf(DEBUG_USART, "LFS: CWD %s\r\n", g_uart_current_dir);
+}
+
+/*
+ * 函数作用：
+ *   读取指定文件并把内容回显到串口。
+ * 参数说明：
+ *   args：文件路径参数字符串，必须包含目标文件。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_cat(char *args)
+{
+    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    uint32_t read_length;
+    char *target_path;
+    int err;
+
+    target_path = prv_uart_skip_spaces(args);
+    if((NULL == target_path) || ('\0' == *target_path)){
+        my_printf(DEBUG_USART, "LFS: cat missing path\r\n");
+        return;
+    }
+
+    prv_uart_rstrip_spaces(target_path);
+    if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
+        my_printf(DEBUG_USART, "LFS: cat bad path\r\n");
+        return;
+    }
+
+    err = lfs_storage_read_file(resolved_path,
+                                uart_file_buffer,
+                                sizeof(uart_file_buffer),
+                                &read_length);
+    if(LFS_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "LFS: cat no file %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_ERR_FBIG == err){
+        my_printf(DEBUG_USART, "LFS: cat file too large for uart buffer\r\n");
+        return;
+    }
+
+    if(LFS_ERR_ISDIR == err){
+        my_printf(DEBUG_USART, "LFS: cat is dir %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("cat", err);
+        return;
+    }
+
+    my_printf(DEBUG_USART,
+              "LFS: CAT OK len=%lu path=%s\r\n",
+              (unsigned long)read_length,
+              resolved_path);
+    if(read_length > 0U){
+        prv_uart_send_bytes(uart_file_buffer, (uint16_t)read_length);
+    }
+    prv_uart_send_text("\r\n");
+}
+
+/*
+ * 函数作用：
+ *   向指定文件覆盖写入文本，并立即读回校验。
+ * 参数说明：
+ *   args：参数字符串，格式必须为 `<path> <text>`。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_write(char *args)
+{
+    uart_shell_two_args_t parsed_args;
+    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    uint32_t read_length;
+    int err;
+
+    if(!prv_uart_split_two_args(args, &parsed_args)){
+        my_printf(DEBUG_USART, "LFS: write usage: write <file> <text>\r\n");
+        return;
+    }
+
+    if(!prv_uart_resolve_path(parsed_args.arg1, resolved_path, sizeof(resolved_path))){
+        my_printf(DEBUG_USART, "LFS: write bad path\r\n");
+        return;
+    }
+
+    err = lfs_storage_write_file(resolved_path,
+                                 (const uint8_t *)parsed_args.arg2,
+                                 (uint32_t)strlen(parsed_args.arg2));
+    if(LFS_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "LFS: write parent missing %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_ERR_ISDIR == err){
+        my_printf(DEBUG_USART, "LFS: write is dir %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("write", err);
+        return;
+    }
+
+    err = lfs_storage_read_file(resolved_path,
+                                uart_file_buffer,
+                                sizeof(uart_file_buffer),
+                                &read_length);
+    if(LFS_ERR_OK != err){
+        my_printf(DEBUG_USART, "LFS: write verify failed (%d)\r\n", err);
+        return;
+    }
+
+    if((read_length != strlen(parsed_args.arg2)) ||
+       (0 != memcmp(uart_file_buffer, parsed_args.arg2, read_length))){
+        my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
+        return;
+    }
+
+    my_printf(DEBUG_USART,
+              "LFS: WRITE OK len=%lu path=%s\r\n",
+              (unsigned long)read_length,
+              resolved_path);
+    if(read_length > 0U){
+        prv_uart_send_bytes(uart_file_buffer, (uint16_t)read_length);
+    }
+    prv_uart_send_text("\r\n");
+}
+
+/*
+ * 函数作用：
+ *   创建目录。
+ * 参数说明：
+ *   args：目录路径参数字符串，必须包含目标目录。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_mkdir(char *args)
+{
+    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    char *target_path;
+    int err;
+
+    target_path = prv_uart_skip_spaces(args);
+    if((NULL == target_path) || ('\0' == *target_path)){
+        my_printf(DEBUG_USART, "LFS: mkdir missing path\r\n");
+        return;
+    }
+
+    prv_uart_rstrip_spaces(target_path);
+    if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
+        my_printf(DEBUG_USART, "LFS: mkdir bad path\r\n");
+        return;
+    }
+
+    err = lfs_storage_mkdir(resolved_path);
+    if(LFS_ERR_EXIST == err){
+        my_printf(DEBUG_USART, "LFS: mkdir exists %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "LFS: mkdir parent missing %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("mkdir", err);
+        return;
+    }
+
+    my_printf(DEBUG_USART, "LFS: MKDIR OK path=%s\r\n", resolved_path);
+}
+
+/*
+ * 函数作用：
+ *   创建空文件；若文件已存在则保持原样返回。
+ * 参数说明：
+ *   args：文件路径参数字符串，必须包含目标文件。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_touch(char *args)
+{
+    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    char *target_path;
+    int err;
+
+    target_path = prv_uart_skip_spaces(args);
+    if((NULL == target_path) || ('\0' == *target_path)){
+        my_printf(DEBUG_USART, "LFS: touch missing path\r\n");
+        return;
+    }
+
+    prv_uart_rstrip_spaces(target_path);
+    if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
+        my_printf(DEBUG_USART, "LFS: touch bad path\r\n");
+        return;
+    }
+
+    err = lfs_storage_touch_file(resolved_path);
+    if(LFS_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "LFS: touch parent missing %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_ERR_ISDIR == err){
+        my_printf(DEBUG_USART, "LFS: touch is dir %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("touch", err);
+        return;
+    }
+
+    my_printf(DEBUG_USART, "LFS: TOUCH OK path=%s\r\n", resolved_path);
+}
+
+/*
+ * 函数作用：
+ *   删除指定文件或目录；目录会递归删除全部子项。
+ * 参数说明：
+ *   args：目标路径参数字符串，必须包含待删除路径。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_rm(char *args)
+{
+    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    char *target_path;
+    int err;
+
+    target_path = prv_uart_skip_spaces(args);
+    if((NULL == target_path) || ('\0' == *target_path)){
+        my_printf(DEBUG_USART, "LFS: rm missing path\r\n");
+        return;
+    }
+
+    prv_uart_rstrip_spaces(target_path);
+    if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
+        my_printf(DEBUG_USART, "LFS: rm bad path\r\n");
+        return;
+    }
+
+    if(0 == strcmp(resolved_path, "/")){
+        my_printf(DEBUG_USART, "LFS: rm reject root /\r\n");
+        return;
+    }
+
+    err = lfs_storage_remove_path(resolved_path);
+    if(LFS_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "LFS: rm no entry %s\r\n", resolved_path);
+        return;
+    }
+
+    if(LFS_ERR_INVAL == err){
+        my_printf(DEBUG_USART, "LFS: rm bad path\r\n");
+        return;
+    }
+
+    if(LFS_ERR_OK != err){
+        prv_uart_report_lfs_error("rm", err);
+        return;
+    }
+
+    my_printf(DEBUG_USART, "LFS: RM OK path=%s\r\n", resolved_path);
+}
+
+/*
+ * 函数作用：
+ *   对一帧 USART0 文本命令做解析并分发到对应 LittleFS 壳层操作。
+ * 主要流程：
+ *   1. 去掉命令尾部回车换行，得到纯命令字符串。
+ *   2. 识别 `help/pwd/ls/cd/cat/write/mkdir/touch/rm/stat/df` 等命令。
+ *   3. 对未知命令返回错误提示并附带帮助文本。
+ * 参数说明：
+ *   command_buffer：待解析命令缓冲区，必须非空。
+ *   command_length：当前缓冲区有效长度，单位为字节。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_process_command(uint8_t *command_buffer, uint16_t command_length)
+{
+    uart_shell_command_t parsed;
+
+    if((NULL == command_buffer) || (0U == command_length)){
+        my_printf(DEBUG_USART, "LFS: empty command\r\n");
+        return;
+    }
+
+    command_length = prv_uart_trim_command(command_buffer, command_length);
+    if(0U == command_length){
+        my_printf(DEBUG_USART, "LFS: empty command\r\n");
+        return;
+    }
+
+    if(!prv_uart_parse_command((char *)command_buffer, &parsed)){
+        my_printf(DEBUG_USART, "LFS: empty command\r\n");
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "help")){
+        prv_uart_send_help();
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "pwd")){
+        prv_uart_handle_pwd();
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "df")){
+        prv_uart_handle_df();
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "ls")){
+        prv_uart_handle_ls(parsed.args);
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "cd")){
+        prv_uart_handle_cd(parsed.args);
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "cat")){
+        prv_uart_handle_cat(parsed.args);
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "write")){
+        prv_uart_handle_write(parsed.args);
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "mkdir")){
+        prv_uart_handle_mkdir(parsed.args);
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "touch")){
+        prv_uart_handle_touch(parsed.args);
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "rm")){
+        prv_uart_handle_rm(parsed.args);
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "stat")){
+        prv_uart_handle_stat(parsed.args);
+        return;
+    }
+
+    my_printf(DEBUG_USART, "LFS: unknown command\r\n");
+    prv_uart_send_help();
+}
+
+/*
+ * 函数作用：
+ *   周期性处理 USART0 上收到的 LittleFS 调试命令。
+ * 主要流程：
+ *   1. 从 USART0 共享缓冲区原子取出一帧命令到任务层私有缓冲区。
+ *   2. 在任务上下文完成类 Linux 文件系统命令解析、LittleFS 操作和串口回显。
+ *   3. 不再把 USART0 数据转发到 RS485，保持串口0专用于文件系统调试。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -157,26 +1117,14 @@ static uint16_t prv_rs485_send_buffer(const uint8_t *data, uint16_t length)
  */
 void uart_task(void)
 {
-    uint16_t rs485_rx_length;
     uint16_t rx_length;
-
-    rs485_rx_length = prv_uart_take_frame(&rs485_rx_flag,
-                                          &rs485_dma_length,
-                                          rs485_dma_buffer,
-                                          rs485_forward_buffer,
-                                          (uint16_t)sizeof(rs485_forward_buffer));
-    if(rs485_rx_length > 0U){
-        /* RS485 到调试终端保持原样转发，确保桥接链路对上位机透明。 */
-        (void)bsp_usart_send_buffer(DEBUG_USART, rs485_forward_buffer, rs485_rx_length);
-    }
 
     rx_length = prv_uart_take_frame(&rx_flag,
                                     &uart_dma_length,
                                     uart_dma_buffer,
-                                    uart_forward_buffer,
-                                    (uint16_t)sizeof(uart_forward_buffer));
+                                    uart_command_buffer,
+                                    (uint16_t)sizeof(uart_command_buffer));
     if(rx_length > 0U){
-        /* USART0 普通数据继续原样转发到 RS485，总线方向由发送函数内部切换。 */
-        (void)prv_rs485_send_buffer(uart_forward_buffer, rx_length);
+        prv_uart_process_command(uart_command_buffer, rx_length);
     }
 }

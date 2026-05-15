@@ -22,7 +22,7 @@ extern "C" {
  * 宏作用：
  *   定义当前工程默认调试串口波特率。
  * 说明：
- *   USART0 现在只承担启动日志和普通串口透传，不再接收 OTA 帧；
+ *   USART0 现在只承担启动日志和 LittleFS 调试命令，不再接收 OTA 帧；
  *   为保持现有终端脚本和日志观察习惯，继续沿用 460800。
  */
 #define DEBUG_USART_BAUDRATE           460800U
@@ -42,7 +42,8 @@ extern "C" {
  * 宏作用：
  *   定义 USART0 DMA 接收缓冲区长度。
  * 说明：
- *   USART0 只承担普通透传和调试终端，不再接收 OTA 数据，因此 1KB 缓冲足够。
+ *   USART0 只承担 LittleFS 调试口和日志终端，不再接收 OTA 数据，因此 1KB
+ *   文本命令缓冲足够覆盖当前单帧命令调试需求。
  */
 #define BSP_USART0_RX_BUFFER_SIZE      1024U
 #define BSP_USART1_RX_BUFFER_SIZE      256U

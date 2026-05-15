@@ -18,10 +18,10 @@
  * 宏作用：
  *   定义当前 App 可使用的 Flash 最大空间。
  * 说明：
- *   官方 BootLoader_Two_Stage 例程规划 App 区为 0x0800D000 起，
- *   长度 0x00063000，末尾到 0x08070000 之前，避免覆盖下载缓存区。
+ *   当前工程规划 App 区为 0x0800D000 起，
+ *   长度 0x0005A000，末尾到 0x08067000 之前，避免覆盖 100KB 下载缓存区。
  */
-#define BOOT_APP_FLASH_SIZE             (0x00063000UL)
+#define BOOT_APP_FLASH_SIZE             (0x0005A000UL)
 
 #ifdef __cplusplus
 extern "C" {
