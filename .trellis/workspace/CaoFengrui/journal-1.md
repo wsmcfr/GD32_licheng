@@ -570,3 +570,51 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 简化按键处理并重分配普通按键引脚
+
+**Date**: 2026-05-15
+**Task**: 简化按键处理并重分配普通按键引脚
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|---|---|
+| 代码改动 | 将 `USER/App/btn_app.c` 从 `ebtn` 事件库重构为 5ms 轮询 + 20ms 去抖 + 按下沿分发 |
+| 引脚调整 | 普通按键重新映射为 `KEY1=PB1`、`KEY2=PC5`、`KEY3=PC4`、`KEY4=PA7`、`KEY5=PA6`、`KEY6=PA5`，`KEYW` 保持 `PA0` |
+| 低功耗适配 | 深睡前按新脚位收拢 GPIO，唤醒后调用 `app_btn_init()` 重置按键状态，保持 `KEYW/EXTI0` 唤醒链路 |
+| 工程清理 | 删除 `USER/Component/ebtn` 目录，移除 `system_all.h` 和 `MDK/2026706296.uvprojx` 中的 `ebtn` 依赖 |
+| 文档同步 | 更新 `工程文档.md` 以及 `.trellis/spec/frontend/` 下与按键方案相关的说明 |
+
+**提交信息**:
+- `39b5ffd refactor(key): 简化按键扫描并重分配引脚`
+
+**验证记录**:
+- 已执行仓库内静态核查，确认 `USER`、`工程文档.md`、`.trellis/spec/frontend`、`MDK/2026706296.uvprojx` 中无残留 `ebtn` 依赖
+- 已核查旧普通按键脚位 `PE15/PE6/PE11/PE4/PE7/PB0` 在目标范围内无残留
+- 本次未在当前环境执行 MDK 编译、烧录和实板按键验证
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `39b5ffd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
