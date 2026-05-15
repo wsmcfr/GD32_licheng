@@ -762,3 +762,48 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: RTC串口命令与USART1 RS485原样回显
+
+**Date**: 2026-05-15
+**Task**: RTC串口命令与USART1 RS485原样回显
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 模块 | 变更内容 |
+|------|----------|
+| RTC 串口命令 | 为 `USART0` 调试壳层新增 `gettime` 与 `settime yyyy-mm-dd hh:mm:ss`，支持完整年月日时分秒读取与设置，并补充格式/范围校验与成功回读回包 |
+| RTC 驱动接口 | 在 `bsp_rtc.c/.h` 新增十进制日期时间结构、BCD 转换、闰年/日期校验、星期自动计算，以及 `bsp_rtc_get_datetime()` / `bsp_rtc_set_datetime()` 接口 |
+| RS485 回显 | 新增 `rs485_app.c/.h`，将 `USART1 IDLE + DMA` 接收到的一帧数据从 ISR 移交到任务层，并通过 `USART1` 原样回显 |
+| 中断与调度 | `USART1_IRQHandler()` 从“丢弃帧”改为“限长复制并置位标志”，`scheduler.c` 新增 `rs485_task()` 调度入口 |
+| 工程与文档 | 更新 `MDK/2026706296.uvprojx` 纳入 `rs485_app.c`，同步更新 `工程文档.md`、`BootLoader_APP_接入说明.md` 与 `.trellis/spec/` 中的长期约束 |
+
+**验证结果**:
+- 人工测试已完成：`gettime/settime` 能正常使用
+- 人工测试已完成：外部串口工具向 `RS485/USART1` 发一帧数据后，板子可通过 `USART1` 原样回显
+- 代码已提交并推送到 `origin/fix-wkup-deepsleep`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aab2084` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

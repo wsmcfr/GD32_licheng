@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-05-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~764 | Active |
+| `journal-1.md` | ~809 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-05-15 | RTC串口命令与USART1 RS485原样回显 | `aab2084` | `fix-wkup-deepsleep` |
 | 16 | 2026-05-15 | LittleFS write 追加写参数与会话收尾 | `b043da4` | `fix-wkup-deepsleep` |
 | 15 | 2026-05-15 | LittleFS 壳层与 100KB OTA 分区收尾 | `d122c77` | `fix-wkup-deepsleep` |
 | 14 | 2026-05-15 | 补记按键与深睡唤醒实板验证结果 | `39b5ffd`, `cfbcea6` | `fix-wkup-deepsleep` |
