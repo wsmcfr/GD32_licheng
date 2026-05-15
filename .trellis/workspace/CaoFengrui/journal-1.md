@@ -618,3 +618,51 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 补记按键与深睡唤醒实板验证结果
+
+**Date**: 2026-05-15
+**Task**: 补记按键与深睡唤醒实板验证结果
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|---|---|
+| 实板验证 | 用户确认板上按键功能与深睡/唤醒链路已完成实测，结果通过 |
+| 验证范围 | `KEY1~KEY6` 普通按键动作正常；`KEY2` 进入深睡正常；`KEYW(PA0)` 唤醒链路正常 |
+| 结果结论 | 上一轮 `39b5ffd` 中的按键简化与引脚重分配改动已通过真实硬件验证，不再只是静态检查结论 |
+| 工程说明 | 额外确认 `RTE/` 目录是 Keil/uVision 的 Run-Time Environment 自动生成配置目录，当前工程主要用于 `CMSIS_device_header` 与 `perf_counter` 宏配置痕迹，不属于业务逻辑目录 |
+
+**关联提交**:
+- `39b5ffd refactor(key): 简化按键扫描并重分配引脚`
+- `cfbcea6 docs(trellis): 记录按键简化与引脚重分配会话`
+
+**补充说明**:
+- 本次记录用于补齐“实板已验证通过”的证据链
+- 本次未修改业务代码，仅补充会话知识与验证结论
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `39b5ffd` | (see git log) |
+| `cfbcea6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
