@@ -4,8 +4,8 @@
  * 函数作用：
  *   初始化全部按键 GPIO。
  * 主要流程：
- *   1. 打开三个 GPIO 端口时钟。
- *   2. 将所有按键引脚配置为上拉输入。
+ *   1. 打开 GPIOA/GPIOB/GPIOC 时钟。
+ *   2. 将 6 个普通按键和 1 个唤醒键分别配置为上拉输入。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -16,15 +16,12 @@
 void bsp_btn_init(void)
 {
     rcu_periph_clock_enable(KEYB_CLK_PORT);
-    rcu_periph_clock_enable(KEYE_CLK_PORT);
+    rcu_periph_clock_enable(KEYC_CLK_PORT);
     rcu_periph_clock_enable(KEYA_CLK_PORT);
 
-    gpio_mode_set(KEYE_PORT,
-                  GPIO_MODE_INPUT,
-                  GPIO_PUPD_PULLUP,
-                  KEY1_PIN | KEY2_PIN | KEY3_PIN | KEY4_PIN | KEY5_PIN);
-    gpio_mode_set(KEYB_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEY6_PIN);
-    gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEYW_PIN);
+    gpio_mode_set(KEYB_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEY1_PIN);
+    gpio_mode_set(KEYC_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEY2_PIN | KEY3_PIN);
+    gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEY4_PIN | KEY5_PIN | KEY6_PIN | KEYW_PIN);
 }
 
 /*

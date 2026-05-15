@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_STDPERIPH_DRIVER,GD32F470,__PERF_COUNTER_CFG_USE_SYSTICK_WRAPPER__</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Libraries\Include;..\USER;..\USER\App;..\USER\Driver;..\Driver\CMSIS;..\Driver\CMSIS\GD\GD32F4xx\Include;..\USER\Component\oled;..\USER\Component\gd25qxx;..\USER\Component\ebtn;..\USER\Component\sdio;..\USER\Component\gd30ad3344;..\USER\Component\fatfs;..\PACK\perf_counter-2.5.4</IncludePath>
+              <IncludePath>..\Libraries\Include;..\USER;..\USER\App;..\USER\Driver;..\Driver\CMSIS;..\Driver\CMSIS\GD\GD32F4xx\Include;..\USER\Component\oled;..\USER\Component\gd25qxx;..\USER\Component\sdio;..\USER\Component\gd30ad3344;..\USER\Component\fatfs;..\PACK\perf_counter-2.5.4</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -653,26 +653,6 @@
               <FileName>oled.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\USER\Component\oled\oled.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>User/Components/ebtn</GroupName>
-          <Files>
-            <File>
-              <FileName>bit_array.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\USER\Component\ebtn\bit_array.h</FilePath>
-            </File>
-            <File>
-              <FileName>ebtn.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\USER\Component\ebtn\ebtn.c</FilePath>
-            </File>
-            <File>
-              <FileName>ebtn.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\USER\Component\ebtn\ebtn.h</FilePath>
             </File>
           </Files>
         </Group>

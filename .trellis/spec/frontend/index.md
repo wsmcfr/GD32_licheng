@@ -57,7 +57,7 @@ It maps to firmware code that directly shapes what the user sees or triggers:
 
 - `USER/App/scheduler.c`: central task registration and startup sequencing
 - `USER/App/oled_app.c`: user-facing text composition
-- `USER/App/btn_app.c`: event callback mapping from physical inputs to behavior
+- `USER/App/btn_app.c`: periodic key polling and action mapping from physical inputs to behavior
 - `USER/App/usart_app.c`: app-level processing of ISR-delivered UART data
 
 ---

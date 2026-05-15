@@ -87,7 +87,7 @@ Task naming examples:
 | File | Why It Is A Good Example |
 |------|--------------------------|
 | `USER/App/scheduler.c` | Shows centralized boot and periodic task ownership |
-| `USER/App/btn_app.c` | Maps low-level key IDs to user-visible actions through callbacks |
+| `USER/App/btn_app.c` | Maps low-level key state to user-visible actions through periodic polling |
 | `USER/App/oled_app.c` | Keeps display formatting separate from OLED driver primitives |
 | `USER/App/usart_app.c` | Splits ISR capture from app-level string output |
 

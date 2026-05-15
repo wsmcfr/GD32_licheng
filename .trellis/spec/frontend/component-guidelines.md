@@ -27,18 +27,18 @@ Typical structure:
 
 Example from `USER/App/btn_app.c`:
 
-- private enum `user_button_t`
-- shared static params `defaul_ebtn_param`
-- static callbacks `prv_btn_get_state()` and `prv_btn_event()`
+- private enum for button bit masks
+- module-private static state for scan/debounce history
+- static helpers such as `prv_btn_read_mask()` and `prv_btn_dispatch()`
 - public APIs `app_btn_init()` and `btn_task()`
 
-This is the preferred shape for event-driven app modules.
+This is the preferred shape for small polling-based interaction modules.
 
 ### Good pattern
 
 ```c
-static uint8_t prv_btn_get_state(struct ebtn_btn *btn);
-static void prv_btn_event(struct ebtn_btn *btn, ebtn_evt_t evt);
+static uint8_t prv_btn_read_mask(void);
+static void prv_btn_dispatch(uint8_t key_down_mask);
 
 void app_btn_init(void);
 void btn_task(void);
@@ -91,7 +91,7 @@ For this firmware project, the closest equivalent to accessibility/usability rul
 The current code already follows a lightweight version of this:
 
 - `oled_task()` refreshes summary information every scheduler cycle
-- `btn_task()` uses `ebtn_process()` for debounced event handling
+- `btn_task()` uses lightweight polling plus debounced edge detection
 
 ---
 
@@ -101,9 +101,9 @@ The current code already follows a lightweight version of this:
 
 Do not push app strings or UI layout concerns into `USER/Component/oled/`.
 
-### Exposing private callbacks in headers
+### Exposing private helpers in headers
 
-The `prv_*` pattern in `btn_app.c` is correct. Keep callback glue private.
+The `prv_*` pattern in `btn_app.c` is correct. Keep scan and dispatch helpers private.
 
 ### Making one module own unrelated behaviors
 

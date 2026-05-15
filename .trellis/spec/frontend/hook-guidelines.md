@@ -10,7 +10,7 @@ This C firmware project has no React-style hooks.
 The equivalent reusable logic patterns are:
 
 - periodic task functions called by the scheduler
-- callback pairs registered into libraries such as `ebtn`
+- small private helper pairs inside polling modules
 - ISR-to-task handoff through shared flags and buffers
 
 Use this file when adding repeated event/time-driven glue logic.
@@ -34,20 +34,21 @@ Good examples:
 
 If the logic needs periodic execution and no external framework owns the timing, this is the default pattern.
 
-### Library callback pattern
+### Polling helper pattern
 
-When integrating an event framework, register two small callbacks:
+When a feature only needs stable edge detection and simple action mapping, keep two small private helpers:
 
-- state reader
-- event handler
+- a raw state reader
+- a dispatch helper for the derived event
 
 Example from `USER/App/btn_app.c`:
 
 ```c
-ebtn_init(btns, EBTN_ARRAY_SIZE(btns), NULL, 0, prv_btn_get_state, prv_btn_event);
+static uint8_t prv_btn_read_mask(void);
+static void prv_btn_dispatch(uint8_t key_down_mask);
 ```
 
-This is the preferred pattern for debounced key handling.
+This is the preferred pattern for lightweight debounced key handling when no richer button framework is needed.
 
 ### ISR-to-task handoff pattern
 

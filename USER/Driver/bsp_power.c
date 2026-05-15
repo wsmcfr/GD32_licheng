@@ -1,5 +1,6 @@
 #include "bsp_power.h"
 #include "sd_app.h"
+#include "btn_app.h"
 
 /*
  * 函数作用：
@@ -170,8 +171,13 @@ static void bsp_gpio_enter_deepsleep_state(void)
     LED5_OFF;
     LED6_OFF;
 
-    gpio_mode_set(KEYE_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY1_PIN | KEY2_PIN | KEY3_PIN | KEY4_PIN | KEY5_PIN);
-    gpio_mode_set(KEYB_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY6_PIN);
+    /*
+     * 普通按键在深睡前统一切到模拟输入，减少无用数字输入泄漏。
+     * 但 KEYW 仍需保留为 PA0 上拉输入，供后续 EXTI0 唤醒链路使用。
+     */
+    gpio_mode_set(KEYB_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY1_PIN);
+    gpio_mode_set(KEYC_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY2_PIN | KEY3_PIN);
+    gpio_mode_set(KEYA_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY4_PIN | KEY5_PIN | KEY6_PIN);
 
     gpio_mode_set(USART0_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART0_TX_PIN);
     gpio_mode_set(USART0_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART0_RX_PIN);
@@ -284,6 +290,12 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
     bsp_gd30ad3344_init();
     bsp_rtc_init();
     sd_fatfs_init();
+    /*
+     * 简化按键方案把边沿检测状态保存在 btn_app 静态变量中。
+     * 深睡唤醒后 GPIO 已经重新初始化，因此这里同步重置按键模块状态，
+     * 避免沿用睡前缓存导致第一次按键被误判为旧状态延续。
+     */
+    app_btn_init();
 
     /*
      * EXTI0 只在深睡阶段作为 WK_UP 唤醒源使用。

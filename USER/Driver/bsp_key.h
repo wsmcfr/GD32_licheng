@@ -16,29 +16,34 @@ extern "C" {
 #endif
 
 /* 按键 GPIO 端口及时钟定义。 */
-#define KEYE_PORT               GPIOE
 #define KEYB_PORT               GPIOB
+#define KEYC_PORT               GPIOC
 #define KEYA_PORT               GPIOA
-#define KEYE_CLK_PORT           RCU_GPIOE
 #define KEYB_CLK_PORT           RCU_GPIOB
+#define KEYC_CLK_PORT           RCU_GPIOC
 #define KEYA_CLK_PORT           RCU_GPIOA
 
-/* 六个普通按键和一个唤醒按键的引脚映射。 */
-#define KEY1_PIN                GPIO_PIN_15
-#define KEY2_PIN                GPIO_PIN_6
-#define KEY3_PIN                GPIO_PIN_11
-#define KEY4_PIN                GPIO_PIN_4
-#define KEY5_PIN                GPIO_PIN_7
-#define KEY6_PIN                GPIO_PIN_0
+/*
+ * 六个普通按键和一个唤醒按键的引脚映射。
+ * 说明：
+ *   普通按键按用户要求重新集中到 PB1、PC5、PC4、PA7、PA6、PA5，
+ *   以减少板上按键布线分散度；唤醒键继续保留 PA0，避免影响 EXTI0 唤醒链路。
+ */
+#define KEY1_PIN                GPIO_PIN_1
+#define KEY2_PIN                GPIO_PIN_5
+#define KEY3_PIN                GPIO_PIN_4
+#define KEY4_PIN                GPIO_PIN_7
+#define KEY5_PIN                GPIO_PIN_6
+#define KEY6_PIN                GPIO_PIN_5
 #define KEYW_PIN                GPIO_PIN_0
 
 /* 按键电平读取宏。当前硬件上拉输入，按下通常读到 0。 */
-#define KEY1_READ               gpio_input_bit_get(KEYE_PORT, KEY1_PIN)
-#define KEY2_READ               gpio_input_bit_get(KEYE_PORT, KEY2_PIN)
-#define KEY3_READ               gpio_input_bit_get(KEYE_PORT, KEY3_PIN)
-#define KEY4_READ               gpio_input_bit_get(KEYE_PORT, KEY4_PIN)
-#define KEY5_READ               gpio_input_bit_get(KEYE_PORT, KEY5_PIN)
-#define KEY6_READ               gpio_input_bit_get(KEYB_PORT, KEY6_PIN)
+#define KEY1_READ               gpio_input_bit_get(KEYB_PORT, KEY1_PIN)
+#define KEY2_READ               gpio_input_bit_get(KEYC_PORT, KEY2_PIN)
+#define KEY3_READ               gpio_input_bit_get(KEYC_PORT, KEY3_PIN)
+#define KEY4_READ               gpio_input_bit_get(KEYA_PORT, KEY4_PIN)
+#define KEY5_READ               gpio_input_bit_get(KEYA_PORT, KEY5_PIN)
+#define KEY6_READ               gpio_input_bit_get(KEYA_PORT, KEY6_PIN)
 #define KEYW_READ               gpio_input_bit_get(KEYA_PORT, KEYW_PIN)
 
 /*

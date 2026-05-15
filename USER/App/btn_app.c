@@ -2,128 +2,193 @@
 
 /*
  * 枚举作用：
- *   给每个物理按键分配一个逻辑 ID，供 ebtn 框架内部区分。
+ *   定义本模块内部使用的按键位掩码。
+ * 说明：
+ *   每个按键占用一个独立 bit，便于在简单轮询方案下做按下沿检测，
+ *   避免像顺序编号那样在多键切换场景下丢失状态变化。
  */
 typedef enum
 {
-    USER_BUTTON_0 = 0,
-    USER_BUTTON_1,
-    USER_BUTTON_2,
-    USER_BUTTON_3,
-    USER_BUTTON_4,
-    USER_BUTTON_5,
-    USER_BUTTON_6,
-    USER_BUTTON_MAX,
-} user_button_t;
+    BTN_KEY1_MASK = (1U << 0),
+    BTN_KEY2_MASK = (1U << 1),
+    BTN_KEY3_MASK = (1U << 2),
+    BTN_KEY4_MASK = (1U << 3),
+    BTN_KEY5_MASK = (1U << 4),
+    BTN_KEY6_MASK = (1U << 5),
+    BTN_KEYW_MASK = (1U << 6),
+} btn_key_mask_t;
 
 /*
  * 变量作用：
- *   定义所有按键共用的默认去抖和点击参数。
+ *   保存本模块最近一次确认稳定的按键值。
  * 说明：
- *   这里使用单击事件为主，保持与当前业务逻辑一致。
+ *   只要稳定状态发生变化，就会基于该值计算本轮新增的按下沿事件。
  */
-static const ebtn_btn_param_t defaul_ebtn_param = EBTN_PARAMS_INIT(20, 0, 20, 1000, 0, 1000, 10);
+static uint8_t g_btn_key_val;
 
 /*
  * 变量作用：
- *   静态按键对象数组，索引与 user_button_t 一一对应。
+ *   保存本轮检测到的按下沿事件。
+ * 说明：
+ *   某一位从 0 跳到 1 时，对应 bit 会在本轮被置 1，用于驱动 switch-case 动作分发。
  */
-static ebtn_btn_t btns[] = {
-    EBTN_BUTTON_INIT(USER_BUTTON_0, &defaul_ebtn_param),
-    EBTN_BUTTON_INIT(USER_BUTTON_1, &defaul_ebtn_param),
-    EBTN_BUTTON_INIT(USER_BUTTON_2, &defaul_ebtn_param),
-    EBTN_BUTTON_INIT(USER_BUTTON_3, &defaul_ebtn_param),
-    EBTN_BUTTON_INIT(USER_BUTTON_4, &defaul_ebtn_param),
-    EBTN_BUTTON_INIT(USER_BUTTON_5, &defaul_ebtn_param),
-    EBTN_BUTTON_INIT(USER_BUTTON_6, &defaul_ebtn_param),
-};
+static uint8_t g_btn_key_down;
+
+/*
+ * 变量作用：
+ *   保存本轮检测到的按键释放沿事件。
+ * 说明：
+ *   当前业务只响应按下沿，但保留释放沿状态可以让模块逻辑结构与参考实现一致，
+ *   后续若要扩展释放动作无需再重构整套扫描骨架。
+ */
+static uint8_t g_btn_key_up;
+
+/*
+ * 变量作用：
+ *   保存上一轮确认稳定的按键位图。
+ * 说明：
+ *   它与当前稳定按键值做异或后，可以得到发生变化的按键集合。
+ */
+static uint8_t g_btn_key_old;
+
+/*
+ * 变量作用：
+ *   缓存最近一次采样得到的原始按键值。
+ * 说明：
+ *   简单轮询仍需要轻量去抖；只有当连续采样值保持一致超过阈值后，
+ *   才会更新稳定状态，避免机械抖动触发重复动作。
+ */
+static uint8_t g_btn_sampled_val;
+
+/*
+ * 变量作用：
+ *   记录原始采样值已经保持不变的持续时间，单位毫秒。
+ */
+static uint32_t g_btn_sample_stable_ms;
+
+/*
+ * 宏作用：
+ *   定义 `btn_task()` 的实际调度周期，单位毫秒。
+ * 说明：
+ *   该值需要与 `scheduler.c` 中 `btn_task` 的注册周期保持一致，
+ *   否则软件去抖累计时间会和真实轮询节拍不一致。
+ */
+#define BTN_TASK_PERIOD_MS 5U
+
+/*
+ * 宏作用：
+ *   定义按键稳定判定所需的最小持续时间，单位毫秒。
+ * 说明：
+ *   当前 `btn_task()` 的调度周期为 5ms，因此 20ms 阈值可以覆盖常见机械按键抖动。
+ */
+#define BTN_DEBOUNCE_MS 20U
 
 /*
  * 函数作用：
- *   根据 ebtn 框架传入的按钮逻辑 ID，读取对应物理按键的当前按下状态。
+ *   读取全部物理按键当前状态，并编码为按键位图。
  * 主要流程：
- *   1. 通过 btn->key_id 区分 7 个按键。
- *   2. 调用板级按键读取宏获取 GPIO 电平。
- *   3. 将低电平按下的硬件语义转换成 ebtn 需要的 1/0 状态。
+ *   1. 逐个读取板级按键输入宏。
+ *   2. 将低电平按下语义转换为位掩码。
+ *   3. 合并成一个 7 bit 的按键状态值返回给上层轮询逻辑。
  * 参数说明：
- *   btn：ebtn 框架维护的按键对象指针，必须指向 btns[] 中的有效对象。
+ *   无参数。
  * 返回值说明：
- *   1：表示当前按键处于按下状态。
- *   0：表示当前按键未按下，或 key_id 不在本工程定义范围内。
+ *   返回当前按下的按键位图；某一位为 1 表示对应按键当前处于按下状态。
  */
-static uint8_t prv_btn_get_state(struct ebtn_btn *btn)
+static uint8_t prv_btn_read_mask(void)
 {
-    switch (btn->key_id)
+    uint8_t key_mask = 0U;
+
+    if (!KEY1_READ)
     {
-    case USER_BUTTON_0:
-        return !KEY1_READ;
-    case USER_BUTTON_1:
-        return !KEY2_READ;
-    case USER_BUTTON_2:
-        return !KEY3_READ;
-    case USER_BUTTON_3:
-        return !KEY4_READ;
-    case USER_BUTTON_4:
-        return !KEY5_READ;
-    case USER_BUTTON_5:
-        return !KEY6_READ;
-    case USER_BUTTON_6:
-        return !KEYW_READ;
-    default:
-        return 0;
+        key_mask |= BTN_KEY1_MASK;
     }
+    if (!KEY2_READ)
+    {
+        key_mask |= BTN_KEY2_MASK;
+    }
+    if (!KEY3_READ)
+    {
+        key_mask |= BTN_KEY3_MASK;
+    }
+    if (!KEY4_READ)
+    {
+        key_mask |= BTN_KEY4_MASK;
+    }
+    if (!KEY5_READ)
+    {
+        key_mask |= BTN_KEY5_MASK;
+    }
+    if (!KEY6_READ)
+    {
+        key_mask |= BTN_KEY6_MASK;
+    }
+    if (!KEYW_READ)
+    {
+        key_mask |= BTN_KEYW_MASK;
+    }
+
+    return key_mask;
 }
 
 /*
  * 函数作用：
- *   处理 ebtn 框架派发的按键事件，并把单击事件映射成 LED 翻转或低功耗动作。
+ *   根据稳定的按下沿位图，执行与当前工程一致的按键业务动作。
  * 主要流程：
- *   1. 仅响应 EBTN_EVT_ONCLICK，忽略当前未使用的长按、连击等事件。
- *   2. 根据 key_id 执行对应 LED 翻转。
- *   3. KEY2 单击后额外进入深度睡眠，用于验证低功耗唤醒流程。
+ *   1. 依次检查每个按键对应的按下沿 bit。
+ *   2. 对应 bit 置位时执行 LED 翻转或深度睡眠动作。
+ *   3. 保持原先功能映射不变，只替换触发方式。
  * 参数说明：
- *   btn：产生事件的按键对象指针，key_id 决定本次事件对应的物理按键。
- *   evt：ebtn 框架派发的事件类型，本函数当前只处理单击事件。
+ *   key_down_mask：本轮确认稳定后新增的按下沿位图。
  * 返回值说明：
  *   无返回值。
  */
-static void prv_btn_event(struct ebtn_btn *btn, ebtn_evt_t evt)
+static void prv_btn_dispatch(uint8_t key_down_mask)
 {
-    if (evt == EBTN_EVT_ONCLICK)
+    if ((key_down_mask & BTN_KEY1_MASK) != 0U)
     {
-        switch (btn->key_id)
-        {
-        case USER_BUTTON_0:
-            LED1_TOGGLE;
-            break;
-        case USER_BUTTON_1:
-            LED2_TOGGLE;
-            bsp_enter_deepsleep();
-            break;
-        case USER_BUTTON_2:
-            LED3_TOGGLE;
-            break;
-        case USER_BUTTON_3:
-            LED4_TOGGLE;
-            break;
-        case USER_BUTTON_4:
-            LED5_TOGGLE;
-            break;
-        case USER_BUTTON_5:
-            LED6_TOGGLE;
-            break;
-        case USER_BUTTON_6:
-            LED6_TOGGLE;
-            break;
-        default:
-            break;
-        }
+        LED1_TOGGLE;
+    }
+    if ((key_down_mask & BTN_KEY2_MASK) != 0U)
+    {
+        LED2_TOGGLE;
+        /*
+         * 先翻转 LED2 再进入深睡，保持和历史行为一致，
+         * 这样用户在按下 KEY2 时仍能先看到一次可见反馈。
+         * 该函数会在唤醒恢复后才返回，因此这里直接结束本轮分发，
+         * 避免唤醒后继续消费睡前这一次扫描得到的其他按下沿位。
+         */
+        bsp_enter_deepsleep();
+        return;
+    }
+    if ((key_down_mask & BTN_KEY3_MASK) != 0U)
+    {
+        LED3_TOGGLE;
+    }
+    if ((key_down_mask & BTN_KEY4_MASK) != 0U)
+    {
+        LED4_TOGGLE;
+    }
+    if ((key_down_mask & BTN_KEY5_MASK) != 0U)
+    {
+        LED5_TOGGLE;
+    }
+    if ((key_down_mask & BTN_KEY6_MASK) != 0U)
+    {
+        LED6_TOGGLE;
+    }
+    if ((key_down_mask & BTN_KEYW_MASK) != 0U)
+    {
+        LED6_TOGGLE;
     }
 }
 
 /*
  * 函数作用：
- *   初始化按键事件框架，并注册本模块维护的静态按键数组和回调函数。
+ *   初始化按键应用层的本地扫描状态。
+ * 主要流程：
+ *   1. 读取一次当前原始按键状态，作为初始化基线。
+ *   2. 清空按下沿、释放沿和旧状态，避免上电或唤醒后误触发。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -131,12 +196,22 @@ static void prv_btn_event(struct ebtn_btn *btn, ebtn_evt_t evt)
  */
 void app_btn_init(void)
 {
-    ebtn_init(btns, EBTN_ARRAY_SIZE(btns), NULL, 0, prv_btn_get_state, prv_btn_event);
+    g_btn_sampled_val = prv_btn_read_mask();
+    g_btn_key_val = g_btn_sampled_val;
+    g_btn_key_old = g_btn_sampled_val;
+    g_btn_key_down = 0U;
+    g_btn_key_up = 0U;
+    g_btn_sample_stable_ms = 0U;
 }
 
 /*
  * 函数作用：
- *   周期性推进 ebtn 状态机，使按键去抖、点击识别和事件回调持续运行。
+ *   周期性轮询按键状态，并在确认稳定后提取按下沿事件。
+ * 主要流程：
+ *   1. 读取一次原始按键位图。
+ *   2. 只有原始值连续稳定达到去抖阈值后，才更新稳定状态。
+ *   3. 基于新旧稳定状态计算按下沿和释放沿。
+ *   4. 只对按下沿执行业务动作，避免长按期间重复触发。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -144,5 +219,38 @@ void app_btn_init(void)
  */
 void btn_task(void)
 {
-    ebtn_process(get_system_ms());
+    uint8_t current_sample = prv_btn_read_mask();
+
+    if (current_sample != g_btn_sampled_val)
+    {
+        /*
+         * 原始采样值一旦发生变化，就重新开始计时。
+         * 这样只有在新状态保持稳定足够久后，才会把它升级为有效状态。
+         */
+        g_btn_sampled_val = current_sample;
+        g_btn_sample_stable_ms = 0U;
+        return;
+    }
+
+    if (g_btn_sample_stable_ms < BTN_DEBOUNCE_MS)
+    {
+        g_btn_sample_stable_ms += BTN_TASK_PERIOD_MS;
+        if (g_btn_sample_stable_ms < BTN_DEBOUNCE_MS)
+        {
+            return;
+        }
+    }
+
+    if (g_btn_key_val != current_sample)
+    {
+        g_btn_key_val = current_sample;
+        g_btn_key_down = g_btn_key_val & (uint8_t)(g_btn_key_old ^ g_btn_key_val);
+        g_btn_key_up = (uint8_t)(~g_btn_key_val) & (uint8_t)(g_btn_key_old ^ g_btn_key_val);
+        g_btn_key_old = g_btn_key_val;
+
+        if (g_btn_key_down != 0U)
+        {
+            prv_btn_dispatch(g_btn_key_down);
+        }
+    }
 }

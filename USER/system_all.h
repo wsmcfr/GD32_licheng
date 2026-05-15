@@ -34,7 +34,6 @@
  */
 
 /* 通用组件头文件。 */
-#include "ebtn.h"
 #include "sdio_sdcard.h"
 #include "diskio.h"
 #include "ff.h"
