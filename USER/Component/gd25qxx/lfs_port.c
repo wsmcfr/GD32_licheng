@@ -51,6 +51,10 @@ static int prv_lfs_get_path_info_raw_mounted(lfs_t *lfs,
 static int prv_lfs_calculate_path_size_mounted(lfs_t *lfs,
                                                const char *path,
                                                uint32_t *out_size);
+static int prv_lfs_write_file_internal(const char *path,
+                                       const uint8_t *data,
+                                       uint32_t length,
+                                       int open_flags);
 
 /*
  * 函数作用：
@@ -909,22 +913,26 @@ int lfs_storage_self_test(void)
 
 /*
  * 函数作用：
- *   在不触发自动格式化的前提下，把调用者给出的数据覆盖写入指定 LittleFS 文件。
+ *   承接 LittleFS 普通文件写入公共流程，统一处理覆盖写和追加写。
  * 主要流程：
  *   1. 仅挂载文件系统，运行时挂载失败直接返回错误，禁止隐式清盘。
- *   2. 以“写入 + 创建 + 截断”方式打开目标文件，确保本次内容完整覆盖旧文件。
+ *   2. 按调用者指定的 open_flags 打开目标文件，决定是覆盖写还是文件尾追加。
  *   3. 当 length 大于 0 时执行精确长度写入，长度不一致立即报错。
  *   4. 关闭文件并卸载文件系统，避免把运行时状态长期挂在全局。
  * 参数说明：
  *   path：目标文件路径，必须非空。
  *   data：待写入数据缓冲区；当 length 大于 0 时必须非空。
- *   length：待写入字节数，单位为字节；为 0 时表示把文件截断为空。
+ *   length：待写入字节数，单位为字节。
+ *   open_flags：LittleFS 文件打开标志，决定本次写入语义。
  * 返回值说明：
  *   LFS_ERR_OK：表示写入、关闭和卸载全部成功。
  *   LFS_ERR_INVAL：表示参数无效。
  *   其他 LFS_ERR_*：表示挂载、打开、写入、关闭或卸载失败。
  */
-int lfs_storage_write_file(const char *path, const uint8_t *data, uint32_t length)
+static int prv_lfs_write_file_internal(const char *path,
+                                       const uint8_t *data,
+                                       uint32_t length,
+                                       int open_flags)
 {
     lfs_t lfs;
     struct lfs_config cfg;
@@ -946,11 +954,7 @@ int lfs_storage_write_file(const char *path, const uint8_t *data, uint32_t lengt
     prv_lfs_file_cfg_init(&file_cfg);
     memset(&file, 0, sizeof(file));
 
-    err = lfs_file_opencfg(&lfs,
-                           &file,
-                           path,
-                           LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC,
-                           &file_cfg);
+    err = lfs_file_opencfg(&lfs, &file, path, open_flags, &file_cfg);
     if (LFS_ERR_OK != err) {
         (void)lfs_unmount(&lfs);
         return err;
@@ -973,6 +977,52 @@ int lfs_storage_write_file(const char *path, const uint8_t *data, uint32_t lengt
     }
 
     return lfs_unmount(&lfs);
+}
+
+/*
+ * 函数作用：
+ *   在不触发自动格式化的前提下，把调用者给出的数据覆盖写入指定 LittleFS 文件。
+ * 主要流程：
+ *   1. 复用公共写文件流程，仅允许“写入 + 创建 + 截断”语义。
+ *   2. 原文件存在时先清空旧内容，再写入本次全部数据。
+ * 参数说明：
+ *   path：目标文件路径，必须非空。
+ *   data：待写入数据缓冲区；当 length 大于 0 时必须非空。
+ *   length：待写入字节数，单位为字节；为 0 时表示把文件截断为空。
+ * 返回值说明：
+ *   LFS_ERR_OK：表示写入、关闭和卸载全部成功。
+ *   LFS_ERR_INVAL：表示参数无效。
+ *   其他 LFS_ERR_*：表示挂载、打开、写入、关闭或卸载失败。
+ */
+int lfs_storage_write_file(const char *path, const uint8_t *data, uint32_t length)
+{
+    return prv_lfs_write_file_internal(path,
+                                       data,
+                                       length,
+                                       LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+}
+
+/*
+ * 函数作用：
+ *   在不触发自动格式化的前提下，把调用者给出的数据追加到指定 LittleFS 文件尾部。
+ * 主要流程：
+ *   1. 复用公共写文件流程，仅允许“写入 + 创建 + 追加”语义。
+ *   2. 目标文件不存在时自动创建；已存在时保留原内容并把新数据接到末尾。
+ * 参数说明：
+ *   path：目标文件路径，必须非空。
+ *   data：待追加数据缓冲区；当 length 大于 0 时必须非空。
+ *   length：待追加字节数，单位为字节；为 0 时表示不修改原文件内容。
+ * 返回值说明：
+ *   LFS_ERR_OK：表示追加写、关闭和卸载全部成功。
+ *   LFS_ERR_INVAL：表示参数无效。
+ *   其他 LFS_ERR_*：表示挂载、打开、写入、关闭或卸载失败。
+ */
+int lfs_storage_append_file(const char *path, const uint8_t *data, uint32_t length)
+{
+    return prv_lfs_write_file_internal(path,
+                                       data,
+                                       length,
+                                       LFS_O_WRONLY | LFS_O_CREAT | LFS_O_APPEND);
 }
 
 /*

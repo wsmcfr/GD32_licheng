@@ -157,6 +157,19 @@ int lfs_storage_write_file(const char *path, const uint8_t *data, uint32_t lengt
 
 /*
  * 函数作用：
+ *   在不触发自动格式化的前提下，把一段数据追加写入指定 LittleFS 文件尾部。
+ * 参数说明：
+ *   path：目标文件路径，必须是 LittleFS 内的有效绝对路径，例如 "/log/demo.txt"。
+ *   data：待追加的数据缓冲区；当 length 大于 0 时必须非空。
+ *   length：待追加字节数，单位为字节；为 0 时表示保持文件原样不追加内容。
+ * 返回值说明：
+ *   LFS_ERR_OK：表示文件追加写入并正常关闭、卸载成功。
+ *   其他 LFS_ERR_*：表示挂载、打开、写入、关闭或卸载失败。
+ */
+int lfs_storage_append_file(const char *path, const uint8_t *data, uint32_t length);
+
+/*
+ * 函数作用：
  *   在不触发自动格式化的前提下，完整读取指定 LittleFS 文件内容到调用者缓冲区。
  * 参数说明：
  *   path：目标文件路径，必须是 LittleFS 内的有效绝对路径。

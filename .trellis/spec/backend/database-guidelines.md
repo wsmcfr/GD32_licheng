@@ -119,6 +119,8 @@ int lfs_storage_list_dir(const char *path,
                          void *context,
                          uint32_t *out_count);
 int lfs_storage_remove_path(const char *path);
+int lfs_storage_write_file(const char *path, const uint8_t *data, uint32_t length);
+int lfs_storage_append_file(const char *path, const uint8_t *data, uint32_t length);
 ```
 
 Current UART shell output contracts:
@@ -131,6 +133,9 @@ LFS: LS done count=<n>
 
 LFS: STAT path=/path type=file size=<bytes>
 LFS: STAT path=/path type=dir size=<bytes>
+
+write <file> <text>      -> overwrite
+write -a <file> <text>   -> append
 ```
 
 #### 3. Contracts
@@ -144,6 +149,11 @@ LFS: STAT path=/path type=dir size=<bytes>
 - Recursive size calculation must depend on a **raw path-info helper** such as `prv_lfs_get_path_info_raw_mounted()` that only returns existence/type/raw `lfs_stat()` size.
 - Recursive helpers must never call an enriched helper that itself re-enters recursive size calculation; otherwise directory queries can recurse into themselves and corrupt LittleFS traversal state.
 - Recursive delete helpers may use the same raw path-info helper to distinguish file vs directory before descending.
+- `write` without `-a` must keep overwrite semantics by opening the file with truncate behavior.
+- `write -a` must keep append semantics by preserving existing content and writing new bytes at file end.
+- UART command-layer append verification should read back the file and confirm both:
+  - final file length equals `old_length + appended_length`
+  - the file tail matches the appended text exactly
 
 #### 4. Validation & Error Matrix
 

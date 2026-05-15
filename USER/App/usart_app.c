@@ -43,7 +43,7 @@ static const char g_uart_help_text[] =
     "ls [path]\r\n"
     "cd <path>\r\n"
     "cat <file>\r\n"
-    "write <file> <text>\r\n"
+    "write [-a] <file> <text>\r\n"
     "mkdir <dir>\r\n"
     "touch <file>\r\n"
     "rm <path>\r\n"
@@ -83,6 +83,21 @@ typedef struct
     char *arg1;
     char *arg2;
 } uart_shell_two_args_t;
+
+/*
+ * 结构体作用：
+ *   描述 `write` 命令解析后的写入模式、目标路径和正文内容。
+ * 成员说明：
+ *   append_mode：1 表示追加写，0 表示覆盖写。
+ *   path：目标文件路径字符串，指向命令缓冲区内部。
+ *   text：待写入正文字符串，指向命令缓冲区内部。
+ */
+typedef struct
+{
+    uint8_t append_mode;
+    char *path;
+    char *text;
+} uart_shell_write_args_t;
 
 /*
  * 函数作用：
@@ -337,6 +352,49 @@ static bool prv_uart_split_two_args(char *args, uart_shell_two_args_t *result)
         return false;
     }
 
+    return true;
+}
+
+/*
+ * 函数作用：
+ *   解析 `write` 命令参数，支持默认覆盖写和 `-a` 追加写两种模式。
+ * 主要流程：
+ *   1. 先复用两参数拆分逻辑，得到“首段参数 + 剩余正文”。
+ *   2. 若首段参数为 `-a`，继续再拆一次，取出真实路径和正文。
+ *   3. 产出统一的写入模式、路径和文本，供后续文件写接口直接使用。
+ * 参数说明：
+ *   args：`write` 命令参数字符串，必须非空。
+ *   result：解析结果输出结构体指针，必须非空。
+ * 返回值说明：
+ *   true：表示成功解析出写入模式、路径和正文。
+ *   false：表示参数格式不正确。
+ */
+static bool prv_uart_parse_write_args(char *args, uart_shell_write_args_t *result)
+{
+    uart_shell_two_args_t parsed_args;
+
+    if((NULL == args) || (NULL == result)){
+        return false;
+    }
+
+    if(!prv_uart_split_two_args(args, &parsed_args)){
+        return false;
+    }
+
+    if(0 == strcmp(parsed_args.arg1, "-a")){
+        if(!prv_uart_split_two_args(parsed_args.arg2, &parsed_args)){
+            return false;
+        }
+
+        result->append_mode = 1U;
+        result->path = parsed_args.arg1;
+        result->text = parsed_args.arg2;
+        return true;
+    }
+
+    result->append_mode = 0U;
+    result->path = parsed_args.arg1;
+    result->text = parsed_args.arg2;
     return true;
 }
 
@@ -805,32 +863,63 @@ static void prv_uart_handle_cat(char *args)
 
 /*
  * 函数作用：
- *   向指定文件覆盖写入文本，并立即读回校验。
+ *   向指定文件执行覆盖写或追加写，并立即读回校验。
  * 参数说明：
- *   args：参数字符串，格式必须为 `<path> <text>`。
+ *   args：参数字符串，格式必须为 `[-a] <path> <text>`；不带 `-a` 时覆盖写，带 `-a` 时追加写。
  * 返回值说明：
  *   无返回值。
  */
 static void prv_uart_handle_write(char *args)
 {
-    uart_shell_two_args_t parsed_args;
+    uart_shell_write_args_t parsed_args;
     char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
     uint32_t read_length;
+    uint32_t expected_length;
+    uint32_t original_length;
+    lfs_storage_path_info_t path_info;
     int err;
 
-    if(!prv_uart_split_two_args(args, &parsed_args)){
-        my_printf(DEBUG_USART, "LFS: write usage: write <file> <text>\r\n");
+    if(!prv_uart_parse_write_args(args, &parsed_args)){
+        my_printf(DEBUG_USART, "LFS: write usage: write [-a] <file> <text>\r\n");
         return;
     }
 
-    if(!prv_uart_resolve_path(parsed_args.arg1, resolved_path, sizeof(resolved_path))){
+    if(!prv_uart_resolve_path(parsed_args.path, resolved_path, sizeof(resolved_path))){
         my_printf(DEBUG_USART, "LFS: write bad path\r\n");
         return;
     }
 
-    err = lfs_storage_write_file(resolved_path,
-                                 (const uint8_t *)parsed_args.arg2,
-                                 (uint32_t)strlen(parsed_args.arg2));
+    expected_length = (uint32_t)strlen(parsed_args.text);
+    original_length = 0U;
+
+    if(0U != parsed_args.append_mode){
+        err = lfs_storage_get_path_info(resolved_path, &path_info);
+        if(LFS_ERR_NOENT == err){
+            original_length = 0U;
+        }else if(LFS_ERR_OK == err){
+            if((0U == path_info.exists) || (LFS_TYPE_REG != path_info.type)){
+                my_printf(DEBUG_USART, "LFS: write is dir %s\r\n", resolved_path);
+                return;
+            }
+
+            original_length = path_info.size;
+        }else if(LFS_ERR_ISDIR == err){
+            my_printf(DEBUG_USART, "LFS: write is dir %s\r\n", resolved_path);
+            return;
+        }else{
+            prv_uart_report_lfs_error("write", err);
+            return;
+        }
+
+        err = lfs_storage_append_file(resolved_path,
+                                      (const uint8_t *)parsed_args.text,
+                                      expected_length);
+    }else{
+        err = lfs_storage_write_file(resolved_path,
+                                     (const uint8_t *)parsed_args.text,
+                                     expected_length);
+    }
+
     if(LFS_ERR_NOENT == err){
         my_printf(DEBUG_USART, "LFS: write parent missing %s\r\n", resolved_path);
         return;
@@ -855,14 +944,36 @@ static void prv_uart_handle_write(char *args)
         return;
     }
 
-    if((read_length != strlen(parsed_args.arg2)) ||
-       (0 != memcmp(uart_file_buffer, parsed_args.arg2, read_length))){
-        my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
-        return;
+    if(0U != parsed_args.append_mode){
+        if(read_length != (original_length + expected_length)){
+            my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
+            return;
+        }
+
+        if(expected_length > 0U){
+            if(read_length < expected_length){
+                my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
+                return;
+            }
+
+            if(0 != memcmp(&uart_file_buffer[read_length - expected_length],
+                           parsed_args.text,
+                           expected_length)){
+                my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
+                return;
+            }
+        }
+    }else{
+        if((read_length != expected_length) ||
+           (0 != memcmp(uart_file_buffer, parsed_args.text, read_length))){
+            my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
+            return;
+        }
     }
 
     my_printf(DEBUG_USART,
-              "LFS: WRITE OK len=%lu path=%s\r\n",
+              "LFS: WRITE OK mode=%s len=%lu path=%s\r\n",
+              (0U != parsed_args.append_mode) ? "append" : "overwrite",
               (unsigned long)read_length,
               resolved_path);
     if(read_length > 0U){
