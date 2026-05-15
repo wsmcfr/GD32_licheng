@@ -666,3 +666,53 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: LittleFS 壳层与 100KB OTA 分区收尾
+
+**Date**: 2026-05-15
+**Task**: LittleFS 壳层与 100KB OTA 分区收尾
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Feature | Description |
+|---------|-------------|
+| OTA 分区调整 | 将下载缓存区从 64KB 扩到 100KB，并同步更新 App / BootLoader / MDK 工程参数与文档。 |
+| USART0 LittleFS 壳层 | 完成 `help/pwd/ls/cd/cat/write/mkdir/touch/rm/stat/df` 命令集，USART0 不再转发到 RS485。 |
+| 目录大小语义修正 | 修复最初 `ls` 目录固定显示 `0` 的问题，最终统一为目录树下全部文件内容的递归总字节数。 |
+| 递归删除 | 新增 `rm <path>`，文件直接删除，目录递归删除，根目录 `/` 明确拒绝。 |
+| 规范沉淀 | 在 `.trellis/spec/backend/database-guidelines.md` 补充 LittleFS UART shell 的目录大小语义、递归 helper 分层约束、验证矩阵和测试点。 |
+
+**关键 Bug 总结**:
+- `ls` 目录显示为 `0`：根因是 UART 壳层把目录大小硬编码成 `0`，而不是定义清楚目录列语义。
+- 改成子项数量后与文件“大小”语义不一致：最终统一改成目录递归总字节数。
+- 输入命令即卡死并触发 LittleFS `ASSERT: block != ((lfs_block_t) - 1)`：根因是递归目录大小统计错误回调了高层 `get_path_info`，形成递归套娃；最终拆分为 raw path-info helper 与 enriched size helper。
+
+**验证**:
+- Keil App 工程重新构建通过。
+- 实板启动日志正常，LittleFS 自检通过。
+- 串口命令链路完成 `ls/stat/rm` 语义调整并通过人工回归。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d122c77` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

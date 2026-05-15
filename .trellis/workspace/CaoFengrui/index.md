@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-05-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~668 | Active |
+| `journal-1.md` | ~718 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-05-15 | LittleFS 壳层与 100KB OTA 分区收尾 | `d122c77` | `fix-wkup-deepsleep` |
 | 14 | 2026-05-15 | 补记按键与深睡唤醒实板验证结果 | `39b5ffd`, `cfbcea6` | `fix-wkup-deepsleep` |
 | 13 | 2026-05-15 | 简化按键处理并重分配普通按键引脚 | `39b5ffd` | `fix-wkup-deepsleep` |
 | 12 | 2026-05-15 | LittleFS接入与BootLoader脱机跳转修复 | `e407a08` | `fix-wkup-deepsleep` |
