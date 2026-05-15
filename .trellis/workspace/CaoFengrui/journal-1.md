@@ -716,3 +716,49 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: LittleFS write 追加写参数与会话收尾
+
+**Date**: 2026-05-15
+**Task**: LittleFS write 追加写参数与会话收尾
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 模块 | 变更 |
+|------|------|
+| LittleFS shell | `write` 命令升级为 `write [-a] <file> <text>`，默认覆盖写，`-a` 追加写 |
+| 存储接口 | 新增 `lfs_storage_append_file()`，并把覆盖写/追加写收敛到统一内部写入流程 |
+| 校验逻辑 | `write -a` 读回后校验最终长度和文件尾内容，避免误判追加成功 |
+| 文档与规范 | 同步更新 `工程文档.md`、`BootLoader_APP_接入说明.md` 和 `.trellis/spec/backend/database-guidelines.md` |
+
+**验证情况**:
+- 用户已实机验证 `write -a` 行为正确
+- Keil 构建命令 `E:\Keil_v5\UV4\UV4.exe -b D:\GD32\2026706296\MDK\2026706296.uvprojx -j0` 已通过
+
+**关键提交**:
+- `b043da4` `feat(storage): 支持 LittleFS write 追加写参数`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b043da4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
