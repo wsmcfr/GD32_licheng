@@ -580,7 +580,7 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 
 ### Summary
 
-(Add summary)
+完成 App 侧 OTA 通道迁移：升级数据改走 RS485/USART1，USART0 继续负责日志与调试命令，旧 USART2 OTA 链路和 RS485 原样回显任务已从 App 工程中移除。同步更新驱动、中断、调度、低功耗恢复、PC 工具、工程文档和 Trellis 规范，并完成提交与远端推送确认。
 
 ### Main Changes
 
@@ -609,7 +609,11 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python -m unittest tools.test_uart_ota_packet`：11 项测试通过
+- [OK] 核心范围旧符号扫描：`USART2/usart2/rs485_task/rs485_app` 等关键字无命中
+- [OK] `git diff --check`：无空白错误，仅 Git LF/CRLF 提示
+- [OK] Keil `uVision.com` rebuild：`0 Error(s), 26 Warning(s)`，warning 为既有 `perf_counter.h` GNU extension 提示
+- [OK] GitHub 远端确认：`origin/fix-wkup-deepsleep` 指向 `cafbc342e31dfeccc0190f170003ea415dacc87a`
 
 ### Status
 
@@ -795,6 +799,63 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 | Hash | Message |
 |------|---------|
 | `aab2084` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 18: 迁移 App OTA 通道到 RS485/USART1
+
+**Date**: 2026-05-16
+**Task**: 迁移 App OTA 通道到 RS485/USART1
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|------|------|
+| OTA 通道 | 将 App 侧 OTA 从 USART2 迁移到 RS485/USART1，USART0 保持日志和调试命令输出。 |
+| 串口驱动 | UART_OTA_USART 改为 RS485_USART，USART1 DMA 缓冲扩展到 1024 字节，删除 USART2 OTA 初始化、DMA 宏和中断声明。 |
+| 中断与任务 | USART1_IRQHandler 接管 OTA DMA 帧移交，删除旧 rs485_task/rs485_app 回显逻辑，调度表只保留 uart_ota_task。 |
+| RS485 半双工 | OTA ACK 和 OTA485 启动探测串发送前切换 TX，发送完成后恢复 RX。 |
+| 低功耗 | 深睡前后不再处理 USART2，唤醒后通过 bsp_usart_init 恢复 USART0/USART1 并重置 OTA 运行态。 |
+| 工具与文档 | PC OTA 工具 channel 输出改为 RS485/USART1，同步更新工程文档、接入说明、脚本文档和 .trellis/spec OTA 规范。 |
+| 验证 | Python 单测 11 项通过；旧 USART2/rs485_task 关键字核心范围无命中；git diff --check 无空白错误；Keil rebuild 0 Error(s), 26 Warning(s)，warning 为既有 perf_counter GNU extension 提示。 |
+| GitHub | 提交 cafbc34 已推送到 origin/fix-wkup-deepsleep，用户确认远端 refs/heads/fix-wkup-deepsleep 指向 cafbc342e31dfeccc0190f170003ea415dacc87a。 |
+
+**关键文件**:
+- `USER/Driver/bsp_usart.h`
+- `USER/Driver/bsp_usart.c`
+- `USER/gd32f4xx_it.c`
+- `USER/App/uart_ota_app.c`
+- `USER/App/scheduler.c`
+- `USER/Driver/bsp_power.c`
+- `tools/make_uart_ota_packet.py`
+- `tools/test_uart_ota_packet.py`
+- `.trellis/spec/backend/embedded-ota-guidelines.md`
+- `BootLoader_APP_接入说明.md`
+- `UART_OTA_Python脚本详解.md`
+- `工程文档.md`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cafbc34` | (see git log) |
 
 ### Testing
 
