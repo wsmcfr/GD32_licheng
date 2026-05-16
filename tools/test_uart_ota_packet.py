@@ -13,7 +13,7 @@ from tools import make_uart_ota_packet as ota
 class UartOtaStreamingProtocolTest(unittest.TestCase):
     """
     测试作用：
-      覆盖 USART0 分包 OTA 协议的 PC 侧帧生成逻辑。
+      覆盖 RS485/USART1 分包 OTA 协议的 PC 侧帧生成逻辑。
     说明：
       这些测试只依赖 Python 标准库，便于在没有硬件和串口环境时先验证
       上位机生成的二进制帧是否与 App 侧解析契约一致。
@@ -124,7 +124,7 @@ class UartOtaStreamingProtocolTest(unittest.TestCase):
         self.assertIn("firmware=10 bytes", text)
         self.assertIn("chunks=3", text)
         self.assertIn("version=0x00000003", text)
-        self.assertIn("channel=USART2", text)
+        self.assertIn("channel=RS485/USART1", text)
 
     def test_stream_info_rejects_too_small_chunk_size(self):
         """
@@ -156,7 +156,7 @@ class UartOtaStreamingProtocolTest(unittest.TestCase):
         self.assertEqual(0, result)
         send_mock.assert_called_once()
         self.assertEqual(460800, send_mock.call_args.args[1])
-        self.assertIn("sent stream frames=68, channel=USART2, port=COM29, baudrate=460800", output.getvalue())
+        self.assertIn("sent stream frames=68, channel=RS485/USART1, port=COM29, baudrate=460800", output.getvalue())
 
     def test_find_ack_frame_ignores_text_before_binary_ack(self):
         """

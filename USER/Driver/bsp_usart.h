@@ -31,10 +31,10 @@ extern "C" {
  * 宏作用：
  *   定义 OTA 专用串口和默认波特率。
  * 说明：
- *   USART2 专门承担 OTA 帧收发；PC 工具、App 和未来如需调整的 BootLoader
- *   配置，应统一围绕这一组常量更新。
+ *   OTA 现在通过 RS485/USART1 收发；PC 工具、App 和未来如需调整的 BootLoader
+ *   配置，应统一围绕这一组常量更新。USART0 仍只负责日志和调试命令。
  */
-#define UART_OTA_USART                 USART2
+#define UART_OTA_USART                 RS485_USART
 #define UART_OTA_USART_BAUDRATE        460800U
 
 /* 接收缓冲区长度定义。 */
@@ -46,8 +46,11 @@ extern "C" {
  *   文本命令缓冲足够覆盖当前单帧命令调试需求。
  */
 #define BSP_USART0_RX_BUFFER_SIZE      1024U
-#define BSP_USART1_RX_BUFFER_SIZE      256U
-#define BSP_USART2_RX_BUFFER_SIZE      1024U
+/*
+ * USART1/RS485 当前承载 OTA 流式 DATA 帧，必须能放下 512B 载荷 + 24B 协议头。
+ * 保留 1KB 余量也能覆盖上位机一帧中混入少量串口驱动附加字节的情况。
+ */
+#define BSP_USART1_RX_BUFFER_SIZE      1024U
 #define BSP_USART5_RX_BUFFER_SIZE      256U
 
 /* USART0 引脚与 DMA 映射。 */
@@ -83,18 +86,6 @@ extern "C" {
 #define RS485_DIR_TX_LEVEL             SET
 #define RS485_DIR_RX_LEVEL             RESET
 
-/* USART2 引脚与 DMA 映射。 */
-#define USART2_RDATA_ADDRESS           ((uint32_t)&USART_DATA(USART2))
-#define USART2_RX_DMA_PERIPH           DMA0
-#define USART2_RX_DMA_CHANNEL          DMA_CH1
-#define USART2_RX_DMA_SUBPERI          DMA_SUBPERI4
-#define USART2_TX_PORT                 GPIOD
-#define USART2_RX_PORT                 GPIOD
-#define USART2_CLK_PORT                RCU_GPIOD
-#define USART2_TX_PIN                  GPIO_PIN_8
-#define USART2_RX_PIN                  GPIO_PIN_9
-#define USART2_AF                      GPIO_AF_7
-
 /* USART5 引脚与 DMA 映射。 */
 #define USART5_RDATA_ADDRESS           ((uint32_t)&USART_DATA(USART5))
 #define USART5_RX_DMA_PERIPH           DMA1
@@ -110,7 +101,6 @@ extern "C" {
 /* 各串口 DMA 接收缓冲区，由驱动层统一提供。 */
 extern uint8_t usart0_rxbuffer[BSP_USART0_RX_BUFFER_SIZE];
 extern uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
-extern uint8_t usart2_rxbuffer[BSP_USART2_RX_BUFFER_SIZE];
 extern uint8_t usart5_rxbuffer[BSP_USART5_RX_BUFFER_SIZE];
 
 /*
@@ -142,16 +132,6 @@ void bsp_usart_init(void);
  *   无返回值。
  */
 void bsp_usart1_init(void);
-
-/*
- * 函数作用：
- *   初始化 USART2 及其 DMA 接收链路。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_usart2_init(void);
 
 /*
  * 函数作用：

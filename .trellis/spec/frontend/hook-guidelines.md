@@ -29,8 +29,8 @@ Good examples:
 - `adc_task()`
 - `oled_task()`
 - `btn_task()`
-- `rs485_task()`
 - `uart_task()`
+- `uart_ota_task()`
 - `rtc_task()`
 
 If the logic needs periodic execution and no external framework owns the timing, this is the default pattern.
@@ -64,7 +64,7 @@ Reference pair:
 - `USER/gd32f4xx_it.c::USART0_IRQHandler()`
 - `USER/App/usart_app.c::uart_task()`
 - `USER/gd32f4xx_it.c::USART1_IRQHandler()`
-- `USER/App/rs485_app.c::rs485_task()`
+- `USER/App/uart_ota_app.c::uart_ota_task()`
 
 ---
 
@@ -81,8 +81,8 @@ Examples:
 
 - `adc_task()` consumes `adc_value[]`
 - `rtc_task()` reads current RTC data and formats it for display
-- `rs485_task()` consumes `rs485_dma_buffer` after ISR handoff and echoes the frame later
 - `uart_task()` consumes `uart_dma_buffer` after ISR handoff
+- `uart_ota_task()` consumes `uart_ota_dma_buffer` after RS485/USART1 ISR handoff and sends OTA ACK later
 
 ---
 

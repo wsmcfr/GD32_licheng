@@ -3,7 +3,6 @@
 /* 各串口 DMA 接收缓冲区定义。 */
 uint8_t usart0_rxbuffer[BSP_USART0_RX_BUFFER_SIZE];
 uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
-uint8_t usart2_rxbuffer[BSP_USART2_RX_BUFFER_SIZE];
 uint8_t usart5_rxbuffer[BSP_USART5_RX_BUFFER_SIZE];
 
 /*
@@ -148,7 +147,7 @@ void bsp_usart0_init(void)
  * 返回值说明：
  *   无返回值。
  * 说明：
- *   USART0 作为默认调试串口，USART1 作为 RS485 转发串口，两者在这里一起初始化。
+ *   USART0 作为默认调试串口，USART1 作为 RS485 OTA 升级串口，两者在这里一起初始化。
  */
 void bsp_usart_init(void)
 {
@@ -163,7 +162,7 @@ void bsp_usart_init(void)
  *   1. 打开 DMA、GPIOD、PE8 方向控制脚和 USART1 外设时钟。
  *   2. 配置 PD5/PD6 为 USART1 的 TX/RX 复用功能。
  *   3. 配置 PE8 为 RS485 收发器方向控制输出，并默认进入接收态。
- *   4. 配置 USART1 为默认 115200-8N1 收发模式。
+ *   4. 配置 USART1 为 OTA 默认 460800-8N1 收发模式。
  *   5. 打开 USART1 IDLE 中断，用于 RS485 接收帧完成判定。
  * 参数说明：
  *   无参数。
@@ -206,7 +205,7 @@ void bsp_usart1_init(void)
     bsp_rs485_direction_receive();
 
     usart_deinit(USART1);
-    usart_baudrate_set(USART1, 115200U);
+    usart_baudrate_set(USART1, UART_OTA_USART_BAUDRATE);
     usart_receive_config(USART1, USART_RECEIVE_ENABLE);
     usart_transmit_config(USART1, USART_TRANSMIT_ENABLE);
     usart_dma_receive_config(USART1, USART_RECEIVE_DMA_ENABLE);
@@ -215,58 +214,6 @@ void bsp_usart1_init(void)
     /* USART1/RS485 同样使用 IDLE 中断移交整帧，避免在中断里解析业务协议。 */
     nvic_irq_enable(USART1_IRQn, 1U, 0U);
     usart_interrupt_enable(USART1, USART_INT_IDLE);
-}
-
-/*
- * 函数作用：
- *   初始化 USART2 及其 DMA 接收链路。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_usart2_init(void)
-{
-    dma_single_data_parameter_struct dma_init_struct;
-
-    rcu_periph_clock_enable(RCU_DMA0);
-    rcu_periph_clock_enable(USART2_CLK_PORT);
-    rcu_periph_clock_enable(RCU_USART2);
-
-    dma_deinit(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL);
-    dma_init_struct.direction = DMA_PERIPH_TO_MEMORY;
-    dma_init_struct.memory0_addr = (uint32_t)usart2_rxbuffer;
-    dma_init_struct.memory_inc = DMA_MEMORY_INCREASE_ENABLE;
-    dma_init_struct.number = sizeof(usart2_rxbuffer);
-    dma_init_struct.periph_addr = USART2_RDATA_ADDRESS;
-    dma_init_struct.periph_inc = DMA_PERIPH_INCREASE_DISABLE;
-    dma_init_struct.periph_memory_width = DMA_PERIPH_WIDTH_8BIT;
-    dma_init_struct.priority = DMA_PRIORITY_ULTRA_HIGH;
-    dma_single_data_mode_init(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL, &dma_init_struct);
-
-    dma_circulation_disable(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL);
-    dma_channel_subperipheral_select(USART2_RX_DMA_PERIPH,
-                                     USART2_RX_DMA_CHANNEL,
-                                     USART2_RX_DMA_SUBPERI);
-    dma_channel_enable(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL);
-
-    gpio_af_set(USART2_TX_PORT, USART2_AF, USART2_TX_PIN | USART2_RX_PIN);
-    gpio_mode_set(USART2_TX_PORT, GPIO_MODE_AF, GPIO_PUPD_PULLUP, USART2_TX_PIN | USART2_RX_PIN);
-    gpio_output_options_set(USART2_TX_PORT,
-                            GPIO_OTYPE_PP,
-                            GPIO_OSPEED_50MHZ,
-                            USART2_TX_PIN | USART2_RX_PIN);
-
-    usart_deinit(USART2);
-    usart_baudrate_set(USART2, UART_OTA_USART_BAUDRATE);
-    usart_receive_config(USART2, USART_RECEIVE_ENABLE);
-    usart_transmit_config(USART2, USART_TRANSMIT_ENABLE);
-    usart_dma_receive_config(USART2, USART_RECEIVE_DMA_ENABLE);
-    usart_enable(USART2);
-
-    /* USART2 现在承担 OTA 专用接收，因此也启用 IDLE 中断移交整帧。 */
-    nvic_irq_enable(USART2_IRQn, 1U, 1U);
-    usart_interrupt_enable(USART2, USART_INT_IDLE);
 }
 
 /*
@@ -329,7 +276,6 @@ void bsp_usart_all_init(void)
 {
     bsp_usart0_init();
     bsp_usart1_init();
-    bsp_usart2_init();
     bsp_usart5_init();
 }
 

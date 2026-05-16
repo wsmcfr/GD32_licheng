@@ -715,11 +715,6 @@
               <FilePath>..\USER\App\oled_app.c</FilePath>
             </File>
             <File>
-              <FileName>rs485_app.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\USER\App\rs485_app.c</FilePath>
-            </File>
-            <File>
               <FileName>usart_app.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\USER\App\usart_app.c</FilePath>

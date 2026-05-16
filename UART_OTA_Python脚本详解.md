@@ -38,7 +38,7 @@
 | 串口 | 当前职责 |
 |---|---|
 | `USART0` | 启动日志、调试输出、普通透传 |
-| `USART2` | OTA 专用帧收发 |
+| `RS485/USART1` | OTA 专用帧收发，ACK 返回前由 App 切换 RS485 发送方向 |
 
 一句话概括：
 
@@ -127,7 +127,7 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 | `UART_OTA_FRAME_ACK_BASE` | `0x80` | ACK 类型基值 |
 | `UART_OTA_ACK_FRAME_SIZE` | `20` | ACK 帧固定长度 |
 | `UART_OTA_DEFAULT_BAUDRATE` | `460800` | 默认串口波特率 |
-| `UART_OTA_CHANNEL_NAME` | `USART2` | 当前脚本输出中标识的 OTA 专用通道名 |
+| `UART_OTA_CHANNEL_NAME` | `RS485/USART1` | 当前脚本输出中标识的 OTA 专用通道名 |
 
 ### 5.1 为什么要有两套 magic
 
@@ -702,7 +702,7 @@ python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --c
 典型输出：
 
 ```text
-stream MDK/output/Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=USART2
+stream MDK/output/Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=RS485/USART1
 ```
 
 ### 11.2 真正发送
@@ -714,12 +714,12 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 典型输出：
 
 ```text
-send stream MDK/output/Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=USART2, port=COM29, baudrate=460800
+send stream MDK/output/Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=RS485/USART1, port=COM29, baudrate=460800
 START acked: chunk=0/66, frames=1/68, bytes=0/33536 (0%)
 DATA acked: chunk=1/66, frames=2/68, bytes=512/33536 (1%)
 ...
 END acked: chunk=66/66, frames=68/68, bytes=33536/33536 (100%)
-sent stream frames=68, channel=USART2, port=COM29, baudrate=460800
+sent stream frames=68, channel=RS485/USART1, port=COM29, baudrate=460800
 ```
 
 ### 11.3 生成旧格式文件
@@ -739,7 +739,7 @@ python tools\make_uart_ota_packet.py --mode packet --version 0x00000006
 | 检查项 | 说明 |
 |---|---|
 | `pyserial` 是否安装 | `python -m pip install pyserial` |
-| 串口号是否正确 | 例如 `COM29`，且必须是接到 `USART2` 的那一路 |
+| 串口号是否正确 | 例如 `COM29`，且必须是接到 `RS485/USART1` 转换器的那一路 |
 | 波特率是否为 `460800` | 必须和 App/BootLoader 约定一致 |
 
 ### 12.2 如果 START 超时
@@ -757,17 +757,17 @@ python tools\make_uart_ota_packet.py --mode packet --version 0x00000006
 
 | 观察口 | 正常现象 | 用途 |
 |---|---|---|
-| `USART2(PD8/PD9)` | 上电一次性输出 `OTA2: ready` | 确认 OTA 专用口的 TX 线、串口号和当前固件版本基本正确 |
-| `USART0(PA9/PA10)` | 发送时输出 `OTA: rx irq=... len=... magic=... type=...` | 确认 `USART2` 的 RX/IDLE/DMA/任务层链路是否真的收到了首帧 |
+| `RS485/USART1` | 上电一次性输出 `OTA485: ready` | 确认 OTA 专用口的 TX 线、方向控制、串口号和当前固件版本基本正确 |
+| `USART0(PA9/PA10)` | 发送时输出 `OTA: rx irq=... len=... magic=... type=...` | 确认 `RS485/USART1` 的 RX/IDLE/DMA/任务层链路是否真的收到了首帧 |
 
 要特别注意：
 
 | 现象 | 结论 |
 |---|---|
-| `PD8/PD9` 看不到 `BOOT: start` | 正常，因为 `BOOT: start` 固定走 `USART0`，不是 `USART2` |
-| `PD8/PD9` 能看到 `OTA2: ready`，但 Python 仍等不到 START ACK | 优先检查 `PD8` 回传链路、USB 转串口 RX 方向、共地和串口占用 |
+| RS485 端看不到 `BOOT: start` | 正常，因为 `BOOT: start` 固定走 `USART0`，不是 `RS485/USART1` |
+| RS485 端能看到 `OTA485: ready`，但 Python 仍等不到 START ACK | 优先检查 RS485 方向控制、A/B 极性、USB-RS485 转换器 RX 方向、共地和串口占用 |
 | `USART0` 能看到 `OTA: rx ...`，但上位机超时 | 说明设备已经收到 START，问题更偏向 ACK 发不回 PC |
-| `USART0` 完全没有 `OTA: rx ...` | 说明 `USART2` 接收链路根本没进来，优先检查接线、波特率和当前固件版本 |
+| `USART0` 完全没有 `OTA: rx ...` | 说明 `RS485/USART1` 接收链路根本没进来，优先检查接线、A/B 极性、波特率和当前固件版本 |
 
 ### 12.3 如果 DATA 某一帧失败
 

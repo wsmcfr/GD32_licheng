@@ -23,8 +23,8 @@ USER/App/
 ├── led_app.c / led_app.h       # LED state presentation
 ├── btn_app.c / btn_app.h       # Key event behavior and deep-sleep trigger
 ├── oled_app.c / oled_app.h     # OLED text composition
-├── rs485_app.c / rs485_app.h   # USART1 RS485 frame echo behavior
 ├── usart_app.c / usart_app.h   # UART frame echo / formatting utilities
+├── uart_ota_app.c / uart_ota_app.h # RS485/USART1 streaming OTA behavior
 ├── adc_app.c / adc_app.h       # ADC-to-DAC or sampled data app logic
 ├── rtc_app.c / rtc_app.h       # RTC display formatting
 └── sd_app.c / sd_app.h         # SD card demo and storage smoke tests
@@ -78,8 +78,8 @@ Task naming examples:
 - `led_task`
 - `btn_task`
 - `oled_task`
-- `rs485_task`
 - `uart_task`
+- `uart_ota_task`
 - `rtc_task`
 
 ---

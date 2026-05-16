@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 脚本作用：
-  生成或发送 App 侧 USART2 OTA 升级数据。
+  生成或发送 App 侧 RS485/USART1 OTA 升级数据。
 主要流程：
   1. 读取 Keil/fromelf 生成的 Project.bin。
   2. 默认 packet 模式保留旧 16 字节包头 + 原始 bin 的 Project.uota 生成能力。
@@ -36,7 +36,7 @@ UART_OTA_FRAME_END = 3
 UART_OTA_FRAME_ACK_BASE = 0x80
 UART_OTA_ACK_FRAME_SIZE = 20
 UART_OTA_DEFAULT_BAUDRATE = 460800
-UART_OTA_CHANNEL_NAME = "USART2"
+UART_OTA_CHANNEL_NAME = "RS485/USART1"
 
 
 @dataclass(frozen=True)

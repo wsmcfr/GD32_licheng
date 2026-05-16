@@ -26,12 +26,6 @@ static void bsp_usart_disable_for_deepsleep(void)
     dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
     usart_disable(USART1);
 
-    usart_interrupt_disable(USART2, USART_INT_IDLE);
-    nvic_irq_disable(USART2_IRQn);
-    usart_dma_receive_config(USART2, USART_RECEIVE_DMA_DISABLE);
-    dma_channel_disable(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL);
-    usart_disable(USART2);
-
     usart_interrupt_disable(USART5, USART_INT_IDLE);
     nvic_irq_disable(USART5_IRQn);
     usart_dma_receive_config(USART5, USART_RECEIVE_DMA_DISABLE);
@@ -109,7 +103,6 @@ static void bsp_clock_disable_for_deepsleep(void)
 {
     rcu_periph_clock_disable(RCU_USART0);
     rcu_periph_clock_disable(RCU_USART1);
-    rcu_periph_clock_disable(RCU_USART2);
     rcu_periph_clock_disable(RCU_USART5);
     rcu_periph_clock_disable(RCU_I2C0);
     rcu_periph_clock_disable(RCU_SPI0);
@@ -189,8 +182,6 @@ static void bsp_gpio_enter_deepsleep_state(void)
      * 示波器容易看到工频/环境耦合的正弦波，且收发器方向状态不确定。
      */
     bsp_rs485_direction_receive();
-    gpio_mode_set(USART2_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART2_TX_PIN);
-    gpio_mode_set(USART2_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART2_RX_PIN);
     gpio_mode_set(USART5_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART5_TX_PIN);
     gpio_mode_set(USART5_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART5_RX_PIN);
 
@@ -266,11 +257,6 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
     bsp_led_init();
     bsp_btn_init();
     bsp_usart_init();
-    /*
-     * USART2 已被定义为 OTA 专用口，深睡唤醒后必须与 USART0/USART1 一起恢复，
-     * 否则应用虽然醒来，但 OTA 通道仍停留在关闭态，后续在线升级会直接失联。
-     */
-    bsp_usart2_init();
     /*
      * OTA 会话运行态也要在唤醒后清空，避免睡前残留的半包长度或标志位
      * 被误当成新的 OTA 帧继续处理。

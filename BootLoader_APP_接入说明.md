@@ -8,7 +8,7 @@
 | 参考 BootLoader | `D:\GD32\04 例程模板\04 例程模板\27_BootLoader_Two_Stage` |
 | App 链接地址 | `0x0800D000` |
 | App 最大运行区 | `0x0005A000` |
-| 当前已完成内容 | 当前工程已经按 App 地址链接，并在启动时重定位中断向量表；复制到本工程内的 BootLoader 已按当前 App 优化搬运逻辑；App 侧已拆分为 `USART0` 日志/LittleFS 调试口 + `USART2` 专用分包 OTA；BootLoader 交接层已独立为 `bootloader_port.c/.h`；App/上位机工具默认升级波特率已统一为 `460800`，发送工具会打印分帧 ACK 进度 |
+| 当前已完成内容 | 当前工程已经按 App 地址链接，并在启动时重定位中断向量表；复制到本工程内的 BootLoader 已按当前 App 优化搬运逻辑；App 侧已拆分为 `USART0` 日志/LittleFS 调试口 + `RS485/USART1` 专用分包 OTA；BootLoader 交接层已独立为 `bootloader_port.c/.h`；App/上位机工具默认升级波特率已统一为 `460800`，发送工具会打印分帧 ACK 进度 |
 | 仍需注意内容 | 首次导入 OTA 功能时仍需先用 SWD/烧录器把带 OTA 接收逻辑的 App 写到 `0x0800D000`；后续升级使用 `tools/make_uart_ota_packet.py --mode send --port COMx --baudrate 460800`，不要直接发送 `Project.bin`；若板子里还是旧 BootLoader，也必须一起重刷本仓库内更新后的 BootLoader，否则它仍会按旧 `64KB` 下载区限制工作 |
 
 ## 2. Flash 分区关系
@@ -77,8 +77,7 @@
 | `MDK/2026706296.uvprojx` | 打开 HEX 输出，并在构建后生成 `Project.bin` | `Project.bin` 用于 BootLoader 搬运写入 App 区，`Project.hex` 用于调试/烧录工具 |
 | `USER/main.c` | 提供 `__use_no_semihosting` 和 `_sys_open/_sys_write/_sys_exit/_ttywrch/fputc` retarget | 禁止 AC6 C 库 semihosting，避免脱机运行在 `BKPT 0xAB` 处 HardFault |
 | `USER/App/usart_app.c` | 调整为 `USART0` 文本调试命令和日志输出 | `USART0` 不再解析 OTA 帧，也不再承担 RS485 透传，调试时通过 `gettime/settime/pwd/ls/cd/cat/write [-a]/mkdir/touch/stat/df` 读取 RTC 或操作 LittleFS |
-| `USER/App/rs485_app.c` | 新增 `USART1` RS485 原样回显任务 | 外部工具向 `RS485/USART1` 发送一帧数据后，App 在任务上下文中按原字节内容回显，不额外添加前后缀 |
-| `USER/App/uart_ota_app.c` | 新增 `USART2` START/DATA/END 分包 OTA、CRC 校验、下载缓存区写入和参数区写入 | App 每收到一个 OTA DATA 帧就写 `0x08067000`，最后写 `0x0800C000` 并复位交给 BootLoader 搬运 |
+| `USER/App/uart_ota_app.c` | 新增 `RS485/USART1` START/DATA/END 分包 OTA、CRC 校验、下载缓存区写入、RS485 ACK 方向控制和参数区写入 | App 每收到一个 OTA DATA 帧就写 `0x08067000`，最后写 `0x0800C000` 并复位交给 BootLoader 搬运 |
 | `USER/Driver/bootloader_port.c/.h` | 新增 BootLoader 交接层封装 | 统一管理共享地址、CRC32、向量表校验、下载区擦写、参数区回写和软件复位 |
 | `tools/make_uart_ota_packet.py` | 根据 `Project.bin` 生成旧 `.uota` 包，或通过 `--mode send` 按 ACK 分包发送 | 推荐使用 `--mode send --port COMx --baudrate 460800`，避免 App 侧占用整包级 RAM 缓冲，并可观察发送进度 |
 
@@ -99,9 +98,9 @@
 | 场景 | 当前状态 | 说明 |
 |---|---|---|
 | 首次烧录 BootLoader + App | 当前工程已具备 App 镜像条件 | 先烧 BootLoader 到 `0x08000000`，再把当前 App 写到 `0x0800D000` |
-| 运行中升级 App | 当前工程已支持 USART2 ACK 分包升级 | App 通过 `USART2` 接收 START/DATA/END 帧，边收边写 `0x08067000`，最后写参数区并复位交给 BootLoader 搬运 |
+| 运行中升级 App | 当前工程已支持 RS485/USART1 ACK 分包升级 | App 通过 `RS485/USART1` 接收 START/DATA/END 帧，边收边写 `0x08067000`，最后写参数区并复位交给 BootLoader 搬运 |
 
-也就是说，官方 Two Stage 例程里，BootLoader 本身不是直接串口收文件的程序；串口接收升级包的逻辑属于 App 侧。本工程现在由 `USER/App/uart_ota_app.c` 负责 `USART2` 分包 OTA 接收，由 `USER/App/usart_app.c` 负责 `USART0` LittleFS 调试命令。
+也就是说，官方 Two Stage 例程里，BootLoader 本身不是直接串口收文件的程序；串口接收升级包的逻辑属于 App 侧。本工程现在由 `USER/App/uart_ota_app.c` 负责 `RS485/USART1` 分包 OTA 接收，由 `USER/App/usart_app.c` 负责 `USART0` LittleFS 调试命令。
 
 ## 6. 当前工程输出文件怎么用
 
@@ -112,7 +111,7 @@
 | `MDK/output/Project.bin` | 纯二进制 App 镜像，用于分包 OTA 发送，不要直接通过串口助手发送 |
 | `MDK/output/Project.uota` | 旧完整包格式，仍可生成用于离线检查；低 RAM 流式 OTA 不再推荐直接发送该文件 |
 
-如果通过当前 App 侧 `USART2` 在线升级，应该使用 `tools/make_uart_ota_packet.py --mode send --port COMx --baudrate 460800` 发送分包流，不要直接发送 `Project.bin`、`Project.hex` 或旧完整包。
+如果通过当前 App 侧 `RS485/USART1` 在线升级，应该使用 `tools/make_uart_ota_packet.py --mode send --port COMx --baudrate 460800` 发送分包流，不要直接发送 `Project.bin`、`Project.hex` 或旧完整包。
 
 ## 6.1 生成并发送串口升级包
 
@@ -121,7 +120,7 @@
 | 1 | 在 Keil 中重新编译当前 App 工程 | 构建后生成 `MDK/output/Project.bin` |
 | 2 | 打开 PowerShell 并进入工程根目录 | 路径为 `D:\GD32\2026706296` |
 | 3 | 执行 `python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512` | 先检查当前 `Project.bin` 的大小、CRC 和分包数量；后续每次升级都要递增 `--version` |
-| 4 | 执行 `python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512` | 上位机通过 `USART2` 所在串口每发一帧等待 App ACK；`COM29` 按实际串口号替换 |
+| 4 | 执行 `python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512` | 上位机通过 `RS485/USART1` 所在串口每发一帧等待 App ACK；`COM29` 按实际串口号替换 |
 | 5 | 观察上位机依次打印 `send stream ...`、`START acked ...`、多行 `DATA acked ...` 和 `END acked ...` | 表示 START、DATA、END 三类帧都已收到 App 成功 ACK |
 | 6 | 等待 App 打印 `OTA: ready, reset to BootLoader` | App 已写入下载缓存区和参数区，并准备复位 |
 | 7 | 观察 BootLoader 打印 `app crc32 check pass` 和 `app update success` | 表示 BootLoader 已完成搬运并清除升级标志 |
@@ -131,9 +130,9 @@
 | 串口 | 引脚 | 你应该看到什么 |
 |---|---|---|
 | `USART0` | `PA9/PA10` | `BOOT: start`、`OTA: rx ...`、`OTA: ready, reset to BootLoader` 等日志 |
-| `USART2` | `PD8/PD9` | 上电一次性探测串 `OTA2: ready`，以及 OTA 过程中返回给上位机的二进制 ACK |
+| `RS485/USART1` | `PD5/PD6 + PE8 方向控制` | 上电一次性探测串 `OTA485: ready`，以及 OTA 过程中返回给上位机的二进制 ACK |
 
-注意：`PD8/PD9` **看不到** `BOOT: start` 属于正常现象，因为启动日志固定走 `USART0`。
+注意：`RS485/USART1` **看不到** `BOOT: start` 属于正常现象，因为启动日志固定走 `USART0`。
 
 命令示例：
 
@@ -146,13 +145,13 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 发送时的典型输出如下：
 
 ```text
-send stream MDK\output\Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=USART2, port=COM29, baudrate=460800
+send stream MDK\output\Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=RS485/USART1, port=COM29, baudrate=460800
 START acked: chunk=0/66, frames=1/68, bytes=0/33536 (0%)
 DATA acked: chunk=1/66, frames=2/68, bytes=512/33536 (1%)
 ...
 DATA acked: chunk=66/66, frames=67/68, bytes=33536/33536 (100%)
 END acked: chunk=66/66, frames=68/68, bytes=33536/33536 (100%)
-sent stream frames=68, channel=USART2, port=COM29, baudrate=460800
+sent stream frames=68, channel=RS485/USART1, port=COM29, baudrate=460800
 ```
 
 如果只是想离线检查旧完整包格式，可以单独执行 `python tools\make_uart_ota_packet.py --mode packet --version 0x00000006` 生成 `Project.uota`；当前低 RAM 在线升级不要直接发送这个文件。
@@ -161,10 +160,10 @@ sent stream frames=68, channel=USART2, port=COM29, baudrate=460800
 
 | 顺序 | 检查项 | 期望结果 |
 |---|---|---|
-| 1 | 只连 `PD8/PD9` 打开串口终端后重新上电 | 能看到一次 `OTA2: ready`，证明 `USART2` TX 和串口号基本正确 |
-| 2 | 同时观察 `PA9/PA10` 的调试口 | 发送 `--mode send` 时应出现 `OTA: rx irq=... len=... magic=... type=...`，证明 `USART2` RX 已进 App |
-| 3 | 若 `USART0` 有 `OTA: rx ...`，但上位机仍收不到 ACK | 优先查 `PD8` 发射链路、USB 转串口方向、共地和串口占用 |
-| 4 | 若两边都没有任何 OTA 痕迹 | 优先查当前板子是否已烧入带 `USART2` OTA 的新 App、以及线是否真的接到 `PD8/PD9` |
+| 1 | 只连 `RS485/USART1` 打开串口终端后重新上电 | 能看到一次 `OTA485: ready`，证明 RS485 发送方向、串口号和当前 App 基本正确 |
+| 2 | 同时观察 `PA9/PA10` 的调试口 | 发送 `--mode send` 时应出现 `OTA: rx irq=... len=... magic=... type=...`，证明 RS485 RX/IDLE/DMA 已进 App |
+| 3 | 若 `USART0` 有 `OTA: rx ...`，但上位机仍收不到 ACK | 优先查 RS485 方向控制、A/B 极性、USB-RS485 转换器接收方向、共地和串口占用 |
+| 4 | 若两边都没有任何 OTA 痕迹 | 优先查当前板子是否已烧入带 `RS485/USART1` OTA 的新 App、以及线是否真的接到 RS485 总线 |
 
 当前流式 OTA 帧格式：
 
@@ -202,7 +201,7 @@ sent stream frames=68, channel=USART2, port=COM29, baudrate=460800
 |---|---|---|
 | `SCB->VTOR = 0x0800D000` 和重新开中断 | 必须 | 当前工程已经通过 `boot_app_handoff_init()` 实现 |
 | `BootConfig.h/c` 参数结构 | 不单独引入官方文件 | 当前 App 已改为在 `bootloader_port.c/.h` 内维护与 BootLoader 参数区兼容的交接结构，避免协议散落在业务代码里 |
-| 串口接收新固件、写 `0x08067000` 缓存区 | 已实现 | `uart_ota_app.c` 通过 `USART2` 分包接收 DATA 帧后立即写下载缓存区，并用 CRC32 校验写入结果 |
+| 串口接收新固件、写 `0x08067000` 缓存区 | 已实现 | `uart_ota_app.c` 通过 `RS485/USART1` 分包接收 DATA 帧后立即写下载缓存区，并用 CRC32 校验写入结果 |
 | 软件复位让 BootLoader 搬运 | 已实现 | App 写入参数区后复位，BootLoader 根据 `updateStatus=0x01`、`updateFlag=0x5A` 搬运 |
 
 ## 9. 当前工程接入后的启动注意事项
@@ -231,7 +230,7 @@ sent stream frames=68, channel=USART2, port=COM29, baudrate=460800
 | 步骤 | 当前实现 |
 |---|---|
 | 1 | `tools/make_uart_ota_packet.py --mode send --baudrate 460800` 根据 `Project.bin` 生成 START/DATA/END 帧，并在每个 ACK 后打印进度 |
-| 2 | App 的 `USART2` IDLE + DMA 每次接收一个 OTA 小帧，处理完成后返回 ACK；`USART0` 仅保留日志和 LittleFS 调试命令 |
+| 2 | App 的 `RS485/USART1` IDLE + DMA 每次接收一个 OTA 小帧，处理完成后切换 RS485 方向并返回 ACK；`USART0` 仅保留日志和 LittleFS 调试命令 |
 | 3 | App 校验 START 中的固件长度、固件 CRC32，并在首个 DATA 中校验 App 向量表 |
 | 4 | App 每收到一个 DATA 帧就写入下载缓存区 `0x08067000`，最后 END 阶段读回计算 CRC32 |
 | 5 | App END 校验通过后写入参数区 `0x0800C000`：`magicWord/updateStatus/updateFlag/appSize/appCRC32/appVersion` |

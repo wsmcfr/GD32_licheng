@@ -34,7 +34,6 @@ static task_t scheduler_task[] =
     ,{adc_task,  100,  0}
     ,{oled_task, 10,   0}
     ,{btn_task,  5,    0}
-    ,{rs485_task, 5,   0}
     ,{uart_task, 5,    0}
     ,{uart_ota_task, 5, 0}
     ,{rtc_task,  500,  0}
@@ -110,7 +109,6 @@ void system_init(void)
 		my_printf(DEBUG_USART, "BOOT: oled bus done\r\n");
 		bsp_gd25qxx_init();
 		my_printf(DEBUG_USART, "BOOT: gd25qxx bus done\r\n");
-		bsp_usart2_init();
 		uart_ota_reset_runtime();
 		uart_ota_emit_startup_probe();
 

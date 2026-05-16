@@ -89,7 +89,7 @@ static uart_ota_session_t g_uart_ota_session = {0};
  * 变量作用：
  *   控制 OTA 接收摘要日志的条数，避免成功升级时把 USART0 日志口刷满。
  * 说明：
- *   每次系统初始化或唤醒后先保留前 3 帧的摘要，足够判断 USART2 是否收到了
+ *   每次系统初始化或唤醒后先保留前 3 帧的摘要，足够判断 RS485/USART1 是否收到了
  *   START/DATA 帧，以及收到的数据头是否符合当前协议。
  */
 static uint8_t g_uart_ota_rx_trace_budget = 0U;
@@ -170,7 +170,7 @@ static uint8_t prv_uart_ota_is_magic_prefix(const uint8_t *data, uint32_t length
 
 /*
  * 函数作用：
- *   发送 OTA ACK 帧到 USART2，让上位机按“发送一帧、等待 ACK”的节流方式继续。
+ *   发送 OTA ACK 帧到 RS485/USART1，让上位机按“发送一帧、等待 ACK”的节流方式继续。
  * 参数说明：
  *   frame_type：被应答的原始帧类型。
  *   status：处理结果，0 表示成功。
@@ -191,12 +191,19 @@ static void prv_uart_ota_send_ack(uint32_t frame_type,
     prv_uart_ota_write_u32_le(&ack[8], status);
     prv_uart_ota_write_u32_le(&ack[12], value0);
     prv_uart_ota_write_u32_le(&ack[16], value1);
+
+    /*
+     * RS485 是半双工链路，ACK 返回前必须切到发送态；发送函数会等待 TC，
+     * 确认最后一位已经移出移位寄存器后再切回接收态，避免截断二进制 ACK。
+     */
+    bsp_rs485_direction_transmit();
     (void)bsp_usart_send_buffer(UART_OTA_USART, ack, (uint16_t)sizeof(ack));
+    bsp_rs485_direction_receive();
 }
 
 /*
  * 函数作用：
- *   向 USART2 OTA 专用口发送一次纯文本探测串，用于确认 TX 线和串口号是否正确。
+ *   向 RS485/USART1 OTA 专用口发送一次纯文本探测串，用于确认 TX 线和串口号是否正确。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -204,11 +211,17 @@ static void prv_uart_ota_send_ack(uint32_t frame_type,
  */
 void uart_ota_emit_startup_probe(void)
 {
-    static const uint8_t probe_message[] = "OTA2: ready\r\n";
+    static const uint8_t probe_message[] = "OTA485: ready\r\n";
 
+    /*
+     * 启动探测同样走 RS485 总线，必须显式切换方向，发送完成后恢复接收，
+     * 保证上位机随后发送 START 帧时收发器已经回到 RX 状态。
+     */
+    bsp_rs485_direction_transmit();
     (void)bsp_usart_send_buffer(UART_OTA_USART,
                                 probe_message,
                                 (uint16_t)(sizeof(probe_message) - 1U));
+    bsp_rs485_direction_receive();
 }
 
 /*
@@ -258,7 +271,7 @@ static uint16_t prv_uart_ota_take_frame(void)
 
 /*
  * 函数作用：
- *   把当前收到的 USART2 帧摘要打印到 USART0 日志口，便于定位 OTA 首帧是否进链路。
+ *   把当前收到的 RS485/USART1 帧摘要打印到 USART0 日志口，便于定位 OTA 首帧是否进链路。
  * 参数说明：
  *   packet：本次从共享缓冲区复制出来的一帧数据。
  *   packet_length：本次帧的有效字节数。
@@ -331,12 +344,12 @@ static uart_ota_result_t prv_uart_ota_process_start(const uint8_t *frame, uint32
     }
 
     /*
-     * 擦下载区期间先关 USART2 中断，避免上位机在上一帧还未完全处理完时继续灌入新数据。
-     * 这里只保护 OTA 专用通道，不影响 USART0 的日志输出。
+     * 擦下载区期间先关 USART1 中断，避免上位机在上一帧还未完全处理完时继续灌入新数据。
+     * 这里只保护 RS485 OTA 专用通道，不影响 USART0 的日志输出。
      */
-    nvic_irq_disable(USART2_IRQn);
+    nvic_irq_disable(USART1_IRQn);
     status = bootloader_port_prepare_download_area(firmware_size);
-    nvic_irq_enable(USART2_IRQn, 1U, 1U);
+    nvic_irq_enable(USART1_IRQn, 1U, 0U);
     if(BOOTLOADER_PORT_STATUS_OK != status){
         prv_uart_ota_send_ack(UART_OTA_FRAME_START, UART_OTA_RESULT_FLASH_ERROR, 0U, 0U);
         return UART_OTA_RESULT_FLASH_ERROR;
@@ -431,9 +444,9 @@ static uart_ota_result_t prv_uart_ota_process_data(const uint8_t *frame, uint32_
         g_uart_ota_session.vector_checked = 1U;
     }
 
-    nvic_irq_disable(USART2_IRQn);
+    nvic_irq_disable(USART1_IRQn);
     status = bootloader_port_write_download_chunk(offset, chunk, chunk_length);
-    nvic_irq_enable(USART2_IRQn, 1U, 1U);
+    nvic_irq_enable(USART1_IRQn, 1U, 0U);
     if(BOOTLOADER_PORT_STATUS_OK != status){
         prv_uart_ota_send_ack(UART_OTA_FRAME_DATA, UART_OTA_RESULT_FLASH_ERROR, seq, offset);
         return UART_OTA_RESULT_FLASH_ERROR;
@@ -503,11 +516,11 @@ static uart_ota_result_t prv_uart_ota_process_end(const uint8_t *frame, uint32_t
         return UART_OTA_RESULT_VERIFY_ERROR;
     }
 
-    nvic_irq_disable(USART2_IRQn);
+    nvic_irq_disable(USART1_IRQn);
     status = bootloader_port_write_upgrade_info(g_uart_ota_session.app_version,
                                                 g_uart_ota_session.firmware_size,
                                                 g_uart_ota_session.firmware_crc32);
-    nvic_irq_enable(USART2_IRQn, 1U, 1U);
+    nvic_irq_enable(USART1_IRQn, 1U, 0U);
     if(BOOTLOADER_PORT_STATUS_OK != status){
         prv_uart_ota_send_ack(UART_OTA_FRAME_END, UART_OTA_RESULT_FLASH_ERROR, 0U, 0U);
         return UART_OTA_RESULT_FLASH_ERROR;
@@ -524,9 +537,9 @@ static uart_ota_result_t prv_uart_ota_process_end(const uint8_t *frame, uint32_t
 
 /*
  * 函数作用：
- *   尝试把一帧 USART2 数据按 OTA 协议解析并处理。
+ *   尝试把一帧 RS485/USART1 数据按 OTA 协议解析并处理。
  * 参数说明：
- *   packet：USART2 本次 IDLE 中断移交的数据缓冲区。
+ *   packet：USART1/RS485 本次 IDLE 中断移交的数据缓冲区。
  *   packet_length：本次移交的数据长度。
  * 返回值说明：
  *   返回当前帧处理结果，用于决定是否继续等待下一帧或触发复位。
@@ -595,9 +608,9 @@ void uart_ota_reset_runtime(void)
 
 /*
  * 函数作用：
- *   周期性处理 USART2 OTA 分包接收、ACK 回包和升级交接。
+ *   周期性处理 RS485/USART1 OTA 分包接收、ACK 回包和升级交接。
  * 主要流程：
- *   1. 取出 USART2 中断层移交的一帧数据。
+ *   1. 取出 USART1/RS485 中断层移交的一帧数据。
  *   2. 先尝试按 OTA 协议解析；不是 OTA 帧则忽略，不污染普通串口链路。
  *   3. 成功接收 END 后延时发送稳定，再软件复位交给 BootLoader。
  * 参数说明：
@@ -617,7 +630,7 @@ void uart_ota_task(void)
 
     /*
      * 只打印前几帧的摘要，优先用于定位：
-     * 1. USART2 是否真的收到了字节；
+     * 1. RS485/USART1 是否真的收到了字节；
      * 2. 第一帧是否具备正确的 magic 和 frame type；
      * 3. 是否存在“任务层还没消费，ISR 又覆盖了上一帧”的风险。
      */
@@ -637,7 +650,7 @@ void uart_ota_task(void)
     }else if(UART_OTA_RESULT_FRAME_CONSUMED == result){
         /* 当前帧已经消费完毕，等待上位机发下一帧即可。 */
     }else if(UART_OTA_RESULT_NOT_PACKET == result){
-        /* USART2 已被定义为 OTA 专用口，普通数据在这里直接忽略。 */
+        /* RS485/USART1 已被定义为 OTA 专用口，普通数据在这里直接忽略。 */
     }else if(UART_OTA_RESULT_WAIT_MORE == result){
         /* 理论上上位机会整帧发送；若收到短前缀，这里保守等待下一轮。 */
     }else{

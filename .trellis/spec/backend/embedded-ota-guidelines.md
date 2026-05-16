@@ -1,10 +1,10 @@
 # Embedded OTA Guidelines
 
-> Scope: USART2 App-side streaming OTA flow for the GD32F470 BootLoader_Two_Stage integration.
+> Scope: RS485/USART1 App-side streaming OTA flow for the GD32F470 BootLoader_Two_Stage integration.
 
 ---
 
-## Scenario: USART2 App-Side Streaming OTA
+## Scenario: RS485/USART1 App-Side Streaming OTA
 
 ### 1. Scope / Trigger
 
@@ -14,7 +14,7 @@ Use this guideline whenever changing:
 |------|-----------------|
 | App OTA parser | `USER/App/uart_ota_app.c`, `USER/App/uart_ota_app.h` |
 | Boot handoff helper | `USER/Driver/bootloader_port.c`, `USER/Driver/bootloader_port.h` |
-| USART2 DMA handoff | `USER/gd32f4xx_it.c`, `USER/Driver/bsp_usart.h`, `USER/Driver/bsp_usart.c` |
+| RS485/USART1 DMA handoff | `USER/gd32f4xx_it.c`, `USER/Driver/bsp_usart.h`, `USER/Driver/bsp_usart.c` |
 | PC OTA tool | `tools/make_uart_ota_packet.py`, `tools/test_uart_ota_packet.py` |
 | Boot handoff | BootLoader/App Flash partition constants, parameter layout, or CRC logic |
 
@@ -26,11 +26,12 @@ This is a cross-layer contract. The PC-side sender, App-side receiver, internal 
 |----------|-------------------|----------|
 | Stream info | `python tools\make_uart_ota_packet.py --mode stream-info --version <u32> --chunk-size 512` | Reads `MDK/output/Project.bin`, prints size, CRC32, version, chunk size, and chunk count |
 | Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Sends START/DATA/END frames at default `460800` baud, prints ACK progress, and waits for ACK after every frame |
-| Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `MDK/output/Project.uota` for offline inspection only; current low-RAM USART2 OTA must not send it directly |
+| Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `MDK/output/Project.uota` for offline inspection only; current low-RAM RS485 OTA must not send it directly |
 | App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one streaming frame; only returns success after download-buffer CRC and parameter writes pass |
-| ISR handoff | `USART2_IRQHandler(void)` | Copies one IDLE DMA frame into `uart_ota_dma_buffer`, records `uart_ota_dma_length`, and sets `uart_ota_rx_flag` |
-| Task polling | `uart_ota_task(void)` | Handles OTA frames on USART2; `uart_task(void)` is reserved for the USART0-side LittleFS shell command path |
-| Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA2: ready` on USART2 after boot so operators can confirm the OTA port and TX path |
+| ISR handoff | `USART1_IRQHandler(void)` | Copies one RS485 IDLE DMA frame into `uart_ota_dma_buffer`, records `uart_ota_dma_length`, and sets `uart_ota_rx_flag` |
+| Task polling | `uart_ota_task(void)` | Handles OTA frames on RS485/USART1; `uart_task(void)` is reserved for the USART0-side LittleFS shell command path |
+| Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA485: ready` on RS485/USART1 after boot so operators can confirm the OTA port and TX path |
+| Half-duplex ACK | `prv_uart_ota_send_ack(...)` | Switches RS485 to transmit before ACK bytes, waits for USART TC through `bsp_usart_send_buffer()`, then returns to receive mode |
 
 ### 3. Protocol Contract
 
@@ -47,7 +48,7 @@ Current App-side limits:
 
 | Constant | Current Value | Reason |
 |----------|---------------|--------|
-| `BSP_USART2_RX_BUFFER_SIZE` | `1024U` | Must hold one DATA frame, not a full firmware image |
+| `BSP_USART1_RX_BUFFER_SIZE` | `1024U` | Must hold one DATA frame, not a full firmware image |
 | `UART_OTA_STREAM_CHUNK_SIZE` | `512U` | `512B` payload + `24B` DATA header fits safely in 1KB |
 | `UART_OTA_DEFAULT_BAUDRATE` | `460800` | App, BootLoader, and PC tool default UART baudrate must match |
 | `UART_OTA_DOWNLOAD_MAX_SIZE` | `100KB` | Internal Flash download buffer remains `0x08067000..0x0807FFFF` |
@@ -92,7 +93,7 @@ When OTA succeeds, App must write these fields in the BootLoader-compatible para
 
 | Check | Valid Condition | Failure Result | Required Behavior |
 |-------|-----------------|----------------|-------------------|
-| Magic prefix | First 4 bytes match `0xA55A5AA5` | Not an OTA frame, or wait for more bytes if partial prefix | USART2 is OTA-dedicated, so non-OTA data may be ignored directly |
+| Magic prefix | First 4 bytes match `0xA55A5AA5` | Not an OTA frame, or wait for more bytes if partial prefix | RS485/USART1 is OTA-dedicated, so non-OTA data may be ignored directly |
 | START length | `frame_length == 24` | `UART_OTA_RESULT_BAD_LENGTH` | ACK error; do not erase Flash |
 | START header CRC | `CRC32(frame[0..19]) == headerCRC32` | `UART_OTA_RESULT_VERIFY_ERROR` | ACK error; keep BootLoader flags unchanged |
 | Firmware size | `1 <= firmwareSize <= 100KB` | `UART_OTA_RESULT_BAD_LENGTH` | ACK error; do not write Flash |
@@ -111,8 +112,8 @@ When OTA succeeds, App must write these fields in the BootLoader-compatible para
 | Case | Input | Expected Result |
 |------|-------|-----------------|
 | Good | `--mode send`, `Project.bin <= 100KB`, correct CRC and vector table | App prints `OTA: stream start ...` and `OTA: ready, reset to BootLoader`; BootLoader prints `app crc32 check pass` and `app update success` |
-| Base | Normal USART0 data that does not start with streaming OTA magic | Data is handled by the USART0 debug-task path and must not affect the USART2 OTA state machine |
-| Base | Normal USART2 data that does not start with streaming OTA magic | OTA task ignores it and does not pollute USART0/RS485 forwarding path |
+| Base | Normal USART0 data that does not start with streaming OTA magic | Data is handled by the USART0 debug-task path and must not affect the RS485 OTA state machine |
+| Base | Normal RS485/USART1 data that does not start with streaming OTA magic | OTA task ignores it and does not pollute USART0 debug-shell state |
 | Base | USB-to-serial sends one START/DATA/END frame per IDLE receive | App consumes each frame and returns ACK before the next frame |
 | Bad | Operator sends `Project.bin` directly | No OTA write is triggered because frame magic/type/header are missing |
 | Bad | Operator sends legacy `Project.uota` directly | Current low-RAM streaming parser rejects it because magic is `0x5AA5C33C`, not `0xA55A5AA5` |
@@ -142,12 +143,12 @@ Required assertions:
 | Legacy packet mode | Still generates `Project.uota`, but docs must mark it as not recommended for current low-RAM OTA sending |
 | Keil build | Build log reports `0 Error(s)` |
 | No semihosting | Map shows `__use_no_semihosting`, and `_sys_open/_sys_write/_sys_exit/_ttywrch` resolve to `main.o`, not semihosting library stubs |
-| RAM usage | `fromelf` shows `usart2_rxbuffer` and `uart_ota_dma_buffer` at `0x400` each, not `100KB+16B` |
+| RAM usage | `fromelf` shows `usart1_rxbuffer` and `uart_ota_dma_buffer` at `0x400` each, not `100KB+16B` |
 | Hardware, when available | Use `--mode send --port COMx`; log must include `OTA: ready, reset to BootLoader`, then BootLoader `app crc32 check pass` and `app update success` |
 
 ### 9. Operator Procedure
 
-Use this procedure whenever sending a new App image through USART2 streaming OTA.
+Use this procedure whenever sending a new App image through RS485/USART1 streaming OTA.
 Always increment `--version` for each hardware trial so the BootLoader log proves the
 new image was actually installed.
 
@@ -156,7 +157,7 @@ new image was actually installed.
 | 1 | Build the Keil target | Build log reports `0 Error(s)` and `MDK/output/Project.bin` is non-empty |
 | 2 | `python tools\make_uart_ota_packet.py --mode stream-info --version <new_version> --chunk-size 512` | Output shows firmware size, CRC, version, chunk size, and chunk count |
 | 3 | `python tools\make_uart_ota_packet.py --mode send --port <COMx> --version <new_version> --chunk-size 512` | PC prints stream metadata, `START/DATA/END acked` progress, then `sent stream frames=<n>` |
-| 4 | Watch `USART2 (PD8/PD9)` during a fresh boot | App prints one-shot `OTA2: ready`, proving the OTA TX path and port selection are correct |
+| 4 | Watch `RS485/USART1 (PD5/PD6 + PE8 direction)` during a fresh boot | App prints one-shot `OTA485: ready`, proving the OTA TX path, direction control, and port selection are correct |
 | 5 | Watch the debug UART on `USART0 (PA9/PA10)` | App prints `OTA: rx ...` when frames arrive, then `OTA: ready, reset to BootLoader` after END succeeds |
 | 6 | Watch the BootLoader UART log after reset | BootLoader prints `app crc32 check pass`, `app update success`, and the new `appVersion` |
 
@@ -182,10 +183,10 @@ If the PC times out waiting for START ACK, apply this decision tree first:
 
 | Observation | Meaning | Next Action |
 |-------------|---------|-------------|
-| `PD8/PD9` shows `OTA2: ready`, but Python still times out on START | App image is new enough and USART2 TX works | Check the PC RX wire, common ground, and whether the same COM port is really connected to `PD8/PD9` |
-| `USART0` shows `OTA: rx ...` while Python times out | App received the START frame | Prioritize ACK return path debugging on `PD8` instead of RX parsing |
-| `USART0` shows no `OTA: rx ...` during send | App never received a valid USART2 frame | Check wiring to `PD8/PD9`, baudrate, and whether the board is still running an old App without USART2 OTA |
-| Operator expects `BOOT: start` on `PD8/PD9` | Wrong observation point | `BOOT: start` belongs to `USART0`; `USART2` only emits `OTA2: ready` at boot and binary ACK during OTA |
+| RS485 terminal shows `OTA485: ready`, but Python still times out on START | App image is new enough and RS485 TX works | Check the PC RX wire, common ground, converter direction mode, and whether the same COM port is really connected to RS485 |
+| `USART0` shows `OTA: rx ...` while Python times out | App received the START frame | Prioritize RS485 ACK return path, direction-control timing, converter RX path, and bus wiring instead of RX parsing |
+| `USART0` shows no `OTA: rx ...` during send | App never received a valid RS485 OTA frame | Check RS485 A/B polarity, baudrate, common ground, converter mode, and whether the board is still running an old App without RS485 OTA |
+| Operator expects `BOOT: start` on RS485 | Wrong observation point | `BOOT: start` belongs to `USART0`; RS485 only emits `OTA485: ready` at boot and binary ACK during OTA |
 
 ### 10. Wrong vs Correct
 
@@ -216,14 +217,14 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 
 ```c
 /* Reducing only the OTA C buffer without changing the PC sender can split one DATA frame. */
-#define BSP_USART2_RX_BUFFER_SIZE 128U
+#define BSP_USART1_RX_BUFFER_SIZE 128U
 ```
 
 #### Correct
 
 ```c
 /* 512B DATA 载荷 + 24B 协议头可安全放入 1024B OTA DMA 缓冲。 */
-#define BSP_USART2_RX_BUFFER_SIZE 1024U
+#define BSP_USART1_RX_BUFFER_SIZE 1024U
 ```
 
 ---
@@ -231,7 +232,7 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 ## Common Mistakes
 
 - Do not send `Project.bin`, `Project.hex`, or legacy `Project.uota` directly for the current low-RAM OTA flow.
-- Do not reduce `BSP_USART2_RX_BUFFER_SIZE` below the largest DATA frame size plus header.
+- Do not reduce `BSP_USART1_RX_BUFFER_SIZE` below the largest DATA frame size plus header.
 - Do not raise `--chunk-size` above `UART_OTA_STREAM_CHUNK_SIZE` unless App and tests are updated together.
 - Do not change App, BootLoader, and PC sender baudrates independently; the three defaults must stay aligned.
 - Do not move `0x0800C000`, `0x0800D000`, or `0x08067000` in one layer only.

@@ -209,11 +209,11 @@ void USART0_IRQHandler(void)
 
 /*
  * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，并将 DMA 接收到的一帧 RS485 数据移交给应用层回显任务。
+ *   处理 USART1/RS485 IDLE 中断，并将 DMA 接收到的一帧数据移交给 OTA 应用层。
  * 主要流程：
  *   1. 判断并清除 USART1 IDLE 中断标志。
  *   2. 暂停 DMA，按剩余传输计数计算本帧有效长度。
- *   3. 做长度边界检查后复制到 rs485_dma_buffer，并置位 rs485_rx_flag。
+ *   3. 做长度边界检查后复制到 uart_ota_dma_buffer，并置位 uart_ota_rx_flag。
  *   4. 重新装载 DMA 计数，准备下一帧 RS485 接收。
  * 参数说明：
  *   无参数。
@@ -232,56 +232,10 @@ void USART1_IRQHandler(void)
 
         rx_len = sizeof(usart1_rxbuffer) - dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
         if((rx_len > 0U) && (rx_len <= sizeof(usart1_rxbuffer))){
-            copy_len = rx_len;
             /*
-             * USART1 当前按“整帧原样回显”处理，因此 ISR 只做一次限长复制，
-             * 具体发送动作留给任务上下文，避免在中断里执行阻塞串口发送。
-             */
-            if(copy_len > sizeof(rs485_dma_buffer)){
-                copy_len = sizeof(rs485_dma_buffer);
-            }
-            if(copy_len > 0U){
-                memcpy(rs485_dma_buffer, usart1_rxbuffer, copy_len);
-                rs485_dma_length = (uint16_t)copy_len;
-                rs485_rx_flag = 1U;
-            }
-        }
-
-        /* 重新装载 DMA 计数并打开通道，准备接收下一帧 RS485 数据。 */
-        dma_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_FLAG_FTF);
-        dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, sizeof(usart1_rxbuffer));
-        dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-    }
-}
-
-/*
- * 函数作用：
- *   处理 USART2 IDLE 中断，将 DMA 接收到的一帧 OTA 数据移交给 OTA 模块。
- * 主要流程：
- *   1. 判断并清除 USART2 IDLE 中断标志。
- *   2. 暂停 DMA，根据剩余计数计算本帧有效长度。
- *   3. 做长度边界检查后复制到 uart_ota_dma_buffer，并置位 uart_ota_rx_flag。
- *   4. 重新装载 DMA 计数，准备下一帧 OTA 接收。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void USART2_IRQHandler(void)
-{
-    uint32_t rx_len;
-    uint32_t copy_len;
-
-    if(RESET != usart_interrupt_flag_get(USART2, USART_INT_FLAG_IDLE)){
-        /* 清除 IDLE 标志需要按“读状态后读数据寄存器”的顺序执行。 */
-        usart_data_receive(USART2);
-        dma_channel_disable(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL);
-
-        rx_len = sizeof(usart2_rxbuffer) - dma_transfer_number_get(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL);
-        if((rx_len > 0U) && (rx_len <= sizeof(usart2_rxbuffer))){
-            /*
-             * 这里仅记录证据型计数，不做任何字符串格式化，避免破坏 ISR 的实时性。
-             * 这些计数会在 uart_ota_task() 中被打印出来，用于判断 USART2 链路是否真的有数据进来。
+             * USART1/RS485 现在是 OTA 专用接收入口。
+             * 中断层只记录诊断计数和复制原始帧，协议解析、Flash 写入与 ACK
+             * 全部留给 uart_ota_task()，避免在 ISR 中执行耗时操作。
              */
             uart_ota_irq_count++;
             uart_ota_last_irq_length = (uint16_t)rx_len;
@@ -294,19 +248,16 @@ void USART2_IRQHandler(void)
                 copy_len = sizeof(uart_ota_dma_buffer);
             }
             if(copy_len > 0U){
-                memcpy(uart_ota_dma_buffer, usart2_rxbuffer, copy_len);
+                memcpy(uart_ota_dma_buffer, usart1_rxbuffer, copy_len);
                 uart_ota_dma_length = (uint16_t)copy_len;
                 uart_ota_rx_flag = 1U;
             }
         }
 
-        /*
-         * OTA 模块同样严格依赖 uart_ota_dma_length 取有效数据，
-         * 这里不整块清空 DMA 缓冲，优先缩短中断执行时间。
-         */
-        dma_flag_clear(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL, DMA_FLAG_FTF);
-        dma_transfer_number_config(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL, sizeof(usart2_rxbuffer));
-        dma_channel_enable(USART2_RX_DMA_PERIPH, USART2_RX_DMA_CHANNEL);
+        /* 重新装载 DMA 计数并打开通道，准备接收下一帧 RS485 数据。 */
+        dma_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_FLAG_FTF);
+        dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, sizeof(usart1_rxbuffer));
+        dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
     }
 }
 
