@@ -868,3 +868,36 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: BootLoader 与 UART OTA 学习文档补充
+
+**Date**: 2026-05-19
+**Task**: BootLoader 与 UART OTA 学习文档补充
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+围绕 GD32 BootLoader 两阶段升级和 App 侧 UART/RS485 OTA 流程进行学习讲解，并同步补充文档。内容包括 Flash/RAM 运行关系、参数区 4KB 与 packed 结构体、App 接收 START/DATA/END 帧的分发和解析、DATA 分包写入下载缓存区、END 阶段整包校验，以及 bootloader_port_write_upgrade_info 如何写入升级参数区通知 BootLoader 搬运新 App。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bfb2592` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

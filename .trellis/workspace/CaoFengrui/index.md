@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
-- **Last Active**: 2026-05-16
+- **Total Sessions**: 19
+- **Last Active**: 2026-05-19
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~866 | Active |
+| `journal-1.md` | ~903 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-05-19 | BootLoader 与 UART OTA 学习文档补充 | `bfb2592` | `fix-wkup-deepsleep` |
 | 18 | 2026-05-16 | 迁移 App OTA 通道到 RS485/USART1 | `cafbc34` | `fix-wkup-deepsleep` |
 | 17 | 2026-05-15 | RTC串口命令与USART1 RS485原样回显 | `aab2084` | `fix-wkup-deepsleep` |
 | 16 | 2026-05-15 | LittleFS write 追加写参数与会话收尾 | `b043da4` | `fix-wkup-deepsleep` |
