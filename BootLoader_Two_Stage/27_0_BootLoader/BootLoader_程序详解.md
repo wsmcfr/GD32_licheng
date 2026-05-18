@@ -21,6 +21,39 @@
 | App 正式运行区 | `0x0800D000` 起 | BootLoader 成功后最终要跳转到这里。 |
 | 下载缓存区 | `0x08067000` 起 | 旧 App 先把新固件下载到这里，BootLoader 下次启动时再搬运到正式 App 区。 |
 
+### 2.1 程序是在 Flash 运行，还是在 RAM 运行
+
+当前 Cortex-M / GD32 工程的默认方式是：**代码主要存放在内部 Flash，并由 CPU 直接从 Flash 取指执行**。  
+这种方式常叫就地执行，也就是程序不需要先整包复制到 RAM 才能运行。
+
+| 存储区域 | 典型地址 | 主要放什么 |
+|---|---:|---|
+| 内部 Flash | `0x08000000` 起 | BootLoader/App 代码、向量表、只读常量、已初始化变量的初始值。 |
+| SRAM/RAM | `0x20000000` 起 | 全局变量、静态变量、栈、堆、DMA 缓冲区、OTA/CRC 临时缓冲区。 |
+
+因此，`Download_Transport()` 中的分块搬运不是把程序搬到 RAM 里运行，而是：
+
+```text
+下载区 Flash -> RAM 中转缓冲 app_copy_buf[1024] -> 正式 App 区 Flash
+```
+
+其中 `app_copy_buf` 是 RAM 里的临时工作区；BootLoader 代码本身仍然在 BootLoader Flash 区执行，新 App 最终也在正式 App Flash 区执行。
+
+### 2.2 RAM 在启动和运行时主要做什么
+
+上电后启动文件和运行库会准备 RAM 中的运行环境，典型动作如下：
+
+| 内容 | 启动时怎么处理 | 为什么需要 RAM |
+|---|---|---|
+| `.data` 已初始化全局/静态变量 | 初始值保存在 Flash，启动时复制到 RAM。 | 变量运行时会被修改，不能只放在只读 Flash。 |
+| `.bss` 未初始化全局/静态变量 | 启动时在 RAM 清零。 | C 语言要求未初始化的静态存储期变量默认是 0。 |
+| 栈 `stack` | MSP 指向 RAM 栈顶。 | 函数调用、局部变量、中断现场保存都依赖栈。 |
+| 堆 `heap` | 预留一段 RAM 给动态分配。 | `malloc()` 这类动态申请释放只能在可读写内存中完成。 |
+| DMA/通信缓冲 | 由代码定义在 RAM。 | USART、SPI、DMA 等外设需要直接读写缓冲区。 |
+
+所以可以把内部 Flash 理解成“掉电不丢的程序存储区”，把 RAM 理解成“运行时工作台”。  
+Flash 适合保存代码和固件，RAM 适合保存会变化、需要频繁读写的数据。
+
 一句话概括：
 
 > 这个 BootLoader 不是“自己直接接收完整新固件”的类型，而是“两阶段升级”：
@@ -108,7 +141,63 @@
 | `UserConfig` | 用户配置区。 |
 | `CalibData` | 校准区。 |
 
-### 6.3 `UsrFunction()` 是总调度
+### 6.3 为什么参数区结构体要写 `typedef struct __attribute__((packed))`
+
+BootLoader 参数区本质上是一段固定地址的二进制数据，不是普通只在 RAM 里临时使用的结构体。  
+因此结构体字段必须和 Flash 中的字节偏移严格一致，App 写入和 BootLoader 读取时才不会错位。
+
+| 写法 | 含义 |
+|---|---|
+| `typedef` | 给结构体类型起一个别名，后续可以直接用 `BootParam_t`、`Parameter_t` 声明变量。 |
+| `struct` | 定义一个结构体，把多个字段按顺序组织成一块内存布局。 |
+| `Parameter_SUM` | 结构体标签名，也就是 `struct Parameter_SUM` 这种完整写法里的名字。 |
+| `Parameter_t` | `typedef` 生成的类型别名，工程里通常直接使用这个名字。 |
+| `__attribute__((packed))` | GCC/ArmClang 风格的编译器属性，要求结构体成员紧凑排列，不让编译器自动插入对齐填充字节。 |
+
+不加 `packed` 时，编译器为了让 16 位、32 位变量按更高效的地址对齐，可能在成员之间插入看不见的填充字节。例如：
+
+```c
+typedef struct
+{
+    uint8_t  flag;
+    uint32_t value;
+} Test_t;
+```
+
+普通结构体可能被排成这样：
+
+```text
+offset 0: flag
+offset 1~3: 编译器填充字节
+offset 4~7: value
+```
+
+加上 `__attribute__((packed))` 后，结构体会紧凑排列：
+
+```text
+offset 0: flag
+offset 1~4: value
+```
+
+这个 BootLoader 里必须关心字段偏移，因为 `BootParam_t` 注释里已经明确规划了固定位置：
+
+| 字段 | 固定偏移 | BootLoader 用途 |
+|---|---:|---|
+| `magicWord` | `[0-3]` | 判断参数区是否有效。 |
+| `updateFlag` | `[16]` | 判断是否存在待升级任务。 |
+| `updateStatus` | `[18]` | 判断当前是否应进入搬运流程。 |
+| `appSize` | `[32-35]` | 决定要擦写和搬运多少字节。 |
+| `appCRC32` | `[36-39]` | 搬运后校验正式 App 区内容。 |
+
+如果 App 侧和 BootLoader 侧因为结构体填充导致字段偏移不一致，就可能出现 App 明明写了 `updateFlag=0x5A`，BootLoader 却在错误位置读取，最终表现为“不升级”或读取到错误的 App 大小、CRC。
+
+所以这里使用 `packed` 的核心原因是：
+
+> 参数区是 App 与 BootLoader 共享的 Flash 二进制协议，字段偏移必须稳定，不能交给编译器自由插入填充字节。
+
+需要注意的是，`packed` 也有代价：字段可能不按 2 字节或 4 字节对齐，访问效率可能下降，某些架构还可能不支持非对齐访问。当前工程使用它是因为参数区字段布局的确定性比普通结构体访问效率更重要。
+
+### 6.4 `UsrFunction()` 是总调度
 
 可以按下面的顺序读：
 
@@ -163,6 +252,40 @@
 |---|---|
 | `jump_to_app()` | 站在“业务层”角度，决定当前 App 镜像是否值得跳。 |
 | `iap_load_app()` | 站在“CPU 切换现场”角度，真正完成 VTOR/MSP/入口切换。 |
+
+### 8.3 最后四句跳转代码分别是什么意思
+
+`iap_load_app()` 前面会先校验 App 的 MSP 和 Reset_Handler，再关闭中断、关闭 SysTick、清理 NVIC。  
+真正把执行权交给 App 的核心动作可以简化成下面四句：
+
+```c
+SCB->VTOR = 0x0800D000;
+jump2app = (pFunction)entry_addr;
+__set_MSP(stack_addr);
+jump2app();
+```
+
+| 代码 | 作用 | 为什么必须这样做 |
+|---|---|---|
+| `SCB->VTOR = 0x0800D000;` | 把中断向量表基地址切到 App 区。 | MCU 复位后默认向量表在 BootLoader 起点 `0x08000000`。如果不切到 `0x0800D000`，App 运行后的 SysTick、USART、DMA、HardFault 等中断仍会按 BootLoader 向量表找入口。 |
+| `jump2app = (pFunction)entry_addr;` | 把 App 向量表第 1 项读出的 Reset_Handler 地址转换成函数指针。 | `entry_addr` 是一个 32 位地址值，BootLoader 需要把它当成 `void (*)(void)` 类型的函数入口，后面才能用 `jump2app()` 跳过去执行。 |
+| `__set_MSP(stack_addr);` | 把主栈指针 MSP 改成 App 向量表第 0 项记录的初始栈顶。 | App 不能继续使用 BootLoader 的栈。C 运行库初始化、函数调用、局部变量和中断入栈都依赖 App 自己的栈空间。 |
+| `jump2app();` | 跳到 App 的 Reset_Handler。 | 这一步真正交出执行权，App 随后会执行自己的启动代码，完成 `.data` 初始化、`.bss` 清零，再进入 App 的 `main()`。 |
+
+这里的逻辑是在用软件手动模拟 Cortex-M 复位启动 App 的动作：
+
+```text
+硬件复位正常做：
+  MSP = *(向量表 + 0)
+  PC  = *(向量表 + 4)
+
+BootLoader 软件跳转手动做：
+  SCB->VTOR = App 起始地址
+  __set_MSP(*(App 起始地址 + 0))
+  跳到 *(App 起始地址 + 4)
+```
+
+代码里先给 `jump2app` 赋值，再调用 `__set_MSP()`，是为了减少切换栈之后继续依赖 BootLoader 当前函数局部变量的风险。MSP 一旦改成 App 的栈，后续就应该尽快跳进 App，不要再在 BootLoader 当前调用栈里做复杂逻辑。
 
 ## 9. 这个 BootLoader 当前“具体怎么操作”
 

@@ -80,7 +80,41 @@
 > 当前工程真正生效的正式 App 区大小是 `0x5A000 = 360KB`。
 > 如果看到早期示意里写“76KB App 区”，那属于旧表述，不能作为当前工程实际配置使用。
 
-## 2.2 参数区为什么正好是 4KB
+## 2.2 Flash 和 RAM 在这套升级流程里分别干什么
+
+当前工程默认是 **代码存放在内部 Flash，CPU 直接从 Flash 取指运行**，并不是上电后把整个程序复制到 RAM 再运行。
+
+| 区域 | 地址范围示例 | 主要职责 |
+|---|---:|---|
+| 内部 Flash | `0x08000000` 起 | 保存 BootLoader、App、向量表、只读常量和固件镜像。 |
+| SRAM/RAM | `0x20000000` 起 | 保存运行时变量、栈、堆、DMA 缓冲、OTA 分包缓冲和 CRC 中转缓冲。 |
+
+在 OTA 搬运过程中，数据流是：
+
+```text
+下载缓存区 Flash 0x08067000
+  -> RAM 中转缓冲 app_copy_buf[1024]
+  -> 正式 App 区 Flash 0x0800D000
+```
+
+这里的 `app_copy_buf` 只是 1KB 临时缓冲。它的作用是减少 RAM 占用、简化 Flash 读写流程，不表示 App 会被搬到 RAM 里运行。  
+BootLoader 搬运完成后，CPU 最终仍然跳到 `0x0800D000` 的 App Flash 区执行。
+
+启动时 RAM 还会承担这些工作：
+
+| RAM 用途 | 说明 |
+|---|---|
+| `.data` 段 | 已初始化全局变量的初始值从 Flash 复制到 RAM，之后变量在 RAM 中读写。 |
+| `.bss` 段 | 未初始化全局变量和静态变量启动时在 RAM 清零。 |
+| 栈 | 函数调用、局部变量和中断现场保存都依赖栈。 |
+| 堆 | 动态内存分配使用。 |
+| 外设缓冲 | USART/DMA/SPI 等外设通常直接读写 RAM 缓冲区。 |
+
+一句话理解：
+
+> Flash 像“掉电不丢的程序仓库”，RAM 像“运行时工作台”。代码通常在 Flash 里直接运行，RAM 主要放运行中会变化的数据。
+
+## 2.3 参数区为什么正好是 4KB
 
 很多人第一次看会误以为“升级标志就几个字节，为什么要浪费 4KB”。  
 实际原因不是标志位本身大，而是 Flash 擦写规则决定参数区最好独占一整页。
@@ -108,7 +142,36 @@
 > 这不是单纯为了放几个升级标志，  
 > 而是为了做成一个可整页擦写、可长期扩展、不会误伤 App 的共享参数页。
 
-## 2.3 为什么正式 App 区比下载缓存区大很多
+### 2.3.1 为什么参数区结构体要用 `__attribute__((packed))`
+
+参数区不是普通 RAM 变量，而是 App 和 BootLoader 共享的一段固定 Flash 二进制布局。  
+代码里的 `typedef struct __attribute__((packed))` 可以拆开理解：
+
+| 写法 | 含义 |
+|---|---|
+| `typedef` | 给结构体类型起别名，后续可以直接使用 `BootParam_t`、`Parameter_t`。 |
+| `struct` | 定义结构体，把多个字段按顺序放进同一块内存布局。 |
+| 结构体标签名 | 例如 `Parameter_SUM`，可通过 `struct Parameter_SUM` 使用。 |
+| 类型别名 | 例如 `Parameter_t`，工程里更常用这种简短写法。 |
+| `__attribute__((packed))` | 要求编译器按字节紧凑排列字段，不自动插入对齐填充字节。 |
+
+为什么要紧凑排列？因为参数区字段有固定偏移：
+
+| 字段 | 固定偏移 | 用途 |
+|---|---:|---|
+| `magicWord` | `[0-3]` | 判断参数区是否有效 |
+| `updateFlag` | `[16]` | 判断是否有升级任务 |
+| `updateStatus` | `[18]` | 判断是否进入搬运流程 |
+| `appSize` | `[32-35]` | 记录新固件大小 |
+| `appCRC32` | `[36-39]` | 记录新固件 CRC32 |
+
+如果不加 `packed`，编译器可能为了对齐访问在字段之间插入隐藏填充字节。这样 App 侧写入的字段偏移和 BootLoader 侧读取的字段偏移可能不一致，升级标志、固件大小或 CRC 就会被读错。
+
+因此这里使用 `packed` 的核心目的不是节省几个字节，而是保证：
+
+> `0x0800C000` 参数区里的每个字段偏移固定，App 写什么位置，BootLoader 就按同一位置读。
+
+## 2.4 为什么正式 App 区比下载缓存区大很多
 
 这两个区域名字看起来都和 App 有关，但职责完全不同：
 
@@ -178,12 +241,140 @@
 
 ## 4. App 端到底做了什么
 
-App 侧核心文件是 [USER/App/usart_app.c](D:/GD32/2026706296/USER/App/usart_app.c:1)。
+App 侧 OTA 已拆成两个层次：
 
-### 4.1 START 阶段
+| 文件 | 作用 |
+|---|---|
+| [USER/App/uart_ota_app.c](D:/GD32/2026706296/USER/App/uart_ota_app.c:1) | 负责 RS485/USART1 START/DATA/END 分包协议、ACK、会话状态和复位交接。 |
+| [USER/Driver/bootloader_port.c](D:/GD32/2026706296/USER/Driver/bootloader_port.c:1) | 负责下载缓存区擦写、固件向量表校验、CRC32、参数区回写和软件复位。 |
+| [USER/gd32f4xx_it.c](D:/GD32/2026706296/USER/gd32f4xx_it.c:223) | 负责 USART1 IDLE 中断，把 DMA 收到的一帧原始数据移交给 OTA 任务。 |
+
+### 4.1 App 接收上位机的完整链路
+
+上位机不是直接把整包一次性塞给 App，而是按“发送一帧、等待 ACK、再发下一帧”的方式节流。
+
+```text
+上位机 make_uart_ota_packet.py
+  -> RS485/USART1 发送 START / DATA / END
+  -> USART1 硬件接收
+  -> DMA 自动搬运到 usart1_rxbuffer
+  -> USART1 IDLE 中断判定一帧结束
+  -> 复制到 uart_ota_dma_buffer 并置 uart_ota_rx_flag
+  -> uart_ota_task() 周期取帧
+  -> 复制到 g_uart_ota_frame_buffer 私有快照
+  -> 解析 magic + frame_type
+  -> START 擦下载区 / DATA 写下载区 / END 写参数区并复位
+```
+
+| 阶段 | 关键代码 | 说明 |
+|---|---|---|
+| 初始化 USART1/RS485 | [bsp_usart.c:172](D:/GD32/2026706296/USER/Driver/bsp_usart.c:172) | 配置 USART1、DMA 接收、RS485 方向脚、IDLE 中断。 |
+| 中断接收一帧 | [gd32f4xx_it.c:223](D:/GD32/2026706296/USER/gd32f4xx_it.c:223) | USART1 IDLE 后暂停 DMA，计算本帧长度，复制到 OTA 共享缓冲。 |
+| 任务取帧 | [uart_ota_app.c:250](D:/GD32/2026706296/USER/App/uart_ota_app.c:250) | 在临界区复制共享缓冲到任务私有缓冲，并清接收标志。 |
+| 协议分发 | [uart_ota_app.c:547](D:/GD32/2026706296/USER/App/uart_ota_app.c:547) | 先检查 `magic=0xA55A5AA5`，再按帧类型分发到 START/DATA/END。 |
+| 周期任务 | [uart_ota_app.c:621](D:/GD32/2026706296/USER/App/uart_ota_app.c:621) | 每 5ms 左右处理一次 OTA 帧，成功 END 后延时并软件复位。 |
+
+USART1 中断只做“搬运和置标志”，不会在中断里擦 Flash、写 Flash 或解析协议。这样做是为了避免 ISR 执行时间过长，影响后续串口接收。
+
+### 4.2 共享变量和协议常量怎么理解
+
+OTA 接收入口前半部分是中断和任务之间的共享状态：
+
+| 变量 | 谁写 | 谁读 | 用途 |
+|---|---|---|---|
+| `uart_ota_rx_flag` | USART1 IDLE 中断 | `uart_ota_task()` | 标记是否已有一帧新数据可处理。 |
+| `uart_ota_dma_length` | USART1 IDLE 中断 | `uart_ota_task()` | 本帧有效字节数。 |
+| `uart_ota_dma_buffer` | USART1 IDLE 中断 | `uart_ota_task()` | 中断移交给 OTA 任务的原始帧数据。 |
+| `uart_ota_irq_count` | USART1 IDLE 中断 | 日志诊断 | 统计收到多少次 USART1 IDLE 帧。 |
+| `uart_ota_overwrite_count` | USART1 IDLE 中断 | 日志诊断 | 统计任务还没消费上一帧时又收到新帧的次数。 |
+| `uart_ota_last_irq_length` | USART1 IDLE 中断 | 日志诊断 | 最近一次中断计算出的原始接收长度。 |
+
+这些带 `__IO` 的变量可能被中断异步修改，等价于告诉编译器“每次都要真实读写内存，不能缓存旧值”。
+
+协议常量必须与 [tools/make_uart_ota_packet.py](D:/GD32/2026706296/tools/make_uart_ota_packet.py:32) 保持一致：
+
+| 宏 | 值 | 含义 |
+|---|---:|---|
+| `UART_OTA_STREAM_MAGIC` | `0xA55A5AA5` | OTA 流式协议魔术字，用来识别这是一帧 OTA 数据。 |
+| `UART_OTA_FRAME_START` | `1` | START 帧，表示一次升级会话开始。 |
+| `UART_OTA_FRAME_DATA` | `2` | DATA 帧，携带固件分包数据。 |
+| `UART_OTA_FRAME_END` | `3` | END 帧，表示固件发送结束。 |
+| `UART_OTA_FRAME_ACK_BASE` | `0x80` | ACK 类型基值，ACK 类型为 `0x80 | 原帧类型`。 |
+| `UART_OTA_START_FRAME_SIZE` | `24` | START 帧固定长度。 |
+| `UART_OTA_DATA_HEADER_SIZE` | `24` | DATA 帧头长度，后面追加 chunk 数据。 |
+| `UART_OTA_END_FRAME_SIZE` | `16` | END 帧固定长度。 |
+| `UART_OTA_ACK_FRAME_SIZE` | `20` | App 回给上位机的 ACK 固定长度。 |
+| `UART_OTA_STREAM_CHUNK_SIZE` | `512` | 单个 DATA 帧最多携带 512 字节固件数据。 |
+
+### 4.2.1 协议分发入口：为什么按 `frame_type` 进入三个函数
+
+USART1 IDLE 中断交给 App 的只是一段原始字节，`uart_ota_task()` 并不知道这段字节到底是开始帧、数据帧还是结束帧。真正的协议识别发生在 `prv_uart_ota_try_process_packet()` 里：
+
+```c
+frame_type = prv_uart_ota_read_u32_le(&packet[4]);
+if(UART_OTA_FRAME_START == frame_type){
+    return prv_uart_ota_process_start(packet, packet_length);
+}
+if(UART_OTA_FRAME_DATA == frame_type){
+    return prv_uart_ota_process_data(packet, packet_length);
+}
+if(UART_OTA_FRAME_END == frame_type){
+    return prv_uart_ota_process_end(packet, packet_length);
+}
+```
+
+这段代码的含义可以按下面的表理解：
+
+| 字节偏移 | 读取内容 | 说明 |
+|---:|---|---|
+| `packet[0..3]` | `magic` | 必须等于 `0xA55A5AA5`，用于确认这是一帧 OTA 数据。 |
+| `packet[4..7]` | `frame_type` | 决定这一帧交给 START、DATA 还是 END 处理函数。 |
+| `packet[8..]` | 具体帧参数 | 不同帧类型从这里开始有不同含义。 |
+
+分发关系如下：
+
+| `frame_type` 值 | 宏 | 进入函数 | 当前帧职责 |
+|---:|---|---|---|
+| `1` | `UART_OTA_FRAME_START` | `prv_uart_ota_process_start()` | 建立一次 OTA 会话，校验固件大小和整包 CRC 元信息，擦除下载缓存区。 |
+| `2` | `UART_OTA_FRAME_DATA` | `prv_uart_ota_process_data()` | 接收一小段固件数据，校验单包 CRC，按偏移写入下载缓存区。 |
+| `3` | `UART_OTA_FRAME_END` | `prv_uart_ota_process_end()` | 确认所有 DATA 已收完，校验整包 CRC，写入升级参数区并准备复位。 |
+
+这三个函数不是互相独立随便调用的，它们必须按下面顺序工作：
+
+```text
+START 成功
+  -> g_uart_ota_session.state = UART_OTA_SESSION_RECEIVING
+  -> 清空接收进度，保存 firmware_size / firmware_crc32 / app_version
+  -> 回 START ACK
+
+DATA 第 0 包成功
+  -> 校验 App 向量表
+  -> 写入 0x08067000 + 0
+  -> received_size 增加，next_seq 加 1
+  -> 回 DATA ACK
+
+DATA 第 1 包、第 2 包、... 成功
+  -> 按 seq 和 offset 连续写入下载缓存区
+  -> 持续更新 running_crc 和 received_size
+  -> 每包都回 DATA ACK
+
+END 成功
+  -> 确认 received_size 等于 firmware_size
+  -> 确认 running_crc 等于 START 中声明的 firmware_crc32
+  -> 回读下载缓存区再算 CRC
+  -> 写参数区 updateFlag/updateStatus/appSize/appCRC32
+  -> 回 END ACK
+  -> uart_ota_task() 延时 50ms 后复位
+```
+
+一句话理解：
+
+> `frame_type` 是 OTA 协议的“路由字段”。App 先用 `magic` 判断是不是 OTA 包，再用 `frame_type` 判断这包应该执行“开始升级”“写一段固件”还是“结束并提交升级”。
+
+### 4.3 START 阶段
 
 入口函数：`prv_uart_ota_process_start()`  
-位置：[usart_app.c:823](D:/GD32/2026706296/USER/App/usart_app.c:823)
+位置：[uart_ota_app.c:313](D:/GD32/2026706296/USER/App/uart_ota_app.c:313)
 
 它做的事：
 
@@ -202,10 +393,44 @@ App 侧核心文件是 [USER/App/usart_app.c](D:/GD32/2026706296/USER/App/usart_
 > START 阶段只动下载缓存区，不动正式 App 区。  
 > 所以升级过程中断电，不会把当前正在运行的 App 先破坏掉。
 
-### 4.2 DATA 阶段
+#### 4.3.1 START 帧字段和 App 解析关系
+
+START 帧固定 24 字节，用来描述“这次要升级的固件整体信息”。它不携带固件正文。
+
+| 偏移 | 长度 | 字段 | App 侧读取方式 | 作用 |
+|---:|---:|---|---|---|
+| `0` | 4 | `magic` | 外层分发函数读取 | 识别 OTA 协议帧。 |
+| `4` | 4 | `frame_type` | 外层分发函数读取 | 值为 `1`，进入 START 处理函数。 |
+| `8` | 4 | `app_version` | `prv_uart_ota_read_u32_le(&frame[8])` | 本次新固件版本号。 |
+| `12` | 4 | `firmware_size` | `prv_uart_ota_read_u32_le(&frame[12])` | 完整 `Project.bin` 字节数。 |
+| `16` | 4 | `firmware_crc32` | `prv_uart_ota_read_u32_le(&frame[16])` | 完整固件 CRC32，END 阶段还会再次使用。 |
+| `20` | 4 | `header_crc32` | `prv_uart_ota_read_u32_le(&frame[20])` | 对前 20 字节计算的 CRC32，用来检查 START 头是否损坏。 |
+
+START 成功以后，App 会初始化 `g_uart_ota_session`：
+
+| 会话字段 | START 阶段写入的值 | 后续用途 |
+|---|---|---|
+| `state` | `UART_OTA_SESSION_RECEIVING` | 允许后续 DATA/END 进入处理流程。 |
+| `app_version` | START 帧里的版本号 | END 成功后写入参数区。 |
+| `firmware_size` | START 帧里的固件大小 | DATA 阶段防越界，END 阶段确认是否收满。 |
+| `firmware_crc32` | START 帧里的整包 CRC | END 阶段做整包校验。 |
+| `received_size` | 复位为 `0` | DATA 阶段累计已接收字节数。 |
+| `next_seq` | 复位为 `0` | DATA 阶段要求第一包必须是 `seq=0`。 |
+| `running_crc` | 复位为 CRC 初始值 | DATA 阶段边收边累计整包 CRC。 |
+
+START ACK 的含义：
+
+| ACK 字段 | 成功时的值 | 含义 |
+|---|---|---|
+| ACK type | `0x80 | UART_OTA_FRAME_START = 0x81` | 这是对 START 的应答。 |
+| `status` | `0` | START 处理成功。 |
+| `value0` | `UART_OTA_STREAM_CHUNK_SIZE = 512` | 告诉上位机 DATA 单包最大 512 字节。 |
+| `value1` | `firmware_size` | 告诉上位机 App 认可的固件总大小。 |
+
+### 4.4 DATA 阶段
 
 入口函数：`prv_uart_ota_process_data()`  
-位置：[usart_app.c:889](D:/GD32/2026706296/USER/App/usart_app.c:889)
+位置：[uart_ota_app.c:384](D:/GD32/2026706296/USER/App/uart_ota_app.c:384)
 
 它做的事：
 
@@ -224,10 +449,67 @@ App 侧核心文件是 [USER/App/usart_app.c](D:/GD32/2026706296/USER/App/usart_
 > App 收到 DATA 后不是先拼在 RAM 里，而是**边收边写下载缓存区**。  
 > 这样 App 不需要一个 30KB、40KB、50KB 的大缓冲区。
 
-### 4.3 END 阶段
+#### 4.4.1 DATA 帧字段和 App 解析关系
+
+DATA 帧由 `24 字节头 + 当前 chunk 固件数据` 组成。上位机把 `Project.bin` 按 512 字节一包拆开，每一包都封装成一个 DATA 帧。
+
+| 偏移 | 长度 | 字段 | App 侧读取方式 | 作用 |
+|---:|---:|---|---|---|
+| `0` | 4 | `magic` | 外层分发函数读取 | 识别 OTA 协议帧。 |
+| `4` | 4 | `frame_type` | 外层分发函数读取 | 值为 `2`，进入 DATA 处理函数。 |
+| `8` | 4 | `seq` | `prv_uart_ota_read_u32_le(&frame[8])` | 当前 DATA 包序号，从 `0` 开始递增。 |
+| `12` | 4 | `offset` | `prv_uart_ota_read_u32_le(&frame[12])` | 当前 chunk 在完整固件中的偏移。 |
+| `16` | 4 | `chunk_length` | `prv_uart_ota_read_u32_le(&frame[16])` | 当前 chunk 的字节数，最大 512。 |
+| `20` | 4 | `chunk_crc32` | `prv_uart_ota_read_u32_le(&frame[20])` | 当前 chunk 自己的 CRC32。 |
+| `24` | N | `chunk` | `chunk = &frame[24]` | 真正要写入下载缓存区的固件数据。 |
+
+例如固件大小是 `1300` 字节，上位机会拆成：
+
+| DATA 包 | `seq` | `offset` | `chunk_length` | 数据范围 | 写入地址 |
+|---:|---:|---:|---:|---|---|
+| 第 0 包 | `0` | `0` | `512` | `Project.bin[0..511]` | `0x08067000 + 0` |
+| 第 1 包 | `1` | `512` | `512` | `Project.bin[512..1023]` | `0x08067000 + 512` |
+| 第 2 包 | `2` | `1024` | `276` | `Project.bin[1024..1299]` | `0x08067000 + 1024` |
+
+DATA 阶段最核心的三类检查如下：
+
+| 检查类别 | 代码条件 | 解决的问题 |
+|---|---|---|
+| 会话状态检查 | `state == UART_OTA_SESSION_RECEIVING` | 防止没收到 START 就直接写 DATA。 |
+| 长度检查 | `chunk_length > 0`、`chunk_length <= 512`、`frame_length == 24 + chunk_length` | 防止空包、超大包、短包或粘包。 |
+| 连续性检查 | `seq == next_seq`、`offset == received_size`、`offset + chunk_length <= firmware_size` | 防止乱序、丢包、重复包和越界写。 |
+| 单包 CRC 检查 | `bootloader_port_crc32_calc(chunk, chunk_length) == chunk_crc32` | 防止当前这一包在链路上传坏。 |
+| 首包向量表检查 | 只在 `vector_checked == 0` 时执行 | 防止把一个不是合法 App 镜像的 bin 写进下载区。 |
+
+首包要额外校验向量表，是因为 App 镜像开头就是 Cortex-M 向量表：
+
+| bin 偏移 | 内容 | 为什么要检查 |
+|---:|---|---|
+| `0x00` | 初始 MSP 栈顶地址 | 必须落在 SRAM 范围，否则 App 启动后栈就错了。 |
+| `0x04` | Reset_Handler 入口地址 | 必须落在正式 App Flash 区，并且最低位为 1，表示 Thumb 状态。 |
+
+DATA 成功写入后会更新会话进度：
+
+| 字段 | 更新方式 | 作用 |
+|---|---|---|
+| `running_crc` | 把当前 chunk 加入累计 CRC | END 阶段确认整包数据是否正确。 |
+| `received_size` | `received_size += chunk_length` | 记录已经成功写入下载区的字节数。 |
+| `next_seq` | `next_seq++` | 要求下一包必须是下一个序号。 |
+| `vector_checked` | 首包成功后置 `1` | 后续包不再重复检查向量表。 |
+
+DATA ACK 的含义：
+
+| ACK 字段 | 成功时的值 | 含义 |
+|---|---|---|
+| ACK type | `0x80 | UART_OTA_FRAME_DATA = 0x82` | 这是对 DATA 的应答。 |
+| `status` | `0` | 当前 DATA 包处理成功。 |
+| `value0` | `seq` | 告诉上位机哪一包已经成功。 |
+| `value1` | `received_size` | 告诉上位机当前 App 已成功接收多少字节。 |
+
+### 4.5 END 阶段
 
 入口函数：`prv_uart_ota_process_end()`  
-位置：[usart_app.c:968](D:/GD32/2026706296/USER/App/usart_app.c:968)
+位置：[uart_ota_app.c:475](D:/GD32/2026706296/USER/App/uart_ota_app.c:475)
 
 它做的事：
 
@@ -240,19 +522,81 @@ App 侧核心文件是 [USER/App/usart_app.c](D:/GD32/2026706296/USER/App/usart_
 | 5 | 从下载缓存区回读整段再算 CRC | 证明写进 Flash 的内容也正确 |
 | 6 | 写参数区 | 通知 BootLoader“可以搬运了” |
 | 7 | 回 END ACK | 告诉上位机 OTA 已准备完成 |
-| 8 | 返回成功 | 外层 `uart_task()` 会触发软件复位 |
+| 8 | 返回成功 | 外层 `uart_ota_task()` 会触发软件复位 |
 
 关键点：
 
 > App 到这里仍然**没有把新固件搬到 `0x0800D000`**。  
 > 它只是确认下载缓存区里的新固件是可靠的，然后把升级条件写到参数区。
 
+#### 4.5.1 END 帧字段和 App 解析关系
+
+END 帧固定 16 字节，用来告诉 App：“上位机已经把固件数据发完了，请做最终确认。”
+
+| 偏移 | 长度 | 字段 | App 侧读取方式 | 作用 |
+|---:|---:|---|---|---|
+| `0` | 4 | `magic` | 外层分发函数读取 | 识别 OTA 协议帧。 |
+| `4` | 4 | `frame_type` | 外层分发函数读取 | 值为 `3`，进入 END 处理函数。 |
+| `8` | 4 | `firmware_size` | `prv_uart_ota_read_u32_le(&frame[8])` | 上位机再次声明固件总大小。 |
+| `12` | 4 | `firmware_crc32` | `prv_uart_ota_read_u32_le(&frame[12])` | 上位机再次声明整包 CRC32。 |
+
+END 阶段会做两层 CRC 校验：
+
+| 校验层级 | 数据来源 | 目的 |
+|---|---|---|
+| 接收过程累计 CRC | `g_uart_ota_session.running_crc` | 确认所有 DATA chunk 按顺序拼起来后，内容等于 START 声明的整包 CRC。 |
+| 下载区回读 CRC | `bootloader_port_calc_download_crc32(firmware_size)` | 确认已经写入内部 Flash 下载缓存区的内容也正确，不只是 RAM 中收到过正确数据。 |
+
+END 成功后写参数区的意义如下：
+
+| 参数区字段 | 写入值 | BootLoader 后续怎么用 |
+|---|---|---|
+| `updateFlag` | `0x5A` | 表示有升级任务。 |
+| `updateMode` | `0x01` | 表示当前是 App 下载完成后交给 BootLoader 搬运的模式。 |
+| `updateStatus` | `0x01` | 表示新固件已经在下载缓存区准备好。 |
+| `appSize` | `firmware_size` | BootLoader 搬运和 CRC 计算时使用。 |
+| `appCRC32` | `firmware_crc32` | BootLoader 搬运后回读正式 App 区时使用。 |
+| `appVersion` | `app_version` | 记录本次升级版本。 |
+
+END ACK 的含义：
+
+| ACK 字段 | 成功时的值 | 含义 |
+|---|---|---|
+| ACK type | `0x80 | UART_OTA_FRAME_END = 0x83` | 这是对 END 的应答。 |
+| `status` | `0` | 整个 OTA 接收和参数区写入成功。 |
+| `value0` | `firmware_size` | 告诉上位机最终确认的固件大小。 |
+| `value1` | `firmware_crc32` | 告诉上位机最终确认的整包 CRC。 |
+
+`prv_uart_ota_process_end()` 返回 `UART_OTA_RESULT_SUCCESS` 后，外层 `uart_ota_task()` 会延时 `50ms` 再调用 `bootloader_port_request_upgrade_reset()`。这个短延时是为了让 END ACK 和日志先发出去，再复位进入 BootLoader。
+
+### 4.6 OTA 结果枚举怎么理解
+
+`uart_ota_result_t` 是 OTA 帧处理函数的返回结果，告诉 `uart_ota_task()` 当前这一帧处理到什么状态了。
+
+| 枚举值 | 含义 | 典型场景 |
+|---|---|---|
+| `UART_OTA_RESULT_NOT_PACKET` | 这帧不是 OTA 包。 | `magic` 不是 `0xA55A5AA5`，USART1 当前作为 OTA 专用口会直接忽略。 |
+| `UART_OTA_RESULT_SUCCESS` | 整个 OTA 接收成功。 | END 帧处理完成，下载区 CRC 正确，参数区写入成功，准备复位交给 BootLoader。 |
+| `UART_OTA_RESULT_BAD_LENGTH` | 帧长度、序号、偏移或边界不符合协议。 | START 不是 24 字节、END 不是 16 字节、DATA 长度不对、`seq/offset` 不连续。 |
+| `UART_OTA_RESULT_BAD_VECTOR` | 固件向量表非法。 | 首个 DATA 分包里的 MSP 或 Reset_Handler 不像合法 App。 |
+| `UART_OTA_RESULT_FLASH_ERROR` | Flash 操作失败。 | 擦下载区失败、写下载区失败、写参数区失败。 |
+| `UART_OTA_RESULT_VERIFY_ERROR` | CRC 校验失败。 | START 头 CRC、DATA 分包 CRC、整包 CRC 或下载区回读 CRC 不一致。 |
+| `UART_OTA_RESULT_WAIT_MORE` | 当前数据像 OTA 前缀，但还不完整。 | 收到的字节太短，只能等待下一轮。 |
+| `UART_OTA_RESULT_FRAME_CONSUMED` | 当前帧已经成功消费，但完整 OTA 还没结束。 | START 成功或某个 DATA 成功，继续等下一帧。 |
+
+最重要的区别是：
+
+| 返回值 | 下一步 |
+|---|---|
+| `UART_OTA_RESULT_FRAME_CONSUMED` | 当前帧成功，继续等后续 DATA 或 END。 |
+| `UART_OTA_RESULT_SUCCESS` | END 也成功，完整升级包已准备好，延时 50ms 后软件复位。 |
+
 ---
 
 ## 5. App 端写参数区到底写了什么
 
-关键函数：`prv_uart_ota_write_boot_param()`  
-位置：[usart_app.c:699](D:/GD32/2026706296/USER/App/usart_app.c:699)
+关键函数：`bootloader_port_write_upgrade_info()`  
+位置：[bootloader_port.c:461](D:/GD32/2026706296/USER/Driver/bootloader_port.c:461)
 
 它先把整个 `0x0800C000` 开始的 4KB 参数区读到 RAM，然后只改升级相关字段，再整块回写。
 
@@ -293,7 +637,7 @@ App 侧核心文件是 [USER/App/usart_app.c](D:/GD32/2026706296/USER/App/usart_
 
 ## 6. App 为什么要复位，而不是自己直接跳新 App
 
-App 在 [usart_app.c:1230](D:/GD32/2026706296/USER/App/usart_app.c:1230) 收到 `UART_OTA_RESULT_SUCCESS` 后，会调用 `prv_uart_ota_system_reset()`，见 [usart_app.c:1080](D:/GD32/2026706296/USER/App/usart_app.c:1080)。
+App 在 [uart_ota_app.c:642](D:/GD32/2026706296/USER/App/uart_ota_app.c:642) 收到 `UART_OTA_RESULT_SUCCESS` 后，会延时 50ms，再调用 [bootloader_port_request_upgrade_reset](D:/GD32/2026706296/USER/Driver/bootloader_port.c:535) 触发软件复位。
 
 原因有三个：
 
@@ -395,6 +739,30 @@ BootLoader 成功后会把：
 | `__set_MSP(app_stack_addr)` | 切到 App 自己的栈 |
 | 跳到 App Reset_Handler | 真正开始运行新 App |
 
+把最后几句代码展开看，就是：
+
+```c
+SCB->VTOR = 0x0800D000;
+jump2app = (pFunction)entry_addr;
+__set_MSP(stack_addr);
+jump2app();
+```
+
+| 代码 | 含义 | 如果漏掉会怎样 |
+|---|---|---|
+| `SCB->VTOR = 0x0800D000;` | 告诉 Cortex-M 内核：后续异常和外设中断都从 App 向量表取入口。 | App 的 SysTick、USART、DMA、HardFault 等中断可能仍跳到 BootLoader 的中断函数。 |
+| `jump2app = (pFunction)entry_addr;` | 把 App 向量表第 1 项，也就是 Reset_Handler 地址，转换成可调用的函数指针。 | 只有一个裸地址值，不能直接按 C 函数方式调用。 |
+| `__set_MSP(stack_addr);` | 把 CPU 主栈指针切换成 App 向量表第 0 项记录的初始栈顶。 | App 会沿用 BootLoader 的栈，函数调用和中断入栈都可能破坏现场。 |
+| `jump2app();` | 真正跳进 App 的 Reset_Handler。 | 不执行这句就只是准备好了现场，执行权还没有交给 App。 |
+
+可以把这理解成 BootLoader 手动模拟一次“从 App 向量表启动”：
+
+```text
+App 向量表第 0 项 -> 初始 MSP -> __set_MSP(stack_addr)
+App 向量表第 1 项 -> Reset_Handler -> jump2app()
+App 向量表基址    -> 中断入口表 -> SCB->VTOR
+```
+
 ---
 
 ## 9. 新 App 启动后为什么还要再做一次接管
@@ -464,13 +832,15 @@ BootLoader : jump app vtor:0x0800d000 msp:0x20005818 entry:0x0800d379
 
 | 顺序 | 文件 | 看什么 |
 |---|---|---|
-| 1 | [USER/App/usart_app.c](D:/GD32/2026706296/USER/App/usart_app.c:823) | App 如何收 START/DATA/END |
-| 2 | [USER/App/usart_app.c](D:/GD32/2026706296/USER/App/usart_app.c:699) | App 如何写参数区通知 BootLoader |
-| 3 | [USER/App/usart_app.c](D:/GD32/2026706296/USER/App/usart_app.c:1194) | App 什么时候触发复位交接 |
-| 4 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:137) | BootLoader 如何决定是否搬运 |
-| 5 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:398) | BootLoader 如何真正搬运 |
-| 6 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:578) | BootLoader 如何跳新 App |
-| 7 | [USER/boot_app_config.c](D:/GD32/2026706296/USER/boot_app_config.c:1) | 新 App 如何接管现场 |
+| 1 | [USER/Driver/bsp_usart.c](D:/GD32/2026706296/USER/Driver/bsp_usart.c:172) | USART1/RS485 和 DMA 接收链路如何初始化 |
+| 2 | [USER/gd32f4xx_it.c](D:/GD32/2026706296/USER/gd32f4xx_it.c:223) | USART1 IDLE 中断如何把一帧数据移交给 OTA 任务 |
+| 3 | [USER/App/uart_ota_app.c](D:/GD32/2026706296/USER/App/uart_ota_app.c:621) | `uart_ota_task()` 如何取帧、解析协议、处理结果 |
+| 4 | [USER/App/uart_ota_app.c](D:/GD32/2026706296/USER/App/uart_ota_app.c:313) | App 如何处理 START/DATA/END |
+| 5 | [USER/Driver/bootloader_port.c](D:/GD32/2026706296/USER/Driver/bootloader_port.c:461) | App 如何写参数区通知 BootLoader |
+| 6 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:137) | BootLoader 如何决定是否搬运 |
+| 7 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:398) | BootLoader 如何真正搬运 |
+| 8 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:578) | BootLoader 如何跳新 App |
+| 9 | [USER/boot_app_config.c](D:/GD32/2026706296/USER/boot_app_config.c:1) | 新 App 如何接管现场 |
 
 ---
 
