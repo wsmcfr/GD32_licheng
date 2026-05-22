@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 19
-- **Last Active**: 2026-05-19
+- **Total Sessions**: 20
+- **Last Active**: 2026-05-22
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~903 | Active |
+| `journal-1.md` | ~950 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-05-22 | 迁移外部 SPI Flash 文件系统到 SMARTFS | `8eed037` | `fix-wkup-deepsleep` |
 | 19 | 2026-05-19 | BootLoader 与 UART OTA 学习文档补充 | `bfb2592` | `fix-wkup-deepsleep` |
 | 18 | 2026-05-16 | 迁移 App OTA 通道到 RS485/USART1 | `cafbc34` | `fix-wkup-deepsleep` |
 | 17 | 2026-05-15 | RTC串口命令与USART1 RS485原样回显 | `aab2084` | `fix-wkup-deepsleep` |

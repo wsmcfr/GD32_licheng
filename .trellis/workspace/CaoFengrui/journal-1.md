@@ -901,3 +901,50 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: 迁移外部 SPI Flash 文件系统到 SMARTFS
+
+**Date**: 2026-05-22
+**Task**: 迁移外部 SPI Flash 文件系统到 SMARTFS
+**Branch**: `fix-wkup-deepsleep`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|------|------|
+| 文件系统迁移 | 将外部 GD25Q16 SPI Flash 文件系统从 LittleFS 替换为裸机 SMARTFS 风格最小端口。 |
+| Flash 布局 | 取消末尾 4KB 裸 Flash 测试保留区，整片 2MB Flash 全部归 SMARTFS 使用。 |
+| 工程配置 | MDK 工程切换为编译 `smartfs_port.c`，不再编译 `lfs.c`、`lfs_port.c`、`lfs_util.c`。 |
+| 应用接入 | `scheduler` 启动自检和 `usart_app` 文件壳层统一改为 `smart_storage_*` 接口与 `SMARTFS:` 日志。 |
+| 关键策略 | SMARTFS 端口使用静态镜像、静态 sector 缓冲和双副本元数据，不依赖堆；写入先提交新链与新元数据，再释放旧链。 |
+| 启动行为 | 首次遇到旧 LittleFS 数据或空片时输出 `SMARTFS: metadata invalid, format whole flash` 并格式化整片外部 Flash。 |
+| 验证 | Keil 构建 0 Error / 0 Warning；OTA 包大小 47040 字节，CRC 为 `0x31295A9F`；用户 OTA 实测自检通过。 |
+| 文档同步 | 已同步 `.trellis/spec/backend/` 与 `工程文档.md` 中的 Flash 布局、SMARTFS 约束、OTA 示例和验证方式。 |
+
+**提交结果**：
+- `8eed037 feat(storage): replace LittleFS with SMARTFS`
+- 已推送到 `origin/fix-wkup-deepsleep`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8eed037` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
