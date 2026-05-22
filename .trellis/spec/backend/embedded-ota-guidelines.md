@@ -29,7 +29,7 @@ This is a cross-layer contract. The PC-side sender, App-side receiver, internal 
 | Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `MDK/output/Project.uota` for offline inspection only; current low-RAM RS485 OTA must not send it directly |
 | App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one streaming frame; only returns success after download-buffer CRC and parameter writes pass |
 | ISR handoff | `USART1_IRQHandler(void)` | Copies one RS485 IDLE DMA frame into `uart_ota_dma_buffer`, records `uart_ota_dma_length`, and sets `uart_ota_rx_flag` |
-| Task polling | `uart_ota_task(void)` | Handles OTA frames on RS485/USART1; `uart_task(void)` is reserved for the USART0-side LittleFS shell command path |
+| Task polling | `uart_ota_task(void)` | Handles OTA frames on RS485/USART1; `uart_task(void)` is reserved for the USART0-side SMARTFS shell command path |
 | Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA485: ready` on RS485/USART1 after boot so operators can confirm the OTA port and TX path |
 | Half-duplex ACK | `prv_uart_ota_send_ack(...)` | Switches RS485 to transmit before ACK bytes, waits for USART TC through `bsp_usart_send_buffer()`, then returns to receive mode |
 

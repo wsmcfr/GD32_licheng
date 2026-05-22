@@ -84,7 +84,7 @@ void system_init(void)
 		boot_app_handoff_init();
 		/*
 		 * 调试串口必须尽早初始化。这样 BootLoader 跳到 App 后，哪怕后续 SPI Flash、
-		 * OLED、SD 卡或 LittleFS 初始化卡住，也能从 USART0 日志判断已经进入 App。
+		 * OLED、SD 卡或 SMARTFS 初始化卡住，也能从 USART0 日志判断已经进入 App。
 		 */
 		bsp_usart_init();
 		my_printf(DEBUG_USART, "BOOT: handoff start\r\n");
@@ -137,16 +137,16 @@ void system_init(void)
 		OLED_Init();
 		my_printf(DEBUG_USART, "BOOT: oled done\r\n");
 
-#if LFS_STORAGE_BOOT_SELF_TEST_ENABLE
+#if SMART_STORAGE_BOOT_SELF_TEST_ENABLE
 		/*
-		 * LittleFS 自检只访问文件系统管理区，并把裸 Flash 测试保留区排除在外。
-		 * 这样既能验证 GD25QXX 文件读写链路，又不会被旧的裸地址擦写测试破坏。
+		 * SMARTFS 自检使用整片 GD25Q16 文件系统管理区。
+		 * 用户已取消末尾 4KB 裸测保留区，因此这里不会再为 test_spi_flash() 留专用扇区。
 		 */
-		if (LFS_ERR_OK != lfs_storage_self_test()) {
-			my_printf(DEBUG_USART, "BOOT: lfs_storage_self_test failed\r\n");
+		if (SMART_STORAGE_ERR_OK != smart_storage_self_test()) {
+			my_printf(DEBUG_USART, "BOOT: smart_storage_self_test failed\r\n");
 		}
 #else
-		my_printf(DEBUG_USART, "BOOT: lfs_storage_self_test skipped (LFS_STORAGE_BOOT_SELF_TEST_ENABLE=0)\r\n");
+		my_printf(DEBUG_USART, "BOOT: smart_storage_self_test skipped (SMART_STORAGE_BOOT_SELF_TEST_ENABLE=0)\r\n");
 #endif
 
 #if SPI_FLASH_RAW_TEST_ENABLE

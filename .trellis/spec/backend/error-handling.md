@@ -103,7 +103,7 @@ Interrupt handlers should:
 |-----------------|----------------|--------------------------|
 | FatFs operations | `FRESULT` | Log the code, stop the current demo step, close handles if needed |
 | SD physical init | `DSTATUS` / `sd_error_enum` | Retry if appropriate, then log the final status |
-| LittleFS config init | `LFS_ERR_*` | Reject invalid config, do not continue with a bad pointer |
+| SMARTFS metadata init | `SMART_STORAGE_ERR_*` | Reject invalid metadata or bad pointers, do not continue with a corrupt image |
 | Timebase setup | implicit fatal loop | Treat as unrecoverable startup failure |
 | UART receive handoff | `rx_flag` stays `0` | Task returns immediately without processing |
 

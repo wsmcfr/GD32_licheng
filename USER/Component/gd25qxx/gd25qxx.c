@@ -506,8 +506,9 @@ void spi_flash_wait_for_dma_end(void)
  * 返回值说明：
  *   无返回值。
  * 说明：
- *   该测试会擦除一个 4KB 扇区，只能在 SPI_FLASH_RAW_TEST_ENABLE 打开时调用，
- *   并且必须使用 LittleFS 管理区之外的 LFS_FLASH_RAW_TEST_START_ADDR。
+ *   SMARTFS 当前管理整片 GD25Q16，已经没有独立裸测保留扇区。
+ *   该测试只能在 SPI_FLASH_RAW_TEST_ENABLE 临时打开时调用，并且会擦写
+ *   0x000000 起始扇区，必然破坏 SMARTFS 元数据和文件内容。
  */
 void test_spi_flash(void)
 {
@@ -516,12 +517,15 @@ void test_spi_flash(void)
     uint8_t read_buffer[SPI_FLASH_PAGE_SIZE];
 
     /*
-     * 裸 Flash 测试会擦除 4KB 扇区，必须固定使用 LittleFS 管理区之外的
-     * 末尾保留扇区，不能再使用 0x000000，避免破坏 LittleFS 超级块。
+     * 用户已取消末尾 4KB 保留区，整片 Flash 都归 SMARTFS。
+     * 因此裸测只能作为破坏性底层驱动验证，固定擦 0x000000 后需要重新格式化 SMARTFS。
      */
-    uint32_t test_addr = LFS_FLASH_RAW_TEST_START_ADDR;
+    uint32_t test_addr = 0x000000UL;
 
     my_printf(DEBUG_USART, "SPI FLASH Test Start\r\n");
+    my_printf(DEBUG_USART,
+              "SPI FLASH WARNING: raw test erases SMARTFS at 0x%lX\r\n",
+              test_addr);
 
     /* 第一步：重新确认 SPI Flash 驱动处于片选释放和 SPI 使能状态。 */
     spi_flash_init();
@@ -532,11 +536,11 @@ void test_spi_flash(void)
     my_printf(DEBUG_USART, "Flash ID: 0x%lX\r\n", flash_id);
 
     /*
-     * 第三步：擦除专用裸测保留扇区。
+     * 第三步：擦除起始扇区。
      * 注意：扇区擦除耗时较长，底层函数会阻塞等待 WIP 清零后再返回。
      */
     my_printf(DEBUG_USART,
-              "Erasing raw-test reserved sector at address 0x%lX...\r\n",
+              "Erasing SMARTFS-owned sector at address 0x%lX...\r\n",
               test_addr);
     spi_flash_sector_erase(test_addr);
     my_printf(DEBUG_USART, "Sector erased.\r\n");
@@ -562,7 +566,7 @@ void test_spi_flash(void)
     }
 
     /* 第四步：准备一页测试数据，后续整页写入并读回比较。 */
-    const char *message = "Hello from GD32 raw SPI FLASH reserved sector.";
+    const char *message = "Hello from GD32 raw SPI FLASH destructive test.";
     uint16_t data_len = strlen(message);
     if (data_len >= SPI_FLASH_PAGE_SIZE)
     {

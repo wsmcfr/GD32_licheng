@@ -182,7 +182,7 @@ void USART0_IRQHandler(void)
         if((rx_len > 0U) && (rx_len <= sizeof(usart0_rxbuffer))){
             copy_len = rx_len;
             /*
-             * USART0 当前承担 LittleFS 调试口，任务层会把本帧当作文本命令解析。
+             * USART0 当前承担 SMARTFS 调试口，任务层会把本帧当作文本命令解析。
              * 这里仍只保存一帧数据，若上位机连续灌入更长内容，则按应用层可处理
              * 缓冲区大小截断，避免 ISR 写越界。
              */

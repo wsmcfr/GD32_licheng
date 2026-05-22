@@ -22,7 +22,7 @@ It maps to hardware-near firmware code:
 |---------------|-------------------------|
 | Backend | Drivers, interrupts, storage, peripheral initialization, low-level resource management |
 | API | Public C functions declared in module headers |
-| Database | Persistent storage on SD/FatFs or SPI Flash/LittleFS |
+| Database | Persistent storage on SD/FatFs or SPI Flash/SMARTFS |
 | Logging | Debug UART output through `my_printf()` or `printf` redirection |
 | Error response | Return code, debug log, assert trap, or fail-stop loop |
 
@@ -35,7 +35,7 @@ It maps to hardware-near firmware code:
 - [ ] Read [Logging Guidelines](./logging-guidelines.md)
 - [ ] Read [Quality Guidelines](./quality-guidelines.md)
 - [ ] If touching BootLoader, App relocation, RS485/USART1 OTA, or Flash partition constants, read [Embedded OTA Guidelines](./embedded-ota-guidelines.md)
-- [ ] If touching SD card, SPI Flash, or LittleFS, read [Database Guidelines](./database-guidelines.md)
+- [ ] If touching SD card, SPI Flash, or SMARTFS, read [Database Guidelines](./database-guidelines.md)
 - [ ] If touching ISR-to-task handoff, DMA buffers, or wakeup flow, also read [`../guides/cross-layer-thinking-guide.md`](../guides/cross-layer-thinking-guide.md)
 - [ ] Search existing pin, DMA, IRQ, and buffer-size values before changing them
 
@@ -46,7 +46,7 @@ It maps to hardware-near firmware code:
 | Guide | Description | Status |
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Layer boundaries, file placement, naming | Project-specific |
-| [Database Guidelines](./database-guidelines.md) | SD/FatFs and SPI Flash/LittleFS persistence conventions | Project-specific |
+| [Database Guidelines](./database-guidelines.md) | SD/FatFs and SPI Flash/SMARTFS persistence conventions | Project-specific |
 | [Error Handling](./error-handling.md) | Fail-stop, return-code, and ISR safety patterns | Project-specific |
 | [Logging Guidelines](./logging-guidelines.md) | Debug UART logging conventions | Project-specific |
 | [Quality Guidelines](./quality-guidelines.md) | Review checklist and forbidden low-level patterns | Project-specific |

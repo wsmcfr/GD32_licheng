@@ -3,15 +3,16 @@
 
 #include "system_all.h"
 
-/* SPI Flash 页大小，必须与 LittleFS 移植层的 LFS_FLASH_PAGE_SIZE 保持一致。 */
+/* SPI Flash 页大小，必须与 SMARTFS 移植层的 SMARTFS_FLASH_PAGE_SIZE 保持一致。 */
 #define SPI_FLASH_PAGE_SIZE             0x100U
 
 /*
  * 宏作用：
  *   控制是否在启动阶段执行裸地址 SPI Flash 擦写测试。
  * 说明：
- *   默认关闭，避免裸擦写破坏 LittleFS 文件系统；只有排查底层 GD25Qxx 驱动
- *   或全新硬件焊接问题时才临时置 1。
+ *   SMARTFS 已经管理整片 2MB GD25Q16，不再保留专用裸测扇区。
+ *   默认必须关闭；只有排查底层 GD25Qxx 驱动或全新硬件焊接问题时才临时置 1，
+ *   且启用后会擦写 0x000000 起始扇区，必然破坏 SMARTFS 元数据。
  */
 #define SPI_FLASH_RAW_TEST_ENABLE       0U
 

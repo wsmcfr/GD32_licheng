@@ -10,9 +10,9 @@ This firmware project has **no relational database**.
 The Trellis `database` guideline maps to persistent storage:
 
 - **SDIO + FatFs** for removable file-based storage
-- **SPI Flash + LittleFS port** for onboard non-volatile storage experiments
+- **SPI Flash + SMARTFS port** for onboard GD25Q16 non-volatile storage experiments
 
-Treat storage changes as interface changes, especially when they affect file names, flash geometry, or compatibility wrappers.
+Treat storage changes as interface changes, especially when they affect file names, flash geometry, shell output, or compatibility wrappers.
 
 ---
 
@@ -39,61 +39,68 @@ result = f_write(&fdst, filebuffer, (UINT)strlen((char *)filebuffer), &bw);
 f_close(&fdst);
 ```
 
-### LittleFS Port Workflow
+### SMARTFS Port Workflow
 
-The LittleFS port uses static buffers and callback registration in `lfs_storage_init()`:
+The GD25Q16 port now uses `USER/Component/gd25qxx/smartfs_port.c/.h`.
+It is a bare-metal SMARTFS-style static metadata implementation tailored for this project, not a direct NuttX VFS import.
 
-```c
-cfg->read = lfs_deskio_read;
-cfg->prog = lfs_deskio_prog;
-cfg->erase = lfs_deskio_erase;
-cfg->sync = lfs_deskio_sync;
-```
+The port must keep all low-level runtime state in static storage:
 
-This project avoids heap allocation in storage configuration:
+- `g_smartfs_image`
+- `g_smartfs_temp_image`
+- `g_smartfs_sector_buffer`
 
-- `lfs_read_buffer`
-- `lfs_prog_buffer`
-- `lfs_lookahead_buffer`
+Do not introduce `malloc()` in this path.
 
-are all static arrays in `USER/Component/gd25qxx/lfs_port.c`.
-
-The GD25QXX LittleFS layout reserves the final erase block for optional raw
-Flash smoke tests. The filesystem must only expose `LFS_FLASH_FS_SIZE` through
-`cfg->block_count`; do not let LittleFS allocate the reserved block.
+Current GD25Q16 geometry:
 
 | Region | Contract |
 |--------|----------|
-| LittleFS managed area | Starts at `0x000000`, length `LFS_FLASH_FS_SIZE` |
-| Raw-test reserved area | Starts at `LFS_FLASH_RAW_TEST_START_ADDR`, length `LFS_FLASH_RAW_TEST_RESERVED_SIZE` |
+| SMARTFS managed area | Starts at `0x000000`, length `SMARTFS_FLASH_FS_SIZE` |
+| Physical capacity | `SMARTFS_FLASH_TOTAL_SIZE == 2MB` |
+| Erase block | `SMARTFS_FLASH_SECTOR_SIZE == 4096` |
+| Page program size | `SMARTFS_FLASH_PAGE_SIZE == 256` |
+| Metadata area | First 8 sectors, two 4-sector metadata copies |
+| Data area | Sectors `8..511` |
+| Raw-test reserved area | None; the old final 4KB reserve is removed |
 
-`lfs_storage_self_test()` is the preferred boot-time storage smoke test. It must:
+`smart_storage_self_test()` is the preferred boot-time storage smoke test. It must:
 
-- mount the filesystem first
-- format only after mount fails
-- write and read back a small file
-- check both byte count and content
-- unmount before returning
+- call `smart_storage_init()`
+- format the whole SMARTFS area only when no valid SMARTFS metadata copy exists
+- create a small directory and file
+- read the file back and verify both byte count and content
+- verify directory size semantics
+- remove the self-test directory before returning
 
-`test_spi_flash()` is a raw-address driver test. Keep it disabled by default and
-ensure it only erases the raw-test reserved area. It must never erase address
-`0x000000` while LittleFS is used, because that can destroy the LittleFS
-superblock and metadata.
+`test_spi_flash()` is a raw-address driver test. Keep it disabled by default.
+Because SMARTFS now owns the whole 2MB device, enabling `SPI_FLASH_RAW_TEST_ENABLE`
+is destructive: the test erases address `0x000000` and invalidates SMARTFS metadata.
 
-Runtime LittleFS shell helpers should keep filesystem behavior explicit:
+SMARTFS metadata loading must reject corrupt structures before exposing the image to shell helpers:
+
+- validate that active entries use only regular-file or directory types
+- validate that each non-root entry has a non-empty name and a live directory parent
+- validate that parent links eventually reach the root directory and cannot form a loop
+- validate that same-parent active entries do not duplicate names
+- validate that file data chains match the file byte length exactly
+- clear the loaded flag after any failed metadata commit or post-commit block cleanup so the next command reloads Flash state instead of continuing from an unconfirmed RAM image
+
+Runtime SMARTFS shell helpers should keep behavior explicit:
 
 - use absolute paths at the storage-helper boundary
-- keep current-working-directory and relative-path resolution in the UART command layer, not in `lfs_port.c`
+- keep current-working-directory and relative-path resolution in the UART command layer, not in `smartfs_port.c`
 - do not auto-format on runtime read/write/list/stat commands
 - if parent directories do not exist, `write`, `touch`, and `mkdir` should fail clearly instead of silently creating multi-level parents
-- directory listing helpers should filter `.` and `..` before echoing results to the shell
+- directory listing helpers should not synthesize `.` or `..`
 
-### Scenario: LittleFS UART Shell Directory Size Semantics And Safe Recursion
+### Scenario: SMARTFS UART Shell Directory Size Semantics And Safe Recursion
 
 #### 1. Scope / Trigger
 
-- Trigger: editing `USER/App/usart_app.c` shell commands such as `ls`, `stat`, `rm`, or editing `USER/Component/gd25qxx/lfs_port.c` path-info / directory traversal helpers.
-- Trigger: any change that makes UART shell output depend on recursive directory inspection or that adds new storage-helper recursion.
+- Trigger: editing `USER/App/usart_app.c` shell commands such as `ls`, `stat`, or `rm`.
+- Trigger: editing `USER/Component/gd25qxx/smartfs_port.c` path-info, directory traversal, append, overwrite, delete, or block-map helpers.
+- Trigger: any change that makes UART shell output depend on recursive directory inspection or storage-helper recursion.
 
 #### 2. Signatures
 
@@ -105,34 +112,34 @@ typedef struct
     uint8_t exists;
     uint16_t type;
     uint32_t size;
-} lfs_storage_path_info_t;
+} smart_storage_path_info_t;
 
 typedef struct
 {
-    struct lfs_info info;
+    smart_storage_entry_info_t info;
     uint32_t display_size;
-} lfs_storage_dir_entry_t;
+} smart_storage_dir_entry_t;
 
-int lfs_storage_get_path_info(const char *path, lfs_storage_path_info_t *info);
-int lfs_storage_list_dir(const char *path,
-                         lfs_storage_dir_list_callback_t callback,
-                         void *context,
-                         uint32_t *out_count);
-int lfs_storage_remove_path(const char *path);
-int lfs_storage_write_file(const char *path, const uint8_t *data, uint32_t length);
-int lfs_storage_append_file(const char *path, const uint8_t *data, uint32_t length);
+int smart_storage_get_path_info(const char *path, smart_storage_path_info_t *info);
+int smart_storage_list_dir(const char *path,
+                           smart_storage_dir_list_callback_t callback,
+                           void *context,
+                           uint32_t *out_count);
+int smart_storage_remove_path(const char *path);
+int smart_storage_write_file(const char *path, const uint8_t *data, uint32_t length);
+int smart_storage_append_file(const char *path, const uint8_t *data, uint32_t length);
 ```
 
 Current UART shell output contracts:
 
 ```text
-LFS: LS /path
+SMARTFS: LS /path
 file    <size>  <name>
 dir     <size>  <name>
-LFS: LS done count=<n>
+SMARTFS: LS done count=<n>
 
-LFS: STAT path=/path type=file size=<bytes>
-LFS: STAT path=/path type=dir size=<bytes>
+SMARTFS: STAT path=/path type=file size=<bytes>
+SMARTFS: STAT path=/path type=dir size=<bytes>
 
 write <file> <text>      -> overwrite
 write -a <file> <text>   -> append
@@ -144,15 +151,14 @@ settime YYYY-MM-DD HH:MM:SS -> RTC: SET OK YYYY-MM-DD HH:MM:SS
 #### 3. Contracts
 
 - `ls` numeric column must keep a single semantic: **size in bytes**.
-- For regular files, `size` / `display_size` must equal the file byte length from LittleFS metadata.
+- For regular files, `size` / `display_size` must equal the file byte length from SMARTFS metadata.
 - For directories, `size` / `display_size` must equal the **recursive sum of all descendant file content bytes**.
 - Do not overload the `ls` numeric column with entry count. Entry count may be added later only under a separate field or command.
-- `lfs_storage_get_path_info()` is the shell-safe API. It may enrich directory size for display, but only after a raw non-recursive path-type lookup succeeds.
-- Recursive size calculation must use a dedicated helper such as `prv_lfs_calculate_path_size_mounted()`.
-- Recursive size calculation must depend on a **raw path-info helper** such as `prv_lfs_get_path_info_raw_mounted()` that only returns existence/type/raw `lfs_stat()` size.
-- Recursive helpers must never call an enriched helper that itself re-enters recursive size calculation; otherwise directory queries can recurse into themselves and corrupt LittleFS traversal state.
-- Recursive delete helpers may use the same raw path-info helper to distinguish file vs directory before descending.
-- `write` without `-a` must keep overwrite semantics by opening the file with truncate behavior.
+- `smart_storage_get_path_info()` is the shell-safe API. It may enrich directory size for display after resolving the target path.
+- If a path query is blocked by a missing intermediate directory, `smart_storage_get_path_info()` returns `SMART_STORAGE_ERR_OK` with `exists=0`; create/write helpers must still return `SMART_STORAGE_ERR_NOENT` for the same condition.
+- Recursive size calculation must use a dedicated helper such as `prv_smartfs_calculate_entry_size()`.
+- Recursive delete should first update and commit metadata, then release old file data chains, then commit the cleaned block map.
+- `write` without `-a` must keep overwrite semantics.
 - `write -a` must keep append semantics by preserving existing content and writing new bytes at file end.
 - UART command-layer append verification should read back the file and confirm both:
   - final file length equals `old_length + appended_length`
@@ -162,10 +168,11 @@ settime YYYY-MM-DD HH:MM:SS -> RTC: SET OK YYYY-MM-DD HH:MM:SS
 
 | Observation | Meaning | Required Action |
 |-------------|---------|-----------------|
-| Root `ls` shows `dir 0 app` while `/app` contains files | directory column is using raw LittleFS directory size or hardcoded zero | compute recursive descendant file bytes for directories |
-| Root `ls` shows `dir 2 app` while files inside sum to `694` bytes | directory column is using child-count semantics instead of byte-size semantics | switch shell contract back to byte-size semantics |
-| `ls` or `stat` hangs or hits `ASSERT: block != ((lfs_block_t) - 1)` after a command | recursive helper re-entered high-level path-info/query logic and corrupted directory traversal state | split raw lookup from enriched recursive display logic |
-| File `stat` is correct but directory `stat` differs from `ls` on the same path | shell output contracts drifted between APIs | unify both to the same recursive byte-size helper |
+| Root `ls` shows `dir 0 app` while `/app` contains files | Directory column is hardcoded zero or not recursively calculated | Compute recursive descendant file bytes for directories |
+| Root `ls` shows `dir 2 app` while files inside sum to `694` bytes | Directory column is using child-count semantics instead of byte-size semantics | Switch shell contract back to byte-size semantics |
+| `write -a` fails on a file near the UART buffer size | Append path may still depend on an App-layer buffer | Keep append implementation in `smartfs_port.c` sector-buffer based |
+| File `stat` is correct but directory `stat` differs from `ls` on the same path | Shell output contracts drifted between APIs | Unify both to the same recursive byte-size helper |
+| `SPI_FLASH_RAW_TEST_ENABLE=1` followed by missing SMARTFS metadata | Expected destructive raw test behavior | Reformat SMARTFS or disable raw test before normal use |
 
 #### 5. Good / Base / Bad Cases
 
@@ -175,16 +182,17 @@ settime YYYY-MM-DD HH:MM:SS -> RTC: SET OK YYYY-MM-DD HH:MM:SS
 | Base | Empty directory shows `dir 0 emptydir`; this is valid because recursive descendant file bytes are zero |
 | Bad | Directory output shows `0` only because the code hardcodes directory size to zero |
 | Bad | Directory output shows `2` because the code reused child-count instead of byte-size semantics |
-| Bad | Recursive size helper calls enriched `get_path_info`, causing nested recursion and LittleFS assert traps during shell commands |
+| Bad | Runtime write path calls `smart_storage_format()` after a normal command fails |
 
 #### 6. Tests Required
 
+- Boot and confirm `smart_storage_self_test()` passes or formats once then passes.
 - Create one directory with at least two files whose sizes are easy to sum manually.
 - Assert `ls /parent` prints the directory line with the summed descendant file bytes.
 - Assert `stat /parent` prints the same byte total as `ls`.
 - Add one empty subdirectory and verify the parent size does not increase unless files are created inside it.
 - Run `ls`, `stat`, `cat`, and `rm` in sequence after boot and assert no `ASSERT:` log appears.
-- If changing recursive helpers, build with AC6 and confirm there are no implicit-function-declaration errors; static helper declarations must be explicit.
+- Build with AC6 and confirm there are no implicit-function-declaration errors; static helper declarations must be explicit or ordered before use.
 
 #### 7. Wrong vs Correct
 
@@ -192,24 +200,26 @@ settime YYYY-MM-DD HH:MM:SS -> RTC: SET OK YYYY-MM-DD HH:MM:SS
 
 ```c
 /* Wrong: directory display semantics drift to child count. */
-if (LFS_TYPE_DIR == lfs_info.type) {
-    err = prv_lfs_count_dir_entries_mounted(lfs, path, &info->direct_child_count);
+if (SMART_STORAGE_TYPE_DIR == entry->type) {
+    info->size = prv_smartfs_count_direct_children(entry_index);
 }
 
-/* Wrong: recursive size helper re-enters enriched path info and can recurse forever. */
-err = prv_lfs_get_path_info_mounted(lfs, normalized_path, &path_info);
+/* Wrong: runtime commands silently wipe user data after a normal lookup failure. */
+if (SMART_STORAGE_ERR_OK != err) {
+    smart_storage_format();
+}
 ```
 
 ##### Correct
 
 ```c
-/* Correct: raw lookup only returns existence/type/raw metadata. */
-err = prv_lfs_get_path_info_raw_mounted(lfs, normalized_path, &path_info);
-
-/* Correct: enriched helper computes directory display size separately. */
-if (LFS_TYPE_DIR == info->type) {
-    err = prv_lfs_calculate_path_size_mounted(lfs, path, &info->size);
+/* Correct: directory size remains recursive content bytes. */
+if (SMART_STORAGE_TYPE_DIR == info->type) {
+    err = prv_smartfs_calculate_entry_size(entry_index, &info->size);
 }
+
+/* Correct: startup init is the only automatic format path. */
+err = smart_storage_init();
 ```
 
 ### Readback Verification
@@ -236,6 +246,7 @@ When storage format changes are needed:
 - version the file name, path, or payload format explicitly
 - keep compatibility wrappers when an old API name is still referenced
 - document flash geometry changes in the header macros
+- assume old LittleFS contents are incompatible with the current SMARTFS format unless a migration tool is explicitly implemented
 
 Existing compatibility example in `USER/App/sd_app.c`:
 
@@ -254,25 +265,25 @@ This wrapper keeps old call sites working while the implementation has already m
 
 - FatFs paths use drive-prefixed absolute paths such as `"0:/FATFS.TXT"`
 - Long demo filenames use descriptive underscore-separated names
-- Storage geometry macros are uppercase and explicit, such as `LFS_FLASH_TOTAL_SIZE`
-- App-facing storage helpers use the prefix `sd_fatfs_`
+- Storage geometry macros are uppercase and explicit, such as `SMARTFS_FLASH_TOTAL_SIZE`
+- App-facing SMARTFS helpers use the prefix `smart_storage_`
 - Compatibility aliases keep the old prefix only when required for transition safety
 
 Examples:
 
 - `SD_FATFS_DEMO_ENABLE`
-- `LFS_FLASH_SECTOR_SIZE`
+- `SMARTFS_FLASH_SECTOR_SIZE`
+- `smart_storage_self_test()`
 - `sd_fatfs_long_name_test()`
-- `sd_lfs_test()`
 
 ---
 
 ## Common Mistakes
 
-### Accessing the file system before mount
+### Accessing the file system before initialization
 
-Do not call `f_open()` before `disk_initialize()` and `f_mount()`.
-The project treats mount as a required explicit step.
+Do not call SMARTFS read/write/list helpers before `smart_storage_init()` has succeeded during startup.
+Runtime commands should load existing metadata, but they must not implicitly format user data.
 
 ### Writing the whole fixed buffer instead of the valid payload
 
@@ -295,10 +306,10 @@ If long filenames matter, verify `ffconf.h` instead of assuming the configuratio
 
 ### Introducing heap allocation in low-level storage paths
 
-Follow the static-buffer pattern from `lfs_port.c`.
+Follow the static-buffer pattern from `smartfs_port.c`.
 This project does not use `malloc()` for its storage configuration path.
 
-LittleFS file handles also need explicit static file buffers when opened through
-`lfs_file_opencfg()`. Calling `lfs_file_open()` without a file buffer can make
-LittleFS allocate a per-file cache through `lfs_malloc()`, which is not allowed
-in this project's low-level storage paths.
+### Re-enabling destructive raw Flash tests during normal SMARTFS use
+
+`SPI_FLASH_RAW_TEST_ENABLE` must stay disabled for normal firmware.
+With full-device SMARTFS, raw test erase/write operations are destructive by design.

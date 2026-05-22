@@ -72,7 +72,7 @@ Use `USER/Component/` for reusable device or protocol logic:
 - SSD1306 display primitives in `USER/Component/oled/`
 - GD25Qxx SPI Flash operations in `USER/Component/gd25qxx/`
 - GD30AD3344 command/data protocol in `USER/Component/gd30ad3344/`
-- third-party libraries such as FatFs, LittleFS, and `ebtn`
+- third-party libraries or storage ports such as FatFs, SMARTFS, retained LittleFS source copies, and `ebtn`
 
 Component code may depend on driver-provided buses, but it should not become the place that owns board-level pin maps.
 

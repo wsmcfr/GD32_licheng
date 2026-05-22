@@ -210,8 +210,9 @@ If the board uses an inverter or a different transceiver, document the polarity 
 
 ### Do not use dynamic allocation in low-level storage or hot runtime paths
 
-The existing storage port uses static buffers in `USER/Component/gd25qxx/lfs_port.c`.
-Follow that pattern unless there is a very strong reason to introduce heap use.
+The current GD25Q16 SMARTFS port uses static metadata and sector buffers in
+`USER/Component/gd25qxx/smartfs_port.c`. Follow that pattern unless there is a
+very strong reason to introduce heap use.
 
 ### Do not expose private helpers through headers
 
@@ -572,15 +573,15 @@ Minimum expected checks depend on the changed area:
 
 Use the existing self-test paths where possible:
 
-- `lfs_storage_self_test()` for normal GD25QXX LittleFS validation
-- `test_spi_flash()` only for raw GD25QXX driver validation, and only when its reserved test sector cannot overlap the LittleFS managed area
+- `smart_storage_self_test()` for normal GD25QXX SMARTFS validation
+- `test_spi_flash()` only for destructive raw GD25QXX driver validation
 - `sd_fatfs_test()`
 - boot logs in `system_init()`
 
-When LittleFS is enabled on GD25QXX, raw Flash erase/write tests must be opt-in.
-Keep `SPI_FLASH_RAW_TEST_ENABLE` disabled by default, and never let raw tests
-erase address `0x000000` because LittleFS stores its superblock and metadata at
-the beginning of the managed area.
+SMARTFS now owns the whole 2MB GD25Q16 device. Raw Flash erase/write tests must
+be opt-in, and `SPI_FLASH_RAW_TEST_ENABLE` must stay disabled by default. If it
+is enabled for driver bring-up, it erases address `0x000000` and invalidates
+SMARTFS metadata by design.
 
 ---
 

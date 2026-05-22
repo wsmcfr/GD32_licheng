@@ -1,6 +1,7 @@
 #ifndef __USART_APP_H__
 #define __USART_APP_H__
 
+#include <stdbool.h>
 #include "system_all.h"
 
 #ifdef __cplusplus
@@ -11,7 +12,7 @@ extern "C" {
  * 宏作用：
  *   定义 USART0 应用层命令帧缓冲区长度。
  * 说明：
- *   USART0 当前承担 LittleFS 调试口，不再接收 OTA 帧，因此保留 1KB 文本命令缓冲
+ *   USART0 当前承担 SMARTFS 调试口，不再接收 OTA 帧，因此保留 1KB 文本命令缓冲
  *   用于承接一次 IDLE 帧即可。
  */
 #if defined(BSP_USART0_RX_BUFFER_SIZE)
@@ -48,7 +49,7 @@ int my_printf(uint32_t usart_periph, const char *format, ...);
  * 返回值说明：
  *   无返回值。
  * 说明：
- *   当前命令集合同时覆盖 LittleFS 文件系统调试命令，以及 RTC 年月日时分秒的读取/设置命令。
+ *   当前命令集合同时覆盖 SMARTFS 文件系统调试命令，以及 RTC 年月日时分秒的读取/设置命令。
  */
 void uart_task(void);
 

@@ -8,7 +8,7 @@ uint8_t uart_dma_buffer[UART_APP_DMA_BUFFER_SIZE] = {0};
  * 变量作用：
  *   USART0 命令处理专用快照缓冲区和文件回显缓冲区。
  * 说明：
- *   先从 ISR 共享缓冲区复制命令帧，再在任务层执行 LittleFS 文件与目录操作，
+ *   先从 ISR 共享缓冲区复制命令帧，再在任务层执行 SMARTFS 文件与目录操作，
  *   避免处理过程中共享缓冲区被下一次串口中断改写。
  */
 static uint8_t uart_command_buffer[UART_APP_DMA_BUFFER_SIZE] = {0};
@@ -18,9 +18,9 @@ static uint8_t uart_file_buffer[UART_APP_DMA_BUFFER_SIZE] = {0};
  * 宏作用：
  *   定义 UART 文件系统壳层当前工作目录缓冲区长度。
  * 说明：
- *   该值需要同时覆盖 LittleFS 绝对路径和串口命令层的拼接空间，因此与命令帧缓冲独立。
+ *   该值需要同时覆盖 SMARTFS 绝对路径和串口命令层的拼接空间，因此与命令帧缓冲独立。
  */
-#define UART_LFS_PATH_BUFFER_SIZE      256U
+#define UART_SMARTFS_PATH_BUFFER_SIZE  256U
 
 /*
  * 变量作用：
@@ -28,16 +28,16 @@ static uint8_t uart_file_buffer[UART_APP_DMA_BUFFER_SIZE] = {0};
  * 说明：
  *   上电默认位于根目录 `/`；`cd` 成功后会更新这里，后续相对路径命令都基于该目录解析。
  */
-static char g_uart_current_dir[UART_LFS_PATH_BUFFER_SIZE] = "/";
+static char g_uart_current_dir[UART_SMARTFS_PATH_BUFFER_SIZE] = "/";
 
 /*
  * 变量作用：
  *   固定帮助文本，供 `help` 和未知命令回包使用。
  * 说明：
- *   当前协议统一走 USART0 文本命令壳层，因此帮助文本需要同时展示 LittleFS 与 RTC 命令集合。
+ *   当前协议统一走 USART0 文本命令壳层，因此帮助文本需要同时展示 SMARTFS 与 RTC 命令集合。
  */
 static const char g_uart_help_text[] =
-    "LFS SHELL:\r\n"
+    "SMARTFS SHELL:\r\n"
     "help\r\n"
     "gettime\r\n"
     "settime <yyyy-mm-dd> <hh:mm:ss>\r\n"
@@ -614,17 +614,17 @@ static void prv_uart_send_rtc_datetime(const char *prefix, const bsp_rtc_datetim
 
 /*
  * 函数作用：
- *   按统一格式输出 LittleFS 命令失败信息。
+ *   按统一格式输出 SMARTFS 命令失败信息。
  * 参数说明：
  *   action：失败动作描述，例如 "cat"、"ls"、"mkdir"。
- *   err：对应的 LittleFS 错误码或本模块错误码。
+ *   err：对应的 SMARTFS 错误码或本模块错误码。
  * 返回值说明：
  *   无返回值。
  */
-static void prv_uart_report_lfs_error(const char *action, int err)
+static void prv_uart_report_smartfs_error(const char *action, int err)
 {
     my_printf(DEBUG_USART,
-              "LFS: %s failed (%d)\r\n",
+              "SMARTFS: %s failed (%d)\r\n",
               (NULL != action) ? action : "unknown",
               err);
 }
@@ -635,7 +635,7 @@ static void prv_uart_report_lfs_error(const char *action, int err)
  * 主要流程：
  *   1. 绝对路径直接复制。
  *   2. 相对路径基于当前工作目录拼接。
- *   3. 处理 `.`、`..` 和重复 `/`，最终归一化成 LittleFS 绝对路径。
+ *   3. 处理 `.`、`..` 和重复 `/`，最终归一化成 SMARTFS 绝对路径。
  * 参数说明：
  *   input_path：用户输入路径，必须非空。
  *   output_path：输出绝对路径缓冲区，必须非空。
@@ -646,8 +646,8 @@ static void prv_uart_report_lfs_error(const char *action, int err)
  */
 static bool prv_uart_resolve_path(const char *input_path, char *output_path, uint16_t output_size)
 {
-    char working[UART_LFS_PATH_BUFFER_SIZE];
-    char normalized[UART_LFS_PATH_BUFFER_SIZE];
+    char working[UART_SMARTFS_PATH_BUFFER_SIZE];
+    char normalized[UART_SMARTFS_PATH_BUFFER_SIZE];
     char *src;
     char *segment_start;
     char *next_slash;
@@ -770,17 +770,17 @@ static void prv_uart_handle_pwd(void)
  */
 static void prv_uart_handle_df(void)
 {
-    lfs_storage_info_t info;
+    smart_storage_info_t info;
     int err;
 
-    err = lfs_storage_get_info(NULL, &info);
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("df", err);
+    err = smart_storage_get_info(NULL, &info);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("df", err);
         return;
     }
 
     my_printf(DEBUG_USART,
-              "LFS: DF total=%lu used=%lu free=%lu block=%lu blocks=%lu used_blocks=%lu cwd=%s\r\n",
+              "SMARTFS: DF total=%lu used=%lu free=%lu block=%lu blocks=%lu used_blocks=%lu cwd=%s\r\n",
               (unsigned long)info.total_bytes,
               (unsigned long)info.used_bytes,
               (unsigned long)(info.total_bytes - info.used_bytes),
@@ -866,8 +866,8 @@ static void prv_uart_handle_settime(char *args)
  */
 static void prv_uart_handle_stat(char *args)
 {
-    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
-    lfs_storage_path_info_t path_info;
+    char resolved_path[UART_SMARTFS_PATH_BUFFER_SIZE];
+    smart_storage_path_info_t path_info;
     char *target_path;
     int err;
 
@@ -878,25 +878,25 @@ static void prv_uart_handle_stat(char *args)
 
     prv_uart_rstrip_spaces(target_path);
     if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
-        my_printf(DEBUG_USART, "LFS: stat bad path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: stat bad path\r\n");
         return;
     }
 
-    err = lfs_storage_get_path_info(resolved_path, &path_info);
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("stat", err);
+    err = smart_storage_get_path_info(resolved_path, &path_info);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("stat", err);
         return;
     }
 
     if(0U == path_info.exists){
-        my_printf(DEBUG_USART, "LFS: stat no entry %s\r\n", resolved_path);
+        my_printf(DEBUG_USART, "SMARTFS: stat no entry %s\r\n", resolved_path);
         return;
     }
 
     my_printf(DEBUG_USART,
-              "LFS: STAT path=%s type=%s size=%lu\r\n",
+              "SMARTFS: STAT path=%s type=%s size=%lu\r\n",
               resolved_path,
-              (LFS_TYPE_DIR == path_info.type) ? "dir" : "file",
+              (SMART_STORAGE_TYPE_DIR == path_info.type) ? "dir" : "file",
               (unsigned long)path_info.size);
 }
 
@@ -909,7 +909,7 @@ static void prv_uart_handle_stat(char *args)
  * 返回值说明：
  *   无返回值。
  */
-static void prv_uart_ls_entry_callback(const lfs_storage_dir_entry_t *entry, void *context)
+static void prv_uart_ls_entry_callback(const smart_storage_dir_entry_t *entry, void *context)
 {
     (void)context;
 
@@ -919,7 +919,7 @@ static void prv_uart_ls_entry_callback(const lfs_storage_dir_entry_t *entry, voi
 
     my_printf(DEBUG_USART,
               "%s\t%lu\t%s\r\n",
-              (LFS_TYPE_DIR == entry->info.type) ? "dir" : "file",
+              (SMART_STORAGE_TYPE_DIR == entry->info.type) ? "dir" : "file",
               (unsigned long)entry->display_size,
               entry->info.name);
 }
@@ -934,8 +934,8 @@ static void prv_uart_ls_entry_callback(const lfs_storage_dir_entry_t *entry, voi
  */
 static void prv_uart_handle_ls(char *args)
 {
-    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
-    lfs_storage_path_info_t path_info;
+    char resolved_path[UART_SMARTFS_PATH_BUFFER_SIZE];
+    smart_storage_path_info_t path_info;
     char *target_path;
     uint32_t entry_count;
     int err;
@@ -947,37 +947,37 @@ static void prv_uart_handle_ls(char *args)
 
     prv_uart_rstrip_spaces(target_path);
     if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
-        my_printf(DEBUG_USART, "LFS: ls bad path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: ls bad path\r\n");
         return;
     }
 
-    err = lfs_storage_get_path_info(resolved_path, &path_info);
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("ls", err);
+    err = smart_storage_get_path_info(resolved_path, &path_info);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("ls", err);
         return;
     }
 
     if(0U == path_info.exists){
-        my_printf(DEBUG_USART, "LFS: ls no entry %s\r\n", resolved_path);
+        my_printf(DEBUG_USART, "SMARTFS: ls no entry %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_TYPE_DIR != path_info.type){
-        my_printf(DEBUG_USART, "LFS: ls not dir %s\r\n", resolved_path);
+    if(SMART_STORAGE_TYPE_DIR != path_info.type){
+        my_printf(DEBUG_USART, "SMARTFS: ls not dir %s\r\n", resolved_path);
         return;
     }
 
-    my_printf(DEBUG_USART, "LFS: LS %s\r\n", resolved_path);
-    err = lfs_storage_list_dir(resolved_path,
-                               prv_uart_ls_entry_callback,
-                               NULL,
-                               &entry_count);
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("ls", err);
+    my_printf(DEBUG_USART, "SMARTFS: LS %s\r\n", resolved_path);
+    err = smart_storage_list_dir(resolved_path,
+                                 prv_uart_ls_entry_callback,
+                                 NULL,
+                                 &entry_count);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("ls", err);
         return;
     }
 
-    my_printf(DEBUG_USART, "LFS: LS done count=%lu\r\n", (unsigned long)entry_count);
+    my_printf(DEBUG_USART, "SMARTFS: LS done count=%lu\r\n", (unsigned long)entry_count);
 }
 
 /*
@@ -990,41 +990,41 @@ static void prv_uart_handle_ls(char *args)
  */
 static void prv_uart_handle_cd(char *args)
 {
-    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
-    lfs_storage_path_info_t path_info;
+    char resolved_path[UART_SMARTFS_PATH_BUFFER_SIZE];
+    smart_storage_path_info_t path_info;
     char *target_path;
     int err;
 
     target_path = prv_uart_skip_spaces(args);
     if((NULL == target_path) || ('\0' == *target_path)){
-        my_printf(DEBUG_USART, "LFS: cd missing path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: cd missing path\r\n");
         return;
     }
 
     prv_uart_rstrip_spaces(target_path);
     if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
-        my_printf(DEBUG_USART, "LFS: cd bad path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: cd bad path\r\n");
         return;
     }
 
-    err = lfs_storage_get_path_info(resolved_path, &path_info);
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("cd", err);
+    err = smart_storage_get_path_info(resolved_path, &path_info);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("cd", err);
         return;
     }
 
     if(0U == path_info.exists){
-        my_printf(DEBUG_USART, "LFS: cd no dir %s\r\n", resolved_path);
+        my_printf(DEBUG_USART, "SMARTFS: cd no dir %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_TYPE_DIR != path_info.type){
-        my_printf(DEBUG_USART, "LFS: cd not dir %s\r\n", resolved_path);
+    if(SMART_STORAGE_TYPE_DIR != path_info.type){
+        my_printf(DEBUG_USART, "SMARTFS: cd not dir %s\r\n", resolved_path);
         return;
     }
 
     (void)strcpy(g_uart_current_dir, resolved_path);
-    my_printf(DEBUG_USART, "LFS: CWD %s\r\n", g_uart_current_dir);
+    my_printf(DEBUG_USART, "SMARTFS: CWD %s\r\n", g_uart_current_dir);
 }
 
 /*
@@ -1037,49 +1037,49 @@ static void prv_uart_handle_cd(char *args)
  */
 static void prv_uart_handle_cat(char *args)
 {
-    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    char resolved_path[UART_SMARTFS_PATH_BUFFER_SIZE];
     uint32_t read_length;
     char *target_path;
     int err;
 
     target_path = prv_uart_skip_spaces(args);
     if((NULL == target_path) || ('\0' == *target_path)){
-        my_printf(DEBUG_USART, "LFS: cat missing path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: cat missing path\r\n");
         return;
     }
 
     prv_uart_rstrip_spaces(target_path);
     if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
-        my_printf(DEBUG_USART, "LFS: cat bad path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: cat bad path\r\n");
         return;
     }
 
-    err = lfs_storage_read_file(resolved_path,
-                                uart_file_buffer,
-                                sizeof(uart_file_buffer),
-                                &read_length);
-    if(LFS_ERR_NOENT == err){
-        my_printf(DEBUG_USART, "LFS: cat no file %s\r\n", resolved_path);
+    err = smart_storage_read_file(resolved_path,
+                                  uart_file_buffer,
+                                  sizeof(uart_file_buffer),
+                                  &read_length);
+    if(SMART_STORAGE_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "SMARTFS: cat no file %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_ERR_FBIG == err){
-        my_printf(DEBUG_USART, "LFS: cat file too large for uart buffer\r\n");
+    if(SMART_STORAGE_ERR_FBIG == err){
+        my_printf(DEBUG_USART, "SMARTFS: cat file too large for uart buffer\r\n");
         return;
     }
 
-    if(LFS_ERR_ISDIR == err){
-        my_printf(DEBUG_USART, "LFS: cat is dir %s\r\n", resolved_path);
+    if(SMART_STORAGE_ERR_ISDIR == err){
+        my_printf(DEBUG_USART, "SMARTFS: cat is dir %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("cat", err);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("cat", err);
         return;
     }
 
     my_printf(DEBUG_USART,
-              "LFS: CAT OK len=%lu path=%s\r\n",
+              "SMARTFS: CAT OK len=%lu path=%s\r\n",
               (unsigned long)read_length,
               resolved_path);
     if(read_length > 0U){
@@ -1099,20 +1099,20 @@ static void prv_uart_handle_cat(char *args)
 static void prv_uart_handle_write(char *args)
 {
     uart_shell_write_args_t parsed_args;
-    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    char resolved_path[UART_SMARTFS_PATH_BUFFER_SIZE];
     uint32_t read_length;
     uint32_t expected_length;
     uint32_t original_length;
-    lfs_storage_path_info_t path_info;
+    smart_storage_path_info_t path_info;
     int err;
 
     if(!prv_uart_parse_write_args(args, &parsed_args)){
-        my_printf(DEBUG_USART, "LFS: write usage: write [-a] <file> <text>\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: write usage: write [-a] <file> <text>\r\n");
         return;
     }
 
     if(!prv_uart_resolve_path(parsed_args.path, resolved_path, sizeof(resolved_path))){
-        my_printf(DEBUG_USART, "LFS: write bad path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: write bad path\r\n");
         return;
     }
 
@@ -1120,86 +1120,86 @@ static void prv_uart_handle_write(char *args)
     original_length = 0U;
 
     if(0U != parsed_args.append_mode){
-        err = lfs_storage_get_path_info(resolved_path, &path_info);
-        if(LFS_ERR_NOENT == err){
+        err = smart_storage_get_path_info(resolved_path, &path_info);
+        if(SMART_STORAGE_ERR_NOENT == err){
             original_length = 0U;
-        }else if(LFS_ERR_OK == err){
-            if((0U == path_info.exists) || (LFS_TYPE_REG != path_info.type)){
-                my_printf(DEBUG_USART, "LFS: write is dir %s\r\n", resolved_path);
+        }else if(SMART_STORAGE_ERR_OK == err){
+            if((0U != path_info.exists) && (SMART_STORAGE_TYPE_REG != path_info.type)){
+                my_printf(DEBUG_USART, "SMARTFS: write is dir %s\r\n", resolved_path);
                 return;
             }
 
             original_length = path_info.size;
-        }else if(LFS_ERR_ISDIR == err){
-            my_printf(DEBUG_USART, "LFS: write is dir %s\r\n", resolved_path);
+        }else if(SMART_STORAGE_ERR_ISDIR == err){
+            my_printf(DEBUG_USART, "SMARTFS: write is dir %s\r\n", resolved_path);
             return;
         }else{
-            prv_uart_report_lfs_error("write", err);
+            prv_uart_report_smartfs_error("write", err);
             return;
         }
 
-        err = lfs_storage_append_file(resolved_path,
-                                      (const uint8_t *)parsed_args.text,
-                                      expected_length);
+        err = smart_storage_append_file(resolved_path,
+                                        (const uint8_t *)parsed_args.text,
+                                        expected_length);
     }else{
-        err = lfs_storage_write_file(resolved_path,
-                                     (const uint8_t *)parsed_args.text,
-                                     expected_length);
+        err = smart_storage_write_file(resolved_path,
+                                       (const uint8_t *)parsed_args.text,
+                                       expected_length);
     }
 
-    if(LFS_ERR_NOENT == err){
-        my_printf(DEBUG_USART, "LFS: write parent missing %s\r\n", resolved_path);
+    if(SMART_STORAGE_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "SMARTFS: write parent missing %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_ERR_ISDIR == err){
-        my_printf(DEBUG_USART, "LFS: write is dir %s\r\n", resolved_path);
+    if(SMART_STORAGE_ERR_ISDIR == err){
+        my_printf(DEBUG_USART, "SMARTFS: write is dir %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("write", err);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("write", err);
         return;
     }
 
-    err = lfs_storage_read_file(resolved_path,
-                                uart_file_buffer,
-                                sizeof(uart_file_buffer),
-                                &read_length);
-    if(LFS_ERR_OK != err){
-        my_printf(DEBUG_USART, "LFS: write verify failed (%d)\r\n", err);
+    err = smart_storage_read_file(resolved_path,
+                                  uart_file_buffer,
+                                  sizeof(uart_file_buffer),
+                                  &read_length);
+    if(SMART_STORAGE_ERR_OK != err){
+        my_printf(DEBUG_USART, "SMARTFS: write verify failed (%d)\r\n", err);
         return;
     }
 
     if(0U != parsed_args.append_mode){
         if(read_length != (original_length + expected_length)){
-            my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
+            my_printf(DEBUG_USART, "SMARTFS: write verify mismatch\r\n");
             return;
         }
 
         if(expected_length > 0U){
             if(read_length < expected_length){
-                my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
+                my_printf(DEBUG_USART, "SMARTFS: write verify mismatch\r\n");
                 return;
             }
 
             if(0 != memcmp(&uart_file_buffer[read_length - expected_length],
                            parsed_args.text,
                            expected_length)){
-                my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
+                my_printf(DEBUG_USART, "SMARTFS: write verify mismatch\r\n");
                 return;
             }
         }
     }else{
         if((read_length != expected_length) ||
            (0 != memcmp(uart_file_buffer, parsed_args.text, read_length))){
-            my_printf(DEBUG_USART, "LFS: write verify mismatch\r\n");
+            my_printf(DEBUG_USART, "SMARTFS: write verify mismatch\r\n");
             return;
         }
     }
 
     my_printf(DEBUG_USART,
-              "LFS: WRITE OK mode=%s len=%lu path=%s\r\n",
+              "SMARTFS: WRITE OK mode=%s len=%lu path=%s\r\n",
               (0U != parsed_args.append_mode) ? "append" : "overwrite",
               (unsigned long)read_length,
               resolved_path);
@@ -1219,39 +1219,39 @@ static void prv_uart_handle_write(char *args)
  */
 static void prv_uart_handle_mkdir(char *args)
 {
-    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    char resolved_path[UART_SMARTFS_PATH_BUFFER_SIZE];
     char *target_path;
     int err;
 
     target_path = prv_uart_skip_spaces(args);
     if((NULL == target_path) || ('\0' == *target_path)){
-        my_printf(DEBUG_USART, "LFS: mkdir missing path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: mkdir missing path\r\n");
         return;
     }
 
     prv_uart_rstrip_spaces(target_path);
     if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
-        my_printf(DEBUG_USART, "LFS: mkdir bad path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: mkdir bad path\r\n");
         return;
     }
 
-    err = lfs_storage_mkdir(resolved_path);
-    if(LFS_ERR_EXIST == err){
-        my_printf(DEBUG_USART, "LFS: mkdir exists %s\r\n", resolved_path);
+    err = smart_storage_mkdir(resolved_path);
+    if(SMART_STORAGE_ERR_EXIST == err){
+        my_printf(DEBUG_USART, "SMARTFS: mkdir exists %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_ERR_NOENT == err){
-        my_printf(DEBUG_USART, "LFS: mkdir parent missing %s\r\n", resolved_path);
+    if(SMART_STORAGE_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "SMARTFS: mkdir parent missing %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("mkdir", err);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("mkdir", err);
         return;
     }
 
-    my_printf(DEBUG_USART, "LFS: MKDIR OK path=%s\r\n", resolved_path);
+    my_printf(DEBUG_USART, "SMARTFS: MKDIR OK path=%s\r\n", resolved_path);
 }
 
 /*
@@ -1264,39 +1264,39 @@ static void prv_uart_handle_mkdir(char *args)
  */
 static void prv_uart_handle_touch(char *args)
 {
-    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    char resolved_path[UART_SMARTFS_PATH_BUFFER_SIZE];
     char *target_path;
     int err;
 
     target_path = prv_uart_skip_spaces(args);
     if((NULL == target_path) || ('\0' == *target_path)){
-        my_printf(DEBUG_USART, "LFS: touch missing path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: touch missing path\r\n");
         return;
     }
 
     prv_uart_rstrip_spaces(target_path);
     if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
-        my_printf(DEBUG_USART, "LFS: touch bad path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: touch bad path\r\n");
         return;
     }
 
-    err = lfs_storage_touch_file(resolved_path);
-    if(LFS_ERR_NOENT == err){
-        my_printf(DEBUG_USART, "LFS: touch parent missing %s\r\n", resolved_path);
+    err = smart_storage_touch_file(resolved_path);
+    if(SMART_STORAGE_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "SMARTFS: touch parent missing %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_ERR_ISDIR == err){
-        my_printf(DEBUG_USART, "LFS: touch is dir %s\r\n", resolved_path);
+    if(SMART_STORAGE_ERR_ISDIR == err){
+        my_printf(DEBUG_USART, "SMARTFS: touch is dir %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("touch", err);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("touch", err);
         return;
     }
 
-    my_printf(DEBUG_USART, "LFS: TOUCH OK path=%s\r\n", resolved_path);
+    my_printf(DEBUG_USART, "SMARTFS: TOUCH OK path=%s\r\n", resolved_path);
 }
 
 /*
@@ -1309,49 +1309,49 @@ static void prv_uart_handle_touch(char *args)
  */
 static void prv_uart_handle_rm(char *args)
 {
-    char resolved_path[UART_LFS_PATH_BUFFER_SIZE];
+    char resolved_path[UART_SMARTFS_PATH_BUFFER_SIZE];
     char *target_path;
     int err;
 
     target_path = prv_uart_skip_spaces(args);
     if((NULL == target_path) || ('\0' == *target_path)){
-        my_printf(DEBUG_USART, "LFS: rm missing path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: rm missing path\r\n");
         return;
     }
 
     prv_uart_rstrip_spaces(target_path);
     if(!prv_uart_resolve_path(target_path, resolved_path, sizeof(resolved_path))){
-        my_printf(DEBUG_USART, "LFS: rm bad path\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: rm bad path\r\n");
         return;
     }
 
     if(0 == strcmp(resolved_path, "/")){
-        my_printf(DEBUG_USART, "LFS: rm reject root /\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: rm reject root /\r\n");
         return;
     }
 
-    err = lfs_storage_remove_path(resolved_path);
-    if(LFS_ERR_NOENT == err){
-        my_printf(DEBUG_USART, "LFS: rm no entry %s\r\n", resolved_path);
+    err = smart_storage_remove_path(resolved_path);
+    if(SMART_STORAGE_ERR_NOENT == err){
+        my_printf(DEBUG_USART, "SMARTFS: rm no entry %s\r\n", resolved_path);
         return;
     }
 
-    if(LFS_ERR_INVAL == err){
-        my_printf(DEBUG_USART, "LFS: rm bad path\r\n");
+    if(SMART_STORAGE_ERR_INVAL == err){
+        my_printf(DEBUG_USART, "SMARTFS: rm bad path\r\n");
         return;
     }
 
-    if(LFS_ERR_OK != err){
-        prv_uart_report_lfs_error("rm", err);
+    if(SMART_STORAGE_ERR_OK != err){
+        prv_uart_report_smartfs_error("rm", err);
         return;
     }
 
-    my_printf(DEBUG_USART, "LFS: RM OK path=%s\r\n", resolved_path);
+    my_printf(DEBUG_USART, "SMARTFS: RM OK path=%s\r\n", resolved_path);
 }
 
 /*
  * 函数作用：
- *   对一帧 USART0 文本命令做解析，并分发到对应的 LittleFS 或 RTC 操作。
+ *   对一帧 USART0 文本命令做解析，并分发到对应的 SMARTFS 或 RTC 操作。
  * 主要流程：
  *   1. 去掉命令尾部回车换行，得到纯命令字符串。
  *   2. 识别 `help/gettime/settime/pwd/ls/cd/cat/write/mkdir/touch/rm/stat/df` 等命令。
@@ -1367,18 +1367,18 @@ static void prv_uart_process_command(uint8_t *command_buffer, uint16_t command_l
     uart_shell_command_t parsed;
 
     if((NULL == command_buffer) || (0U == command_length)){
-        my_printf(DEBUG_USART, "LFS: empty command\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: empty command\r\n");
         return;
     }
 
     command_length = prv_uart_trim_command(command_buffer, command_length);
     if(0U == command_length){
-        my_printf(DEBUG_USART, "LFS: empty command\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: empty command\r\n");
         return;
     }
 
     if(!prv_uart_parse_command((char *)command_buffer, &parsed)){
-        my_printf(DEBUG_USART, "LFS: empty command\r\n");
+        my_printf(DEBUG_USART, "SMARTFS: empty command\r\n");
         return;
     }
 
@@ -1447,7 +1447,7 @@ static void prv_uart_process_command(uint8_t *command_buffer, uint16_t command_l
         return;
     }
 
-    my_printf(DEBUG_USART, "LFS: unknown command\r\n");
+    my_printf(DEBUG_USART, "SMARTFS: unknown command\r\n");
     prv_uart_send_help();
 }
 

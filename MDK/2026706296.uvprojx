@@ -630,19 +630,9 @@
               <FilePath>..\USER\Component\gd25qxx\gd25qxx.c</FilePath>
             </File>
             <File>
-              <FileName>lfs.c</FileName>
+              <FileName>smartfs_port.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\USER\Component\gd25qxx\lfs.c</FilePath>
-            </File>
-            <File>
-              <FileName>lfs_port.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\USER\Component\gd25qxx\lfs_port.c</FilePath>
-            </File>
-            <File>
-              <FileName>lfs_util.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\USER\Component\gd25qxx\lfs_util.c</FilePath>
+              <FilePath>..\USER\Component\gd25qxx\smartfs_port.c</FilePath>
             </File>
           </Files>
         </Group>
