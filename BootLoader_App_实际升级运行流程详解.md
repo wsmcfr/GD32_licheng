@@ -245,9 +245,9 @@ App 侧 OTA 已拆成两个层次：
 
 | 文件 | 作用 |
 |---|---|
-| [USER/App/uart_ota_app.c](D:/GD32/2026706296/USER/App/uart_ota_app.c:1) | 负责 RS485/USART1 START/DATA/END 分包协议、ACK、会话状态和复位交接。 |
-| [USER/Driver/bootloader_port.c](D:/GD32/2026706296/USER/Driver/bootloader_port.c:1) | 负责下载缓存区擦写、固件向量表校验、CRC32、参数区回写和软件复位。 |
-| [USER/gd32f4xx_it.c](D:/GD32/2026706296/USER/gd32f4xx_it.c:223) | 负责 USART1 IDLE 中断，把 DMA 收到的一帧原始数据移交给 OTA 任务。 |
+| [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:1) | 负责 RS485/USART1 START/DATA/END 分包协议、ACK、会话状态和复位交接。 |
+| [HardWare/BOOTLOADER/bootloader_port.c](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:1) | 负责下载缓存区擦写、固件向量表校验、CRC32、参数区回写和软件复位。 |
+| [User/gd32f4xx_it.c](D:/GD32/2026706296/User/gd32f4xx_it.c:223) | 负责 USART1 IDLE 中断，把 DMA 收到的一帧原始数据移交给 OTA 任务。 |
 
 ### 4.1 App 接收上位机的完整链路
 
@@ -268,11 +268,11 @@ App 侧 OTA 已拆成两个层次：
 
 | 阶段 | 关键代码 | 说明 |
 |---|---|---|
-| 初始化 USART1/RS485 | [bsp_usart.c:172](D:/GD32/2026706296/USER/Driver/bsp_usart.c:172) | 配置 USART1、DMA 接收、RS485 方向脚、IDLE 中断。 |
-| 中断接收一帧 | [gd32f4xx_it.c:223](D:/GD32/2026706296/USER/gd32f4xx_it.c:223) | USART1 IDLE 后暂停 DMA，计算本帧长度，复制到 OTA 共享缓冲。 |
-| 任务取帧 | [uart_ota_app.c:250](D:/GD32/2026706296/USER/App/uart_ota_app.c:250) | 在临界区复制共享缓冲到任务私有缓冲，并清接收标志。 |
-| 协议分发 | [uart_ota_app.c:547](D:/GD32/2026706296/USER/App/uart_ota_app.c:547) | 先检查 `magic=0xA55A5AA5`，再按帧类型分发到 START/DATA/END。 |
-| 周期任务 | [uart_ota_app.c:621](D:/GD32/2026706296/USER/App/uart_ota_app.c:621) | 每 5ms 左右处理一次 OTA 帧，成功 END 后延时并软件复位。 |
+| 初始化 USART1/RS485 | [bsp_usart.c:172](D:/GD32/2026706296/HardWare/USART/bsp_usart.c:172) | 配置 USART1、DMA 接收、RS485 方向脚、IDLE 中断。 |
+| 中断接收一帧 | [gd32f4xx_it.c:223](D:/GD32/2026706296/User/gd32f4xx_it.c:223) | USART1 IDLE 后暂停 DMA，计算本帧长度，复制到 OTA 共享缓冲。 |
+| 任务取帧 | [uart_ota_app.c:250](D:/GD32/2026706296/Function/uart_ota_app.c:250) | 在临界区复制共享缓冲到任务私有缓冲，并清接收标志。 |
+| 协议分发 | [uart_ota_app.c:547](D:/GD32/2026706296/Function/uart_ota_app.c:547) | 先检查 `magic=0xA55A5AA5`，再按帧类型分发到 START/DATA/END。 |
+| 周期任务 | [uart_ota_app.c:621](D:/GD32/2026706296/Function/uart_ota_app.c:621) | 每 5ms 左右处理一次 OTA 帧，成功 END 后延时并软件复位。 |
 
 USART1 中断只做“搬运和置标志”，不会在中断里擦 Flash、写 Flash 或解析协议。这样做是为了避免 ISR 执行时间过长，影响后续串口接收。
 
@@ -374,7 +374,7 @@ END 成功
 ### 4.3 START 阶段
 
 入口函数：`prv_uart_ota_process_start()`  
-位置：[uart_ota_app.c:313](D:/GD32/2026706296/USER/App/uart_ota_app.c:313)
+位置：[uart_ota_app.c:313](D:/GD32/2026706296/Function/uart_ota_app.c:313)
 
 它做的事：
 
@@ -430,7 +430,7 @@ START ACK 的含义：
 ### 4.4 DATA 阶段
 
 入口函数：`prv_uart_ota_process_data()`  
-位置：[uart_ota_app.c:384](D:/GD32/2026706296/USER/App/uart_ota_app.c:384)
+位置：[uart_ota_app.c:384](D:/GD32/2026706296/Function/uart_ota_app.c:384)
 
 它做的事：
 
@@ -509,7 +509,7 @@ DATA ACK 的含义：
 ### 4.5 END 阶段
 
 入口函数：`prv_uart_ota_process_end()`  
-位置：[uart_ota_app.c:475](D:/GD32/2026706296/USER/App/uart_ota_app.c:475)
+位置：[uart_ota_app.c:475](D:/GD32/2026706296/Function/uart_ota_app.c:475)
 
 它做的事：
 
@@ -596,7 +596,7 @@ END ACK 的含义：
 ## 5. App 端写参数区到底写了什么
 
 关键函数：`bootloader_port_write_upgrade_info()`  
-位置：[bootloader_port.c:461](D:/GD32/2026706296/USER/Driver/bootloader_port.c:461)
+位置：[bootloader_port.c:461](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:461)
 
 它先把整个 `0x0800C000` 开始的 4KB 参数区读到 RAM，然后只改升级相关字段，再整块回写。
 
@@ -637,7 +637,7 @@ END ACK 的含义：
 
 ## 6. App 为什么要复位，而不是自己直接跳新 App
 
-App 在 [uart_ota_app.c:642](D:/GD32/2026706296/USER/App/uart_ota_app.c:642) 收到 `UART_OTA_RESULT_SUCCESS` 后，会延时 50ms，再调用 [bootloader_port_request_upgrade_reset](D:/GD32/2026706296/USER/Driver/bootloader_port.c:535) 触发软件复位。
+App 在 [uart_ota_app.c:642](D:/GD32/2026706296/Function/uart_ota_app.c:642) 收到 `UART_OTA_RESULT_SUCCESS` 后，会延时 50ms，再调用 [bootloader_port_request_upgrade_reset](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:535) 触发软件复位。
 
 原因有三个：
 
@@ -771,8 +771,8 @@ App 侧还有两个关键文件：
 
 | 文件 | 作用 |
 |---|---|
-| [USER/boot_app_config.c](D:/GD32/2026706296/USER/boot_app_config.c:1) | 接管 BootLoader 跳转后的中断/向量表现场 |
-| [USER/App/scheduler.c](D:/GD32/2026706296/USER/App/scheduler.c:68) | 在系统初始化最前面调用接管函数 |
+| [User/boot_app_config.c](D:/GD32/2026706296/User/boot_app_config.c:1) | 接管 BootLoader 跳转后的中断/向量表现场 |
+| [Function/scheduler.c](D:/GD32/2026706296/Function/scheduler.c:68) | 在系统初始化最前面调用接管函数 |
 
 `boot_app_handoff_init()` 会：
 
@@ -804,12 +804,12 @@ BootLoader : jump app vtor:0x0800d000 msp:0x20005818 entry:0x0800d379
 | 调用栈出现 `_sys_open -> freopen -> __rt_lib_init` | App 尚未进入 `main()`，C 库正在初始化标准流 |
 | 脱机运行卡死，调试器连接后点继续可跑 | 调试器接管或吞掉了 semihosting 断点，所以现象与脱机不同 |
 
-当前 App 的修复方式是在 `USER/main.c` 中声明 `__use_no_semihosting`，并提供 `_sys_open()`、`_sys_write()`、`_sys_read()`、`_sys_exit()`、`_ttywrch()`、`fputc()` 等 retarget 桩函数。这样 C 库启动阶段只打开固件内部的标准流，不再访问调试器主机文件系统。
+当前 App 的修复方式是在 `User/main.c` 中声明 `__use_no_semihosting`，并提供 `_sys_open()`、`_sys_write()`、`_sys_read()`、`_sys_exit()`、`_ttywrch()`、`fputc()` 等 retarget 桩函数。这样 C 库启动阶段只打开固件内部的标准流，不再访问调试器主机文件系统。
 
 | 验证项 | 正确结果 |
 |---|---|
-| Keil 编译 | `MDK/output/Project.build_log.htm` 显示 `0 Error(s)` |
-| map 符号 | `MDK/Listings/Project.map` 中 `_sys_open/_sys_write/_sys_exit/_ttywrch` 来自 `main.o` |
+| Keil 编译 | `project/output/Project.build_log.htm` 显示 `0 Error(s)` |
+| map 符号 | `project/Listings/Project.map` 中 `_sys_open/_sys_write/_sys_exit/_ttywrch` 来自 `main.o` |
 | 脱机复位 | `jump app` 后继续打印 `BOOT: handoff start`、`BOOT: start` 和后续外设初始化日志 |
 
 ---
@@ -832,15 +832,15 @@ BootLoader : jump app vtor:0x0800d000 msp:0x20005818 entry:0x0800d379
 
 | 顺序 | 文件 | 看什么 |
 |---|---|---|
-| 1 | [USER/Driver/bsp_usart.c](D:/GD32/2026706296/USER/Driver/bsp_usart.c:172) | USART1/RS485 和 DMA 接收链路如何初始化 |
-| 2 | [USER/gd32f4xx_it.c](D:/GD32/2026706296/USER/gd32f4xx_it.c:223) | USART1 IDLE 中断如何把一帧数据移交给 OTA 任务 |
-| 3 | [USER/App/uart_ota_app.c](D:/GD32/2026706296/USER/App/uart_ota_app.c:621) | `uart_ota_task()` 如何取帧、解析协议、处理结果 |
-| 4 | [USER/App/uart_ota_app.c](D:/GD32/2026706296/USER/App/uart_ota_app.c:313) | App 如何处理 START/DATA/END |
-| 5 | [USER/Driver/bootloader_port.c](D:/GD32/2026706296/USER/Driver/bootloader_port.c:461) | App 如何写参数区通知 BootLoader |
+| 1 | [HardWare/USART/bsp_usart.c](D:/GD32/2026706296/HardWare/USART/bsp_usart.c:172) | USART1/RS485 和 DMA 接收链路如何初始化 |
+| 2 | [User/gd32f4xx_it.c](D:/GD32/2026706296/User/gd32f4xx_it.c:223) | USART1 IDLE 中断如何把一帧数据移交给 OTA 任务 |
+| 3 | [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:621) | `uart_ota_task()` 如何取帧、解析协议、处理结果 |
+| 4 | [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:313) | App 如何处理 START/DATA/END |
+| 5 | [HardWare/BOOTLOADER/bootloader_port.c](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:461) | App 如何写参数区通知 BootLoader |
 | 6 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:137) | BootLoader 如何决定是否搬运 |
 | 7 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:398) | BootLoader 如何真正搬运 |
 | 8 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:578) | BootLoader 如何跳新 App |
-| 9 | [USER/boot_app_config.c](D:/GD32/2026706296/USER/boot_app_config.c:1) | 新 App 如何接管现场 |
+| 9 | [User/boot_app_config.c](D:/GD32/2026706296/User/boot_app_config.c:1) | 新 App 如何接管现场 |
 
 ---
 

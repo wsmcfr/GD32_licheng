@@ -9,10 +9,11 @@
 In this repository, the Trellis `backend` layer does **not** mean a web server.
 It maps to hardware-near firmware code:
 
-- `USER/Driver/` board-support and peripheral resource ownership
-- `USER/Component/` reusable device and protocol implementations
-- `USER/gd32f4xx_it.c` interrupt handlers
-- `USER/systick.c`, `USER/main.c`, and shared infrastructure code
+- `HardWare/` board-support, peripheral resource ownership, and reusable device drivers
+- `Library/` vendor standard peripheral library and third-party middleware such as FatFs
+- `User/gd32f4xx_it.c` interrupt handlers
+- `User/systick.c`, `User/main.c`, and shared runtime infrastructure code
+- `HeaderFiles/system_all.h` shared include aggregation
 
 ---
 
@@ -56,11 +57,11 @@ It maps to hardware-near firmware code:
 
 ## Anchor Examples
 
-- `USER/system_all.h`: shared include aggregation and layer ordering
-- `USER/Driver/bsp_usart.c`: typical peripheral/DMA/IRQ initialization style
-- `USER/App/sd_app.c`: storage status checking, logging, and compatibility wrappers
-- `USER/gd32f4xx_it.c`: ISR structure and fail-stop handlers
-- `USER/App/uart_ota_app.c`: RS485/USART1 OTA packet parsing and BootLoader parameter handoff
+- `HeaderFiles/system_all.h`: shared include aggregation and layer ordering
+- `HardWare/USART/bsp_usart.c`: typical peripheral/DMA/IRQ initialization style
+- `Function/sd_app.c`: storage status checking, logging, and compatibility wrappers
+- `User/gd32f4xx_it.c`: ISR structure and fail-stop handlers
+- `Function/uart_ota_app.c`: RS485/USART1 OTA packet parsing and BootLoader parameter handoff
 - `tools/make_uart_ota_packet.py`: PC-side `.uota` packet generator
 
 ---

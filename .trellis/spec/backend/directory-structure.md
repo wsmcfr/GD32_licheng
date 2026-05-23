@@ -14,36 +14,48 @@ The main rule is: **hardware ownership stays low, app behavior stays high**.
 ## Directory Layout
 
 ```text
-USER/
+User/
 ├── main.c / main.h                # Program entry and C library retarget
-├── systick.c / systick.h          # Millisecond tick and blocking delay
+├── systick.c / systick.h          # SysTick/DWT timebase and blocking delay
 ├── gd32f4xx_it.c / gd32f4xx_it.h  # Interrupt service routines
-├── system_all.h                   # Shared aggregation header
-├── Driver/
-│   ├── bsp_led.c/h
-│   ├── bsp_key.c/h
-│   ├── bsp_oled.c/h
-│   ├── bsp_storage.c/h
-│   ├── bsp_usart.c/h
-│   ├── bsp_analog.c/h
-│   ├── bsp_rtc.c/h
-│   └── bsp_power.c/h
-├── Component/
-│   ├── oled/
-│   ├── gd25qxx/
-│   ├── gd30ad3344/
-│   ├── sdio/
-│   ├── fatfs/
-│   └── ebtn/
-└── App/
-    ├── scheduler.c/h
-    ├── led_app.c/h
-    ├── btn_app.c/h
-    ├── oled_app.c/h
-    ├── usart_app.c/h
-    ├── adc_app.c/h
-    ├── rtc_app.c/h
-    └── sd_app.c/h
+├── gd32f4xx_libopt.h              # GD32 standard peripheral library option header
+└── boot_app_config.c / .h         # BootLoader App address and handoff recovery
+
+Function/
+├── scheduler.c / scheduler.h      # Current cooperative scheduler and startup sequence
+├── led_app.c / led_app.h
+├── btn_app.c / btn_app.h
+├── oled_app.c / oled_app.h
+├── usart_app.c / usart_app.h
+├── uart_ota_app.c / uart_ota_app.h
+├── adc_app.c / adc_app.h
+├── rtc_app.c / rtc_app.h
+└── sd_app.c / sd_app.h
+
+HardWare/
+├── LED/
+├── KEY/
+├── USART/
+├── OLED/
+├── STORAGE/
+├── ANALOG/
+├── RTC/
+├── POWER/
+├── BOOTLOADER/
+├── GD25QXX/
+├── GD30AD3344/
+└── SDIO/
+
+HeaderFiles/
+└── system_all.h                   # Shared aggregation header
+
+Library/
+├── GD32F4xx_standard_peripheral/  # Vendor standard peripheral library
+└── Third_Party/fat_fs/            # FatFs headers and sources
+
+CMSIS/                             # ARM CMSIS core and GD32 device files
+Startup/                           # Keil startup assembly
+project/                           # Keil project, RTE, Objects, output, Listings
 ```
 
 ---
@@ -52,7 +64,7 @@ USER/
 
 ### Driver Layer
 
-Use `USER/Driver/` for board-specific resource ownership:
+Use `HardWare/` for board-specific resource ownership:
 
 - pin definitions
 - DMA channel mapping
@@ -62,28 +74,37 @@ Use `USER/Driver/` for board-specific resource ownership:
 
 Example:
 
-- `USER/Driver/bsp_usart.c` owns USART pin mapping, DMA setup, and IDLE interrupt enable
-- `USER/Driver/bsp_power.c` owns deep-sleep resource shutdown and wakeup re-init order
+- `HardWare/USART/bsp_usart.c` owns USART pin mapping, DMA setup, and IDLE interrupt enable
+- `HardWare/POWER/bsp_power.c` owns deep-sleep resource shutdown and wakeup re-init order
 
 ### Component Layer
 
-Use `USER/Component/` for reusable device or protocol logic:
+Use `HardWare/<device>/` for reusable device or protocol logic:
 
-- SSD1306 display primitives in `USER/Component/oled/`
-- GD25Qxx SPI Flash operations in `USER/Component/gd25qxx/`
-- GD30AD3344 command/data protocol in `USER/Component/gd30ad3344/`
-- third-party libraries or storage ports such as FatFs, SMARTFS, retained LittleFS source copies, and `ebtn`
+- SSD1306 display primitives in `HardWare/OLED/`
+- GD25Qxx SPI Flash and SMARTFS operations in `HardWare/GD25QXX/`
+- GD30AD3344 command/data protocol in `HardWare/GD30AD3344/`
+- SDIO card access in `HardWare/SDIO/`
+- third-party libraries such as FatFs in `Library/Third_Party/fat_fs/`
 
 Component code may depend on driver-provided buses, but it should not become the place that owns board-level pin maps.
+
+### Function Layer
+
+Use `Function/` for scheduled application behavior and user-visible policy:
+
+- keep the existing `Function/scheduler.c` cooperative scheduler as the boot and task dispatch framework
+- place new `*_app.c/.h` task modules here
+- do not switch this project to the template `Function.c` / `UsrFunction()` loop style unless the scheduler framework is intentionally replaced
 
 ### Infrastructure Files
 
 Keep global runtime infrastructure outside feature folders:
 
-- `USER/main.c` contains the entry loop and `printf` retarget
-- `USER/systick.c` contains the time base and blocking delay implementation
-- `USER/gd32f4xx_it.c` contains ISR entry points
-- `USER/system_all.h` centralizes shared includes and layer ordering
+- `User/main.c` contains the entry loop and `printf` retarget
+- `User/systick.c` contains the project-owned SysTick/DWT timebase, blocking delay implementation, and clock-change/deep-sleep reconfiguration hooks
+- `User/gd32f4xx_it.c` contains ISR entry points
+- `HeaderFiles/system_all.h` centralizes shared includes and layer ordering
 
 ---
 
@@ -100,7 +121,7 @@ Header conventions:
 - Public macros, `extern` buffers, and public function declarations belong in the matching `.h`
 - Driver headers that include `system_all.h` while avoiding app-layer cycles use the `SYSTEM_ALL_BASE_ONLY` guard pattern
 
-Example from `USER/Driver/bsp_storage.h`:
+Example from `HardWare/STORAGE/bsp_storage.h`:
 
 ```c
 #define SYSTEM_ALL_BASE_ONLY
@@ -114,10 +135,10 @@ Example from `USER/Driver/bsp_storage.h`:
 
 | File | Why It Is A Good Example |
 |------|--------------------------|
-| `USER/system_all.h` | Shows the real include order: standard headers, common components, drivers, components, then apps |
-| `USER/Driver/bsp_usart.h` | Keeps all USART pin/DMA macros and shared buffers in the public header |
-| `USER/Driver/bsp_power.c` | Groups power-state transitions and wakeup recovery in one ownership unit |
-| `USER/App/scheduler.c` | Keeps app task registration centralized instead of scattering scheduling logic |
+| `HeaderFiles/system_all.h` | Shows the real include order: standard headers, common components, drivers, components, then apps |
+| `HardWare/USART/bsp_usart.h` | Keeps all USART pin/DMA macros and shared buffers in the public header |
+| `HardWare/POWER/bsp_power.c` | Groups power-state transitions and wakeup recovery in one ownership unit |
+| `Function/scheduler.c` | Keeps app task registration centralized instead of scattering scheduling logic |
 
 ### Common Placement Mistakes
 

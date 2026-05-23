@@ -9,7 +9,7 @@
 In this repository, the Trellis `frontend` layer does **not** mean a browser UI.
 It maps to firmware code that directly shapes what the user sees or triggers:
 
-- `USER/App/` scheduled application tasks
+- `Function/` scheduled application tasks and the current `scheduler.c` framework
 - OLED text rendering and display composition
 - button event behavior
 - app-visible state derived from drivers or interrupts
@@ -55,10 +55,10 @@ It maps to firmware code that directly shapes what the user sees or triggers:
 
 ## Anchor Examples
 
-- `USER/App/scheduler.c`: central task registration and startup sequencing
-- `USER/App/oled_app.c`: user-facing text composition
-- `USER/App/btn_app.c`: periodic key polling and action mapping from physical inputs to behavior
-- `USER/App/usart_app.c`: app-level processing of ISR-delivered UART data
+- `Function/scheduler.c`: central task registration and startup sequencing
+- `Function/oled_app.c`: user-facing text composition
+- `Function/btn_app.c`: periodic key polling and action mapping from physical inputs to behavior
+- `Function/usart_app.c`: app-level processing of ISR-delivered UART data
 
 ---
 

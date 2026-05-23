@@ -24,7 +24,7 @@ Put public enums, macros, and `extern` declarations in the matching module heade
 
 Examples:
 
-- `UART_APP_DMA_BUFFER_SIZE` in `USER/App/usart_app.h`
+- `UART_APP_DMA_BUFFER_SIZE` in `Function/usart_app.h`
 - `user_button_t` stays private in `btn_app.c` because it is not cross-module
 - `GD30AD3344_Channel_TypeDef` is public in `gd30ad3344.h`
 

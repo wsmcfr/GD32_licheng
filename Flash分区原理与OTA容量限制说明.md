@@ -246,8 +246,8 @@
 | 文件 | 为什么看它 |
 |---|---|
 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:1) | 里面直接定义了 `BOOT_APP_START_ADDR`、`BOOT_APP_REGION_SIZE`、`APP_DOWNLOAD_ADDR`、`APP_DOWNLOAD_MAX_SIZE` |
-| [USER/App/usart_app.c](D:/GD32/2026706296/USER/App/usart_app.c:1) | App 侧实际检查下载缓存区大小、擦页大小和参数区写法 |
-| [USER/boot_app_config.h](D:/GD32/2026706296/USER/boot_app_config.h:1) | 说明当前 App 链接地址和运行边界 |
+| [Function/usart_app.c](D:/GD32/2026706296/Function/usart_app.c:1) | App 侧实际检查下载缓存区大小、擦页大小和参数区写法 |
+| [User/boot_app_config.h](D:/GD32/2026706296/User/boot_app_config.h:1) | 说明当前 App 链接地址和运行边界 |
 | [BootLoader_APP_接入说明.md](D:/GD32/2026706296/BootLoader_APP_%E6%8E%A5%E5%85%A5%E8%AF%B4%E6%98%8E.md:1) | 当前工程接入说明 |
 | [BootLoader_App_实际升级运行流程详解.md](D:/GD32/2026706296/BootLoader_App_%E5%AE%9E%E9%99%85%E5%8D%87%E7%BA%A7%E8%BF%90%E8%A1%8C%E6%B5%81%E7%A8%8B%E8%AF%A6%E8%A7%A3.md:1) | 当前运行流程与职责边界 |
 

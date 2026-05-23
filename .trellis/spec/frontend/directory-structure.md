@@ -6,7 +6,7 @@
 
 ## Overview
 
-All user-facing firmware behavior lives under `USER/App/`.
+All user-facing firmware behavior lives under `Function/`.
 Each file usually represents one app concern that is either:
 
 - scheduled periodically by `scheduler_run()`
@@ -18,7 +18,7 @@ Each file usually represents one app concern that is either:
 ## Directory Layout
 
 ```text
-USER/App/
+Function/
 ├── scheduler.c / scheduler.h   # Startup sequence and periodic task table
 ├── led_app.c / led_app.h       # LED state presentation
 ├── btn_app.c / btn_app.h       # Key event behavior and deep-sleep trigger
@@ -62,7 +62,7 @@ App modules may read:
 - `rx_flag`
 - RTC state
 
-But pin definitions, DMA channels, SPI mode, and IRQ enables remain below in `Driver/` or `Component/`.
+But pin definitions, DMA channels, SPI mode, and IRQ enables remain below in `HardWare/` or `Library/`.
 
 ---
 
@@ -88,10 +88,10 @@ Task naming examples:
 
 | File | Why It Is A Good Example |
 |------|--------------------------|
-| `USER/App/scheduler.c` | Shows centralized boot and periodic task ownership |
-| `USER/App/btn_app.c` | Maps low-level key state to user-visible actions through periodic polling |
-| `USER/App/oled_app.c` | Keeps display formatting separate from OLED driver primitives |
-| `USER/App/usart_app.c` | Splits ISR capture from app-level string output |
+| `Function/scheduler.c` | Shows centralized boot and periodic task ownership |
+| `Function/btn_app.c` | Maps low-level key state to user-visible actions through periodic polling |
+| `Function/oled_app.c` | Keeps display formatting separate from OLED driver primitives |
+| `Function/usart_app.c` | Splits ISR capture from app-level string output |
 
 ### Common Placement Mistakes
 

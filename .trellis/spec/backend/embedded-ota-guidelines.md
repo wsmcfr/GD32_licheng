@@ -12,9 +12,9 @@ Use this guideline whenever changing:
 
 | Area | Files / Entries |
 |------|-----------------|
-| App OTA parser | `USER/App/uart_ota_app.c`, `USER/App/uart_ota_app.h` |
-| Boot handoff helper | `USER/Driver/bootloader_port.c`, `USER/Driver/bootloader_port.h` |
-| RS485/USART1 DMA handoff | `USER/gd32f4xx_it.c`, `USER/Driver/bsp_usart.h`, `USER/Driver/bsp_usart.c` |
+| App OTA parser | `Function/uart_ota_app.c`, `Function/uart_ota_app.h` |
+| Boot handoff helper | `HardWare/BOOTLOADER/bootloader_port.c`, `HardWare/BOOTLOADER/bootloader_port.h` |
+| RS485/USART1 DMA handoff | `User/gd32f4xx_it.c`, `HardWare/USART/bsp_usart.h`, `HardWare/USART/bsp_usart.c` |
 | PC OTA tool | `tools/make_uart_ota_packet.py`, `tools/test_uart_ota_packet.py` |
 | Boot handoff | BootLoader/App Flash partition constants, parameter layout, or CRC logic |
 
@@ -24,9 +24,9 @@ This is a cross-layer contract. The PC-side sender, App-side receiver, internal 
 
 | Boundary | Signature / Entry | Contract |
 |----------|-------------------|----------|
-| Stream info | `python tools\make_uart_ota_packet.py --mode stream-info --version <u32> --chunk-size 512` | Reads `MDK/output/Project.bin`, prints size, CRC32, version, chunk size, and chunk count |
+| Stream info | `python tools\make_uart_ota_packet.py --mode stream-info --version <u32> --chunk-size 512` | Reads `project/output/Project.bin`, prints size, CRC32, version, chunk size, and chunk count |
 | Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Sends START/DATA/END frames at default `460800` baud, prints ACK progress, and waits for ACK after every frame |
-| Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `MDK/output/Project.uota` for offline inspection only; current low-RAM RS485 OTA must not send it directly |
+| Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `project/output/Project.uota` for offline inspection only; current low-RAM RS485 OTA must not send it directly |
 | App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one streaming frame; only returns success after download-buffer CRC and parameter writes pass |
 | ISR handoff | `USART1_IRQHandler(void)` | Copies one RS485 IDLE DMA frame into `uart_ota_dma_buffer`, records `uart_ota_dma_length`, and sets `uart_ota_rx_flag` |
 | Task polling | `uart_ota_task(void)` | Handles OTA frames on RS485/USART1; `uart_task(void)` is reserved for the USART0-side SMARTFS shell command path |
@@ -59,8 +59,8 @@ App handoff C runtime contract:
 
 | Requirement | Evidence | Reason |
 |-------------|----------|--------|
-| App must define `__use_no_semihosting` when built by ARMCLANG / AC6 | `MDK/Listings/Project.map` contains `__use_no_semihosting` | Prevent Arm C library semihosting SWI/BKPT paths from being used after BootLoader jump |
-| App must retarget `_sys_open`, `_sys_write`, `_sys_read`, `_sys_exit`, `_ttywrch`, and `fputc` in `USER/main.c` | Map symbols resolve to `main.o` | Standard stream initialization must not call debugger-hosted file services |
+| App must define `__use_no_semihosting` when built by ARMCLANG / AC6 | `project/Listings/Project.map` contains `__use_no_semihosting` | Prevent Arm C library semihosting SWI/BKPT paths from being used after BootLoader jump |
+| App must retarget `_sys_open`, `_sys_write`, `_sys_read`, `_sys_exit`, `_ttywrch`, and `fputc` in `User/main.c` | Map symbols resolve to `main.o` | Standard stream initialization must not call debugger-hosted file services |
 | Retarget output must tolerate USART0 not being initialized yet | `_sys_write()` and `fputc()` route through a readiness check | C library initialization runs before `system_init()`, so early writes must not block on an unconfigured UART |
 | Debugger evidence `BKPT 0xAB` after `jump app` means semihosting until proven otherwise | Call stack commonly includes `_sys_open`, `freopen`, or `__rt_lib_init` | This failure appears as "BootLoader jumped but App is stuck" during standalone power-up |
 
@@ -128,10 +128,10 @@ Before committing OTA-related changes, run:
 python -m unittest tools.test_uart_ota_packet
 python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000003 --chunk-size 512
 python tools\make_uart_ota_packet.py --version 0x00000003
-& 'E:\Keil_v5\UV4\UV4.exe' -b 'MDK\2026706296.uvprojx' -j0
-Select-String -Path 'MDK\output\Project.build_log.htm' -Pattern 'Program Size|Error\(s\)|Warning\(s\)'
-& 'E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe' --text -z 'MDK\output\Project.axf'
-Select-String -Path 'MDK\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'
+& 'E:\Keil_v5\UV4\UV4.exe' -b 'project\2026706296.uvprojx' -j0
+Select-String -Path 'project\output\Project.build_log.htm' -Pattern 'Program Size|Error\(s\)|Warning\(s\)'
+& 'E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe' --text -z 'project\output\Project.axf'
+Select-String -Path 'project\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'
 ```
 
 Required assertions:
@@ -154,7 +154,7 @@ new image was actually installed.
 
 | Step | Command / Action | Required Evidence |
 |------|------------------|-------------------|
-| 1 | Build the Keil target | Build log reports `0 Error(s)` and `MDK/output/Project.bin` is non-empty |
+| 1 | Build the Keil target | Build log reports `0 Error(s)` and `project/output/Project.bin` is non-empty |
 | 2 | `python tools\make_uart_ota_packet.py --mode stream-info --version <new_version> --chunk-size 512` | Output shows firmware size, CRC, version, chunk size, and chunk count |
 | 3 | `python tools\make_uart_ota_packet.py --mode send --port <COMx> --version <new_version> --chunk-size 512` | PC prints stream metadata, `START/DATA/END acked` progress, then `sent stream frames=<n>` |
 | 4 | Watch `RS485/USART1 (PD5/PD6 + PE8 direction)` during a fresh boot | App prints one-shot `OTA485: ready`, proving the OTA TX path, direction control, and port selection are correct |
@@ -194,7 +194,7 @@ If the PC times out waiting for START ACK, apply this decision tree first:
 
 ```powershell
 # Raw firmware has no streaming frame header, so App will not enter OTA mode.
-send-file MDK\output\Project.bin
+send-file project\output\Project.bin
 ```
 
 #### Wrong
@@ -202,7 +202,7 @@ send-file MDK\output\Project.bin
 ```powershell
 # Legacy full package can still be generated, but direct sending is not the current low-RAM OTA flow.
 python tools\make_uart_ota_packet.py --version 0x00000002
-send-file MDK\output\Project.uota
+send-file project\output\Project.uota
 ```
 
 #### Correct
@@ -275,7 +275,7 @@ Root-cause category for the May 2026 incident:
 | BootLoader final handoff log | `BootLoader : jump app vtor:<addr> msp:<addr> entry:<addr>` | This log means BootLoader has reached the last pre-jump checkpoint |
 | App first log | `BOOT: handoff start` | This proves execution reached App code after C runtime startup |
 | Debugger trap | `BKPT 0xAB` with `_sys_open -> freopen -> __rt_lib_init` | Treat as ARM semihosting leakage, not as a BootLoader address failure |
-| Link map | `Select-String -Path 'MDK\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'` | Retarget symbols must resolve to `main.o` and `__use_no_semihosting` must exist |
+| Link map | `Select-String -Path 'project\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'` | Retarget symbols must resolve to `main.o` and `__use_no_semihosting` must exist |
 
 ### 3. Contracts
 
@@ -284,7 +284,7 @@ Root-cause category for the May 2026 incident:
 | App vector table | App image starts at `0x0800D000`, with valid SRAM MSP and Thumb Reset_Handler | BootLoader can only jump safely when the first two vector words are valid |
 | BootLoader cleanup | Disable SysTick, clear pending interrupts, set `SCB->VTOR`, set MSP, then branch to App Reset_Handler | App must not inherit active BootLoader interrupt state |
 | App runtime | ARMCLANG builds must provide `__use_no_semihosting` | Prevent C library semihosting calls during `__rt_lib_init` |
-| Retarget stubs | `USER/main.c` owns `_sys_open`, `_sys_write`, `_sys_read`, `_sys_exit`, `_ttywrch`, and `fputc` | Standard streams must be resolved inside firmware, not through debugger services |
+| Retarget stubs | `User/main.c` owns `_sys_open`, `_sys_write`, `_sys_read`, `_sys_exit`, `_ttywrch`, and `fputc` | Standard streams must be resolved inside firmware, not through debugger services |
 | Early UART safety | Retarget write path must drop characters until USART0 is initialized | C runtime can write before `system_init()` configures the UART |
 | App handoff init | `boot_app_handoff_init()` must run before SysTick/peripheral interrupt use | App must reclaim VTOR, pending interrupt state, and global interrupt enable |
 
@@ -296,7 +296,7 @@ Root-cause category for the May 2026 incident:
 | `jump app` log is absent | BootLoader has not reached the handoff point | Debug BootLoader parameter parsing and vector validation |
 | `jump app` log exists, but `BOOT: handoff start` is absent | Failure is after BootLoader's final checkpoint and before App first log | Inspect debugger PC/call stack before editing BootLoader |
 | Debugger stops at `BKPT 0xAB` | Semihosting leakage | Fix/restore App retarget stubs and `__use_no_semihosting` |
-| Map resolves `_sys_open` to a C library object instead of `main.o` | Retarget contract is broken | Rebuild after adding or restoring the stub in `USER/main.c` |
+| Map resolves `_sys_open` to a C library object instead of `main.o` | Retarget contract is broken | Rebuild after adding or restoring the stub in `User/main.c` |
 | App logs `BOOT: handoff start` but then hangs | C runtime handoff is past; next issue is App init order or peripheral driver | Use `BOOT:` stage logs to isolate the failing peripheral |
 
 ### 5. Good / Base / Bad Cases
@@ -313,12 +313,12 @@ Root-cause category for the May 2026 incident:
 ### 6. Tests Required
 
 Run these checks after any change to BootLoader handoff, App startup,
-`USER/main.c`, compiler options, or `printf()` retargeting:
+`User/main.c`, compiler options, or `printf()` retargeting:
 
 ```powershell
-& 'E:\Keil_v5\UV4\UV4.exe' -b 'MDK\2026706296.uvprojx' -j0
-Select-String -Path 'MDK\output\Project.build_log.htm' -Pattern 'Program Size|Error\(s\)|Warning\(s\)'
-Select-String -Path 'MDK\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'
+& 'E:\Keil_v5\UV4\UV4.exe' -b 'project\2026706296.uvprojx' -j0
+Select-String -Path 'project\output\Project.build_log.htm' -Pattern 'Program Size|Error\(s\)|Warning\(s\)'
+Select-String -Path 'project\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'
 ```
 
 Required assertions:
@@ -344,7 +344,7 @@ Required assertions:
 
 ```powershell
 # Verify whether the App image is standalone-safe before changing handoff addresses.
-Select-String -Path 'MDK\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'
+Select-String -Path 'project\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'
 ```
 
 #### Wrong

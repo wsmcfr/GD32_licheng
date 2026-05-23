@@ -42,7 +42,7 @@ When a feature only needs stable edge detection and simple action mapping, keep 
 - a raw state reader
 - a dispatch helper for the derived event
 
-Example from `USER/App/btn_app.c`:
+Example from `Function/btn_app.c`:
 
 ```c
 static uint8_t prv_btn_read_mask(void);
@@ -61,10 +61,10 @@ When data originates from an interrupt:
 
 Reference pair:
 
-- `USER/gd32f4xx_it.c::USART0_IRQHandler()`
-- `USER/App/usart_app.c::uart_task()`
-- `USER/gd32f4xx_it.c::USART1_IRQHandler()`
-- `USER/App/uart_ota_app.c::uart_ota_task()`
+- `User/gd32f4xx_it.c::USART0_IRQHandler()`
+- `Function/usart_app.c::uart_task()`
+- `User/gd32f4xx_it.c::USART1_IRQHandler()`
+- `Function/uart_ota_app.c::uart_ota_task()`
 
 ---
 

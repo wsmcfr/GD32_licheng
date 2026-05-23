@@ -29,7 +29,7 @@ The common pattern is:
 5. close the file
 6. verify the result when the code is a demo or self-test path
 
-Example from `USER/App/sd_app.c`:
+Example from `Function/sd_app.c`:
 
 ```c
 stat = disk_initialize(0);
@@ -41,7 +41,7 @@ f_close(&fdst);
 
 ### SMARTFS Port Workflow
 
-The GD25Q16 port now uses `USER/Component/gd25qxx/smartfs_port.c/.h`.
+The GD25Q16 port now uses `HardWare/GD25QXX/smartfs_port.c/.h`.
 It is a bare-metal SMARTFS-style static metadata implementation tailored for this project, not a direct NuttX VFS import.
 
 The port must keep all low-level runtime state in static storage:
@@ -98,8 +98,8 @@ Runtime SMARTFS shell helpers should keep behavior explicit:
 
 #### 1. Scope / Trigger
 
-- Trigger: editing `USER/App/usart_app.c` shell commands such as `ls`, `stat`, or `rm`.
-- Trigger: editing `USER/Component/gd25qxx/smartfs_port.c` path-info, directory traversal, append, overwrite, delete, or block-map helpers.
+- Trigger: editing `Function/usart_app.c` shell commands such as `ls`, `stat`, or `rm`.
+- Trigger: editing `HardWare/GD25QXX/smartfs_port.c` path-info, directory traversal, append, overwrite, delete, or block-map helpers.
 - Trigger: any change that makes UART shell output depend on recursive directory inspection or storage-helper recursion.
 
 #### 2. Signatures
@@ -248,7 +248,7 @@ When storage format changes are needed:
 - document flash geometry changes in the header macros
 - assume old LittleFS contents are incompatible with the current SMARTFS format unless a migration tool is explicitly implemented
 
-Existing compatibility example in `USER/App/sd_app.c`:
+Existing compatibility example in `Function/sd_app.c`:
 
 ```c
 void sd_lfs_init(void)

@@ -25,7 +25,7 @@ Typical structure:
 3. define any local static state
 4. expose one or two public entry points
 
-Example from `USER/App/btn_app.c`:
+Example from `Function/btn_app.c`:
 
 - private enum for button bit masks
 - module-private static state for scan/debounce history
@@ -99,7 +99,7 @@ The current code already follows a lightweight version of this:
 
 ### Putting formatting logic in low-level drivers
 
-Do not push app strings or UI layout concerns into `USER/Component/oled/`.
+Do not push app strings or UI layout concerns into `HardWare/OLED/`.
 
 ### Exposing private helpers in headers
 

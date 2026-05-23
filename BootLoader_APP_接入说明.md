@@ -68,17 +68,17 @@
 
 | 文件 | 改动 | 作用 |
 |---|---|---|
-| `USER/boot_app_config.h` | 定义 `BOOT_APP_START_ADDRESS = 0x0800D000` | 统一保存 App 起始地址，避免代码和 Keil 配置不一致 |
-| `USER/boot_app_config.c` | 设置 `SCB->VTOR = 0x0800D000` | 让 SysTick、USART、DMA 等中断从 App 自己的向量表取入口 |
-| `USER/boot_app_config.c` | 新增 `boot_app_handoff_init()` | 兼容 BootLoader 跳转前关闭全局中断的现场，避免 App 中断不工作 |
-| `USER/App/scheduler.c` | `system_init()` 开头调用 `boot_app_handoff_init()` | 在 SysTick 和外设中断初始化前完成 App 向量表接管 |
-| `MDK/2026706296.uvprojx` | IROM 改为 `0x0800D000 / 0x5A000` | 让链接器把当前工程放到 App 区 |
-| `MDK/output/Project.sct` | `LR_IROM1 0x0800D000 0x0005A000` | 与 Keil IROM 配置保持一致 |
-| `MDK/2026706296.uvprojx` | 打开 HEX 输出，并在构建后生成 `Project.bin` | `Project.bin` 用于 BootLoader 搬运写入 App 区，`Project.hex` 用于调试/烧录工具 |
-| `USER/main.c` | 提供 `__use_no_semihosting` 和 `_sys_open/_sys_write/_sys_exit/_ttywrch/fputc` retarget | 禁止 AC6 C 库 semihosting，避免脱机运行在 `BKPT 0xAB` 处 HardFault |
-| `USER/App/usart_app.c` | 调整为 `USART0` 文本调试命令和日志输出 | `USART0` 不再解析 OTA 帧，也不再承担 RS485 透传，调试时通过 `gettime/settime/pwd/ls/cd/cat/write [-a]/mkdir/touch/stat/df` 读取 RTC 或操作 LittleFS |
-| `USER/App/uart_ota_app.c` | 新增 `RS485/USART1` START/DATA/END 分包 OTA、CRC 校验、下载缓存区写入、RS485 ACK 方向控制和参数区写入 | App 每收到一个 OTA DATA 帧就写 `0x08067000`，最后写 `0x0800C000` 并复位交给 BootLoader 搬运 |
-| `USER/Driver/bootloader_port.c/.h` | 新增 BootLoader 交接层封装 | 统一管理共享地址、CRC32、向量表校验、下载区擦写、参数区回写和软件复位 |
+| `User/boot_app_config.h` | 定义 `BOOT_APP_START_ADDRESS = 0x0800D000` | 统一保存 App 起始地址，避免代码和 Keil 配置不一致 |
+| `User/boot_app_config.c` | 设置 `SCB->VTOR = 0x0800D000` | 让 SysTick、USART、DMA 等中断从 App 自己的向量表取入口 |
+| `User/boot_app_config.c` | 新增 `boot_app_handoff_init()` | 兼容 BootLoader 跳转前关闭全局中断的现场，避免 App 中断不工作 |
+| `Function/scheduler.c` | `system_init()` 开头调用 `boot_app_handoff_init()` | 在 SysTick 和外设中断初始化前完成 App 向量表接管 |
+| `project/2026706296.uvprojx` | IROM 改为 `0x0800D000 / 0x5A000` | 让链接器把当前工程放到 App 区 |
+| `project/output/Project.sct` | `LR_IROM1 0x0800D000 0x0005A000` | 与 Keil IROM 配置保持一致 |
+| `project/2026706296.uvprojx` | 打开 HEX 输出，并在构建后生成 `Project.bin` | `Project.bin` 用于 BootLoader 搬运写入 App 区，`Project.hex` 用于调试/烧录工具 |
+| `User/main.c` | 提供 `__use_no_semihosting` 和 `_sys_open/_sys_write/_sys_exit/_ttywrch/fputc` retarget | 禁止 AC6 C 库 semihosting，避免脱机运行在 `BKPT 0xAB` 处 HardFault |
+| `Function/usart_app.c` | 调整为 `USART0` 文本调试命令和日志输出 | `USART0` 不再解析 OTA 帧，也不再承担 RS485 透传，调试时通过 `gettime/settime/pwd/ls/cd/cat/write [-a]/mkdir/touch/stat/df` 读取 RTC 或操作 LittleFS |
+| `Function/uart_ota_app.c` | 新增 `RS485/USART1` START/DATA/END 分包 OTA、CRC 校验、下载缓存区写入、RS485 ACK 方向控制和参数区写入 | App 每收到一个 OTA DATA 帧就写 `0x08067000`，最后写 `0x0800C000` 并复位交给 BootLoader 搬运 |
+| `HardWare/BOOTLOADER/bootloader_port.c/.h` | 新增 BootLoader 交接层封装 | 统一管理共享地址、CRC32、向量表校验、下载区擦写、参数区回写和软件复位 |
 | `tools/make_uart_ota_packet.py` | 根据 `Project.bin` 生成旧 `.uota` 包，或通过 `--mode send` 按 ACK 分包发送 | 推荐使用 `--mode send --port COMx --baudrate 460800`，避免 App 侧占用整包级 RAM 缓冲，并可观察发送进度 |
 
 ## 4. 官方 BootLoader 的实际工作流程
@@ -100,16 +100,16 @@
 | 首次烧录 BootLoader + App | 当前工程已具备 App 镜像条件 | 先烧 BootLoader 到 `0x08000000`，再把当前 App 写到 `0x0800D000` |
 | 运行中升级 App | 当前工程已支持 RS485/USART1 ACK 分包升级 | App 通过 `RS485/USART1` 接收 START/DATA/END 帧，边收边写 `0x08067000`，最后写参数区并复位交给 BootLoader 搬运 |
 
-也就是说，官方 Two Stage 例程里，BootLoader 本身不是直接串口收文件的程序；串口接收升级包的逻辑属于 App 侧。本工程现在由 `USER/App/uart_ota_app.c` 负责 `RS485/USART1` 分包 OTA 接收，由 `USER/App/usart_app.c` 负责 `USART0` LittleFS 调试命令。
+也就是说，官方 Two Stage 例程里，BootLoader 本身不是直接串口收文件的程序；串口接收升级包的逻辑属于 App 侧。本工程现在由 `Function/uart_ota_app.c` 负责 `RS485/USART1` 分包 OTA 接收，由 `Function/usart_app.c` 负责 `USART0` LittleFS 调试命令。
 
 ## 6. 当前工程输出文件怎么用
 
 | 输出文件 | 用途 |
 |---|---|
-| `MDK/output/Project.axf` | Keil 调试用 ELF/AXF 文件 |
-| `MDK/output/Project.hex` | 带地址信息，可用于烧录工具直接写到 `0x0800D000` |
-| `MDK/output/Project.bin` | 纯二进制 App 镜像，用于分包 OTA 发送，不要直接通过串口助手发送 |
-| `MDK/output/Project.uota` | 旧完整包格式，仍可生成用于离线检查；低 RAM 流式 OTA 不再推荐直接发送该文件 |
+| `project/output/Project.axf` | Keil 调试用 ELF/AXF 文件 |
+| `project/output/Project.hex` | 带地址信息，可用于烧录工具直接写到 `0x0800D000` |
+| `project/output/Project.bin` | 纯二进制 App 镜像，用于分包 OTA 发送，不要直接通过串口助手发送 |
+| `project/output/Project.uota` | 旧完整包格式，仍可生成用于离线检查；低 RAM 流式 OTA 不再推荐直接发送该文件 |
 
 如果通过当前 App 侧 `RS485/USART1` 在线升级，应该使用 `tools/make_uart_ota_packet.py --mode send --port COMx --baudrate 460800` 发送分包流，不要直接发送 `Project.bin`、`Project.hex` 或旧完整包。
 
@@ -117,7 +117,7 @@
 
 | 步骤 | 操作 | 说明 |
 |---|---|---|
-| 1 | 在 Keil 中重新编译当前 App 工程 | 构建后生成 `MDK/output/Project.bin` |
+| 1 | 在 Keil 中重新编译当前 App 工程 | 构建后生成 `project/output/Project.bin` |
 | 2 | 打开 PowerShell 并进入工程根目录 | 路径为 `D:\GD32\2026706296` |
 | 3 | 执行 `python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512` | 先检查当前 `Project.bin` 的大小、CRC 和分包数量；后续每次升级都要递增 `--version` |
 | 4 | 执行 `python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512` | 上位机通过 `RS485/USART1` 所在串口每发一帧等待 App ACK；`COM29` 按实际串口号替换 |
@@ -145,7 +145,7 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 发送时的典型输出如下：
 
 ```text
-send stream MDK\output\Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=RS485/USART1, port=COM29, baudrate=460800
+send stream project\output\Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=RS485/USART1, port=COM29, baudrate=460800
 START acked: chunk=0/66, frames=1/68, bytes=0/33536 (0%)
 DATA acked: chunk=1/66, frames=2/68, bytes=512/33536 (1%)
 ...
@@ -221,9 +221,9 @@ sent stream frames=68, channel=RS485/USART1, port=COM29, baudrate=460800
 |---|---|---|
 | 串口最后一行是 `BootLoader : jump app vtor:0x0800d000 ...` | BootLoader 已经完成跳转前检查 | 看日志中 MSP 和 entry 是否是有效 App 向量表值 |
 | Keil 调试点继续几次后 App 能运行，脱机复位不运行 | App 早期 C 库进入 semihosting | 调试器反汇编若停在 `BKPT 0xAB`，调用栈出现 `_sys_open/freopen/__rt_lib_init`，就是该问题 |
-| 修复后仍不放心 | 查 map 文件符号来源 | `MDK/Listings/Project.map` 中 `_sys_open/_sys_write/_sys_exit/_ttywrch` 应来自 `main.o`，并出现 `__use_no_semihosting` |
+| 修复后仍不放心 | 查 map 文件符号来源 | `project/Listings/Project.map` 中 `_sys_open/_sys_write/_sys_exit/_ttywrch` 应来自 `main.o`，并出现 `__use_no_semihosting` |
 
-该问题不需要修改厂家 `Driver/CMSIS/GD/GD32F4xx/Source/system_gd32f4xx.c`。厂家 `SystemInit()` 仍由 App 的 Reset_Handler 正常调用；App 运行地址和中断接管由链接地址、BootLoader 跳转现场以及 `boot_app_handoff_init()` 共同保证。
+该问题不需要修改厂家 `CMSIS/GD/GD32F4xx/Source/system_gd32f4xx.c`。厂家 `SystemInit()` 仍由 App 的 Reset_Handler 正常调用；App 运行地址和中断接管由链接地址、BootLoader 跳转现场以及 `boot_app_handoff_init()` 共同保证。
 
 ## 10. 当前运行中升级流程
 

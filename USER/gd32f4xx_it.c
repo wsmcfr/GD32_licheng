@@ -292,13 +292,16 @@ void SDIO_IRQHandler(void)
 
 /*
  * 函数作用：
- *   处理 SysTick 中断，递减阻塞延时计数。
+ *   处理 SysTick 中断，推进本地 1ms timebase。
  * 参数说明：
  *   无参数。
  * 返回值说明：
  *   无返回值。
+ * 说明：
+ *   当前工程已经移除外部 SysTick wrapper，SysTick 中断必须直接维护本地 tick，
+ *   否则调度器、delay_ms() 和 OLED 运行时间显示都会停止。
  */
 void SysTick_Handler(void)
 {
-    delay_decrement();
+    systick_tick_inc();
 }

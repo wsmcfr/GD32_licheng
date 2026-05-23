@@ -20,12 +20,12 @@ Error handling is done with a small set of concrete mechanisms:
 
 | Error Surface | Where It Appears | Handling Style |
 |---------------|------------------|----------------|
-| CPU fault handlers | `USER/gd32f4xx_it.c` | Infinite loop for fail-stop debugging |
-| Assertion backend | `USER/App/sd_app.c::__aeabi_assert` | UART log + infinite loop |
+| CPU fault handlers | `User/gd32f4xx_it.c` | Infinite loop for fail-stop debugging |
+| Assertion backend | `Function/sd_app.c::__aeabi_assert` | UART log + infinite loop |
 | Vendor status enums | `FRESULT`, `DSTATUS`, `sd_error_enum`, `ErrStatus` | Check immediately and branch |
 | Soft runtime flags | `rx_flag` in UART flow | Set/clear flag and return early |
 
-Example fatal handler from `USER/gd32f4xx_it.c`:
+Example fatal handler from `User/gd32f4xx_it.c`:
 
 ```c
 void HardFault_Handler(void)
@@ -35,7 +35,7 @@ void HardFault_Handler(void)
 }
 ```
 
-Example assert backend from `USER/App/sd_app.c`:
+Example assert backend from `Function/sd_app.c`:
 
 ```c
 my_printf(DEBUG_USART, "ASSERT: %s, file: %s, line: %d\r\n", ...);
@@ -119,7 +119,7 @@ Return after logging.
 ### Copying DMA data without a length guard
 
 Always validate the DMA-derived length before `memcpy()`.
-`USER/gd32f4xx_it.c` is the reference implementation.
+`User/gd32f4xx_it.c` is the reference implementation.
 
 ### Logging from the wrong place
 

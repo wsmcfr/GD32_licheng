@@ -8,8 +8,8 @@
   3. stream-info 模式打印分包数量、固件大小和 CRC，供发送前核对。
   4. send 模式按 START/DATA/END 帧发送，并等待 App 返回 ACK 后再发下一帧。
 参数说明：
-  第 1 个位置参数：输入 bin 文件路径，默认 MDK/output/Project.bin。
-  第 2 个位置参数：packet 模式输出 ota 文件路径，默认 MDK/output/Project.uota。
+  第 1 个位置参数：输入 bin 文件路径，默认 project/output/Project.bin。
+  第 2 个位置参数：packet 模式输出 ota 文件路径，默认 project/output/Project.uota。
   --version：写入包头的 App 版本号，支持十进制或 0x 前缀十六进制，默认 0x00000001。
   --mode：packet、stream-info 或 send；当前低 RAM 在线升级推荐 send。
 返回值说明：
@@ -505,8 +505,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--port", default=None)
     parser.add_argument("--baudrate", type=parse_positive_u32, default=UART_OTA_DEFAULT_BAUDRATE)
     parser.add_argument("--ack-timeout", type=float, default=2.0)
-    parser.add_argument("input_bin", nargs="?", default="MDK/output/Project.bin")
-    parser.add_argument("output_file", nargs="?", default="MDK/output/Project.uota")
+    parser.add_argument("input_bin", nargs="?", default="project/output/Project.bin")
+    parser.add_argument("output_file", nargs="?", default="project/output/Project.uota")
     parser.add_argument("--version", type=parse_u32, default=0x00000001)
     args = parser.parse_args(argv)
 

@@ -10,7 +10,7 @@ This project does not use a dedicated logging framework.
 Logging is done through:
 
 - `my_printf(DEBUG_USART, ...)` in app and test code
-- `printf()` / `fputc()` redirection in `USER/main.c`
+- `printf()` / `fputc()` redirection in `User/main.c`
 
 The output target is the debug UART, currently `USART0`.
 
@@ -64,9 +64,9 @@ Prefer one-line messages that make serial logs scannable.
 
 Good examples:
 
-- `USER/App/sd_app.c::card_info_get()` prints card type, size, and IDs
-- `USER/App/sd_app.c::sd_fatfs_long_name_test()` prints exact failure points
-- `USER/App/scheduler.c::system_init()` prints boot progress around major peripherals
+- `Function/sd_app.c::card_info_get()` prints card type, size, and IDs
+- `Function/sd_app.c::sd_fatfs_long_name_test()` prints exact failure points
+- `Function/scheduler.c::system_init()` prints boot progress around major peripherals
 
 ---
 
@@ -102,8 +102,8 @@ Validation:
 
 | Check | Expected Evidence |
 |-------|-------------------|
-| Build log | `MDK/output/Project.build_log.htm` reports `0 Error(s)` |
-| Link map | `MDK/Listings/Project.map` resolves `_sys_open`, `_sys_write`, `_sys_exit`, and `_ttywrch` to `main.o` |
+| Build log | `project/output/Project.build_log.htm` reports `0 Error(s)` |
+| Link map | `project/Listings/Project.map` resolves `_sys_open`, `_sys_write`, `_sys_exit`, and `_ttywrch` to `main.o` |
 | Standalone boot | After `BootLoader : jump app ...`, the serial log continues with `BOOT: handoff start` |
 
 If a debugger stops at `BKPT 0xAB` with a stack such as `_sys_open -> freopen -> __rt_lib_init`, treat it as semihosting leakage. Do not work around that symptom by changing BootLoader jump addresses or vendor `SystemInit()` code.

@@ -92,7 +92,7 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 
 | 文件 | 默认路径 |
 |---|---|
-| 原始固件 bin | `MDK/output/Project.bin` |
+| 原始固件 bin | `project/output/Project.bin` |
 
 这是 Keil 编译后得到的纯二进制固件。
 
@@ -107,8 +107,8 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 | `--port` | 串口号 | 无 |
 | `--baudrate` | 串口波特率 | `460800` |
 | `--ack-timeout` | 每帧等待 ACK 的超时时间，秒 | `2.0` |
-| `input_bin` | 输入 bin 路径 | `MDK/output/Project.bin` |
-| `output_file` | 旧 `.uota` 输出路径 | `MDK/output/Project.uota` |
+| `input_bin` | 输入 bin 路径 | `project/output/Project.bin` |
+| `output_file` | 旧 `.uota` 输出路径 | `project/output/Project.uota` |
 | `--version` | 本次升级版本号 | `0x00000001` |
 
 ---
@@ -643,8 +643,8 @@ DATA acked: chunk=1/66, frames=2/68, bytes=512/33536 (1%)
 
 | 文件 | 作用 |
 |---|---|
-| [USER/App/uart_ota_app.c](D:/GD32/2026706296/USER/App/uart_ota_app.c:1) | App 侧流式 OTA 解析、写下载缓存区、写参数区、复位 |
-| [USER/Driver/bootloader_port.c](D:/GD32/2026706296/USER/Driver/bootloader_port.c:1) | BootLoader 交接层：CRC、向量表校验、下载区擦写、参数区写入、软件复位 |
+| [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:1) | App 侧流式 OTA 解析、写下载缓存区、写参数区、复位 |
+| [HardWare/BOOTLOADER/bootloader_port.c](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:1) | BootLoader 交接层：CRC、向量表校验、下载区擦写、参数区写入、软件复位 |
 
 ### 9.1 关键协议项一一对应
 
@@ -702,7 +702,7 @@ python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --c
 典型输出：
 
 ```text
-stream MDK/output/Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=RS485/USART1
+stream project/output/Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=RS485/USART1
 ```
 
 ### 11.2 真正发送
@@ -714,7 +714,7 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 典型输出：
 
 ```text
-send stream MDK/output/Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=RS485/USART1, port=COM29, baudrate=460800
+send stream project/output/Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, channel=RS485/USART1, port=COM29, baudrate=460800
 START acked: chunk=0/66, frames=1/68, bytes=0/33536 (0%)
 DATA acked: chunk=1/66, frames=2/68, bytes=512/33536 (1%)
 ...

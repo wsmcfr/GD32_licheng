@@ -292,7 +292,7 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 典型输出如下：
 
 ```text
-send stream MDK\output\Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, port=COM29, baudrate=460800
+send stream project\output\Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, port=COM29, baudrate=460800
 START acked: chunk=0/66, frames=1/68, bytes=0/33536 (0%)
 DATA acked: chunk=1/66, frames=2/68, bytes=512/33536 (1%)
 ...
