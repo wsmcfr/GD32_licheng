@@ -948,3 +948,53 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: 重构工程目录并移除 perf_counter
+
+**Date**: 2026-05-24
+**Task**: 重构工程目录并移除 perf_counter
+**Branch**: `template-style-layout`
+
+### Summary
+
+按示例工程风格重构目录，保留原 scheduler 调度框架，移除 perf_counter，更新 Keil 工程、OTA 默认路径、工程文档和 .trellis/spec；Keil 编译无错误，git diff --cached --check 已通过。
+
+### Main Changes
+
+| 项目 | 内容 |
+|------|------|
+| 目录重构 | 按示例工程命名风格整理 App 工程根目录，形成 `User/`、`Function/`、`HardWare/`、`Library/`、`CMSIS/`、`Startup/`、`HeaderFiles/`、`project/` 分层。 |
+| 逻辑层归位 | 将原 `USER/App/` 下的业务任务迁移到 `Function/`，保留 `scheduler.c` 作为统一调度中心，继续使用原工程的调度器框架。 |
+| 驱动层归位 | 将板级驱动和外设组件迁移到 `HardWare/`，按 `LED`、`KEY`、`USART`、`RTC`、`POWER`、`BOOTLOADER`、`GD25QXX`、`SDIO`、`STORAGE`、`OLED` 等模块分目录管理。 |
+| 库层归位 | 将 GD32 标准外设库迁移到 `Library/GD32F4xx_standard_peripheral/`，将 FatFs 迁移到 `Library/Third_Party/fat_fs/`，将 CMSIS 和启动文件独立到 `CMSIS/` 与 `Startup/`。 |
+| Keil 工程 | 将 MDK 工程迁移到 `project/2026706296.uvprojx`，同步 include path、源文件路径、RTE 路径和输出目录，输出目录统一为 `project/output/`。 |
+| perf_counter 移除 | 删除 `PACK/perf_counter-2.5.4` 和旧用途说明，不再依赖第三方 perf_counter；时间基准由现有 `systick`、调度器和延时接口等效承载。 |
+| systick 等效方案 | 保留 1ms 系统节拍、`delay_1ms()`、`delay_ms()`、`delay_us()`、`delay_decrement()`、`system_millis()` 等接口，确保 App 调度、超时判断、低功耗唤醒流程继续可用。 |
+| FatFs 路径修正 | 修正 FatFs `option/*.c` 迁移后的头文件包含路径，避免新目录层级下出现 `../ff.h` 失效问题。 |
+| OTA 工具同步 | 将 UART OTA 打包脚本默认输入/输出路径同步为 `project/output/Project.bin` 与 `project/output/Project.uota`，避免继续引用旧 `MDK/output`。 |
+| 文档同步 | 同步更新 `工程文档.md`、BootLoader/OTA 文档、Flash 分区说明、UART OTA 脚本文档以及 `.trellis/spec/` 中的目录结构和维护规则。 |
+| 清理策略 | 编译产物继续由 `.gitignore` 排除，`project/output/`、`*.axf`、`*.hex`、`*.bin` 等不进入仓库。 |
+| GitHub 分支 | 新建并推送 `template-style-layout` 分支，主重构提交为 `e1adf9a refactor: restructure firmware project layout`。 |
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e1adf9a` | `refactor: restructure firmware project layout` |
+
+### Testing
+
+- [OK] 用户已在 Keil 中重新编译，结果为 0 Error。
+- [OK] `git diff --cached --check` 通过，没有空白格式错误。
+- [OK] `project/output/Project.axf`、`Project.hex`、`Project.bin` 已生成，说明迁移后的工程路径可参与构建。
+- [OK] OTA stream-info 曾验证 `project/output/Project.bin` 可用于生成升级流，`Project.bin` 大小为 46504 字节，CRC 为 `0x43A1A307`。
+- [OK] `python -m unittest tools.test_uart_ota_packet` 通过 11 个测试，OTA 打包脚本路径调整未破坏单元测试。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
