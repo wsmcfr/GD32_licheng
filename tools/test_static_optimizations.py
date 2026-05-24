@@ -1,0 +1,69 @@
+"""静态检查本轮低功耗与计时优化是否落到关键代码契约。
+
+该脚本不替代 Keil 编译和硬件实测，只用于在没有固件单元测试框架时，
+快速发现“优化点漏改、接口漏接、等待仍无超时”等回归。
+"""
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def read_text(relative_path: str) -> str:
+    """读取仓库内文本文件，统一使用 UTF-8 以兼容中文注释。"""
+    return (ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def require(condition: bool, message: str) -> None:
+    """对静态契约做断言，失败时抛出带中文说明的 AssertionError。"""
+    if not condition:
+        raise AssertionError(message)
+
+
+def main() -> None:
+    """执行全部静态契约检查，任一契约缺失都会让脚本以非零状态退出。"""
+    gd25 = read_text("HardWare/GD25QXX/gd25qxx.c")
+    gd25_h = read_text("HardWare/GD25QXX/gd25qxx.h")
+    gd30 = read_text("HardWare/GD30AD3344/gd30ad3344.c")
+    gd30_h = read_text("HardWare/GD30AD3344/gd30ad3344.h")
+    power = read_text("HardWare/POWER/bsp_power.c")
+    scheduler = read_text("Function/scheduler.c")
+    scheduler_h = read_text("Function/scheduler.h")
+    systick = read_text("User/systick.c")
+    oled_app = read_text("Function/oled_app.c")
+    rtc = read_text("HardWare/RTC/bsp_rtc.c")
+    rtc_h = read_text("HardWare/RTC/bsp_rtc.h")
+    doc = read_text("工程文档.md")
+
+    require("SPI_FLASH_WAIT_TIMEOUT" in gd25, "GD25QXX 缺少 Flash/DMA 超时常量")
+    require("spi_flash_wait_for_write_end" in gd25_h and "int " in gd25_h, "GD25QXX 写等待接口未返回状态")
+    require("spi_flash_enter_deep_power_down" in gd25_h and "int " in gd25_h, "GD25QXX deep power-down 接口未返回状态")
+    require("GD30AD3344_SPI_WAIT_TIMEOUT" in gd30, "GD30AD3344 缺少 SPI DMA 超时常量")
+    require("GD30AD3344_Enter_LowPower" in gd30_h and "int " in gd30_h, "GD30AD3344 低功耗接口未返回状态")
+    require("bsp_spi_disable_for_deepsleep" in power and "flash_sleep_ok" in power, "低功耗入口未处理 SPI 器件低功耗失败")
+
+    require("scheduler_reset_runtime" in scheduler_h, "调度器头文件未导出唤醒重基线接口")
+    require("void scheduler_reset_runtime(void)" in scheduler, "调度器实现缺少唤醒重基线接口")
+    require("scheduler_reset_runtime();" in power, "唤醒恢复后未重置调度器运行时基线")
+
+    require("timebase_adjust_ms" in systick, "timebase 缺少睡眠补偿接口")
+    require("bsp_rtc_get_epoch_seconds" in rtc_h, "RTC 头文件未导出秒级时间戳接口")
+    require("sleep_epoch" in power and "timebase_adjust_ms" in power, "深睡前后未用 RTC 补偿 timebase")
+
+    require("OLED_APP_LINE_BUFFER_SIZE" in oled_app, "OLED app 缺少行缓冲大小常量")
+    require("char buffer[OLED_APP_LINE_BUFFER_SIZE]" in oled_app, "oled_printf 栈缓冲未缩小到行缓冲")
+    require("g_oled_line_cache" in oled_app, "OLED app 缺少脏行缓存")
+
+    require("bsp_rtc_wait_osci_stable" in rtc, "RTC 缺少晶振稳定超时 helper")
+    require("RTC_CLOCK_FALLBACK_IRC32K_ENABLE" in rtc_h, "RTC 缺少 IRC32K fallback 开关")
+    require("RCU_RTCSRC_IRC32K" in rtc, "RTC 未实现 IRC32K fallback 路径")
+
+    require("GD30AD3344_PGA_0V256" in gd30 and "0.256" in gd30, "GD30AD3344 PGA 0.256V 映射缺失")
+    require("GD30AD3344_PGA_0V064" in gd30 and "0.064" in gd30, "GD30AD3344 PGA 0.064V 映射缺失")
+
+    require("调度器唤醒重基线" in doc, "工程文档未同步调度器唤醒优化说明")
+    require("RTC 补偿" in doc, "工程文档未同步 RTC 补偿说明")
+
+
+if __name__ == "__main__":
+    main()

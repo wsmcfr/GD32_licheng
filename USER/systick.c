@@ -459,3 +459,44 @@ void timebase_update_after_clock_change(void)
 {
     systick_config();
 }
+
+/*
+ * 函数作用：
+ *   给本地毫秒 timebase 追加一段已知经过时间。
+ * 主要流程：
+ *   1. 进入短临界区，避免 SysTick ISR 同时改写低 32 位 tick。
+ *   2. 低 32 位累加 elapsed_ms，并在回绕时推进高 32 位。
+ *   3. 恢复进入前的中断状态。
+ * 参数说明：
+ *   elapsed_ms：需要补偿的毫秒数；传入 0 时不改变当前计数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   深度睡眠期间 SysTick 停止，RTC 仍可提供秒级墙上时间。唤醒后先恢复
+ *   SysTick，再调用本接口补偿睡眠时长，可以让日志时间戳和跨睡眠超时继续单调推进。
+ */
+void timebase_adjust_ms(uint32_t elapsed_ms)
+{
+    uint32_t primask;
+    uint32_t old_low;
+    uint32_t new_low;
+
+    if(0U == elapsed_ms) {
+        return;
+    }
+
+    primask = timebase_enter_critical();
+    old_low = g_timebase_ms_low;
+    new_low = old_low + elapsed_ms;
+    g_timebase_ms_low = new_low;
+
+    /*
+     * 本接口当前按 RTC 秒差补偿，单次传入值不会超过 32 位毫秒范围。
+     * 低 32 位发生回绕时推进高位，保持 get_system_ms() 的 64 位结果连续。
+     */
+    if(new_low < old_low) {
+        g_timebase_ms_high++;
+    }
+
+    timebase_exit_critical(primask);
+}

@@ -22,6 +22,19 @@ int oled_printf(uint8_t x, uint8_t y, const char *format, ...);
 
 /*
  * 函数作用：
+ *   清空 OLED 应用层行缓存，强制下一轮 oled_printf 重新写入屏幕内容。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   OLED_Init() 或 OLED_Clear() 会清除物理屏幕，但应用层缓存仍可能保留旧文本。
+ *   调用该接口可以避免唤醒恢复后误判“内容未变化”而跳过刷新。
+ */
+void oled_app_reset_cache(void);
+
+/*
+ * 函数作用：
  *   周期性刷新 OLED 上的按键状态、系统时基和 ADC 电压。
  * 参数说明：
  *   无参数。

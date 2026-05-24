@@ -8,6 +8,7 @@ static rtc_alarm_struct rtc_alarm;
 static __IO uint32_t prescaler_a = 0U;
 static __IO uint32_t prescaler_s = 0U;
 static uint32_t rtcsrc_flag = 0U;
+static int rtc_clock_ready = 0;
 
 /*
  * 函数作用：
@@ -76,6 +77,27 @@ static uint8_t bsp_rtc_get_days_in_month(uint16_t year, uint8_t month)
     }
 
     return days_in_month[month - 1U];
+}
+
+/*
+ * 函数作用：
+ *   等待指定 RTC 候选时钟源稳定，并把底层库返回值转换成模块内统一状态码。
+ * 参数说明：
+ *   osci：待等待的 RCU 振荡器枚举，例如 RCU_LXTAL 或 RCU_IRC32K。
+ * 返回值说明：
+ *   0：表示振荡器已经在底层超时前稳定。
+ *  -1：表示振荡器启动失败或等待超时。
+ * 说明：
+ *   GD32 标准库 rcu_osci_stab_wait() 自身带启动超时，但原调用点没有检查返回值。
+ *   本 helper 明确把失败向上传递，避免外部 32.768kHz 晶振异常时继续按成功路径建表。
+ */
+static int bsp_rtc_wait_osci_stable(rcu_osci_type_enum osci)
+{
+    if(SUCCESS == rcu_osci_stab_wait(osci)) {
+        return 0;
+    }
+
+    return -1;
 }
 
 /*
@@ -240,12 +262,16 @@ static int bsp_rtc_restore_from_backup(void)
  * 参数说明：
  *   无参数。
  * 返回值说明：
- *   无返回值。
+ *   0：表示 RTC 时钟源已经稳定并完成必要配置。
+ *  -1：表示所选 RTC 时钟源启动失败，RTC 不应继续初始化或读取。
  * 说明：
- *   当前工程固定使用 LXTAL，因此这里只保留该路径。
+ *   若备份域已选择过 RTC 时钟源，本函数只等待对应振荡器稳定，不强制改写 RTCSRC。
+ *   若冷启动首选 LXTAL 失败，且允许 fallback，则切到 IRC32K 并使用对应分频参数。
  */
-static void bsp_rtc_pre_cfg(void)
+static int bsp_rtc_pre_cfg(void)
 {
+    int ret = -1;
+
     /*
      * 若备份域中已经保留了 RTC 时钟源选择，就不要再次改写 RTCSRC。
      * 否则在主电掉电但 VBAT 仍供电的场景下，可能把正在运行的 RTC 重新切源，
@@ -255,7 +281,12 @@ static void bsp_rtc_pre_cfg(void)
 
 #if defined(RTC_CLOCK_SOURCE_IRC32K)
     rcu_osci_on(RCU_IRC32K);
-    rcu_osci_stab_wait(RCU_IRC32K);
+    ret = bsp_rtc_wait_osci_stable(RCU_IRC32K);
+    if(0 != ret) {
+        rtc_clock_ready = 0;
+        return -1;
+    }
+
     if(rtcsrc_flag == 0U) {
         rcu_rtc_clock_config(RCU_RTCSRC_IRC32K);
     }
@@ -263,19 +294,64 @@ static void bsp_rtc_pre_cfg(void)
     prescaler_s = 0x13FU;
     prescaler_a = 0x63U;
 #elif defined(RTC_CLOCK_SOURCE_LXTAL)
-    rcu_osci_on(RCU_LXTAL);
-    rcu_osci_stab_wait(RCU_LXTAL);
-    if(rtcsrc_flag == 0U) {
-        rcu_rtc_clock_config(RCU_RTCSRC_LXTAL);
-    }
+    if(2U == rtcsrc_flag) {
+        /*
+         * 备份域显示 RTC 当前使用 IRC32K，说明之前可能已经从 LXTAL fallback。
+         * 这种情况下继续等待 IRC32K，不能再按编译期首选 LXTAL 强行重选时钟源。
+         */
+        rcu_osci_on(RCU_IRC32K);
+        ret = bsp_rtc_wait_osci_stable(RCU_IRC32K);
+        if(0 != ret) {
+            rtc_clock_ready = 0;
+            return -1;
+        }
 
-    prescaler_s = 0xFFU;
-    prescaler_a = 0x7FU;
+        prescaler_s = 0x13FU;
+        prescaler_a = 0x63U;
+    } else {
+        rcu_osci_on(RCU_LXTAL);
+        ret = bsp_rtc_wait_osci_stable(RCU_LXTAL);
+        if(0 == ret) {
+            if(rtcsrc_flag == 0U) {
+                rcu_rtc_clock_config(RCU_RTCSRC_LXTAL);
+            }
+
+            prescaler_s = 0xFFU;
+            prescaler_a = 0x7FU;
+        } else {
+#if RTC_CLOCK_FALLBACK_IRC32K_ENABLE
+            if(rtcsrc_flag == 0U) {
+                /*
+                 * 只有冷启动且备份域尚未选择 RTC 时钟源时才允许切 IRC32K。
+                 * 若已有 RTCSRC，强行切源需要复位备份域，会破坏 VBAT 保存的时间。
+                 */
+                rcu_osci_on(RCU_IRC32K);
+                ret = bsp_rtc_wait_osci_stable(RCU_IRC32K);
+                if(0 != ret) {
+                    rtc_clock_ready = 0;
+                    return -1;
+                }
+
+                rcu_rtc_clock_config(RCU_RTCSRC_IRC32K);
+                prescaler_s = 0x13FU;
+                prescaler_a = 0x63U;
+            } else {
+                rtc_clock_ready = 0;
+                return -1;
+            }
+#else
+            rtc_clock_ready = 0;
+            return -1;
+#endif
+        }
+    }
 #else
 #error RTC clock source should be defined.
 #endif
 
     rcu_periph_clock_enable(RCU_RTC);
+    rtc_clock_ready = 1;
+    return 0;
 }
 
 /*
@@ -306,7 +382,10 @@ int bsp_rtc_init(void)
      */
     has_valid_backup = bsp_rtc_has_valid_backup();
 
-    bsp_rtc_pre_cfg();
+    if(0 != bsp_rtc_pre_cfg()) {
+        rcu_all_reset_flag_clear();
+        return -1;
+    }
 
     if(0U != has_valid_backup) {
         /* 备份域有效时只同步当前时间，不能再重写默认时间。 */
@@ -339,6 +418,10 @@ int bsp_rtc_get_datetime(bsp_rtc_datetime_t *datetime)
         return -1;
     }
 
+    if(0 == rtc_clock_ready) {
+        return -1;
+    }
+
     if(ERROR == rtc_register_sync_wait()) {
         return -1;
     }
@@ -352,6 +435,57 @@ int bsp_rtc_get_datetime(bsp_rtc_datetime_t *datetime)
     datetime->minute = bsp_rtc_bcd_to_decimal(rtc_initpara.minute);
     datetime->second = bsp_rtc_bcd_to_decimal(rtc_initpara.second);
     datetime->day_of_week = (uint8_t)rtc_initpara.day_of_week;
+    return 0;
+}
+
+/*
+ * 函数作用：
+ *   把当前 RTC 日期时间转换为 2000-01-01 00:00:00 起算的秒级计数。
+ * 主要流程：
+ *   1. 读取并校验当前 RTC 十进制日期时间。
+ *   2. 累加 2000 年以来已完整经过的年份天数。
+ *   3. 累加当年已完整经过的月份天数和当天时分秒。
+ * 参数说明：
+ *   epoch_seconds：输出秒计数的指针，必须非空。
+ * 返回值说明：
+ *   0：表示转换成功，epoch_seconds 已写入有效秒数。
+ *  -1：表示参数为空、RTC 读取失败，或读取到的日期时间字段非法。
+ * 说明：
+ *   该值只服务深睡前后 RTC 秒差计算，不要求与 Unix 1970 epoch 对齐。
+ */
+int bsp_rtc_get_epoch_seconds(uint32_t *epoch_seconds)
+{
+    bsp_rtc_datetime_t datetime;
+    uint16_t year;
+    uint8_t month;
+    uint32_t days;
+
+    if(NULL == epoch_seconds) {
+        return -1;
+    }
+
+    if(0 != bsp_rtc_get_datetime(&datetime)) {
+        return -1;
+    }
+
+    if(0U == bsp_rtc_is_valid_datetime(&datetime)) {
+        return -1;
+    }
+
+    days = 0U;
+    for(year = 2000U; year < datetime.year; year++) {
+        days += (0U != bsp_rtc_is_leap_year(year)) ? 366U : 365U;
+    }
+
+    for(month = 1U; month < datetime.month; month++) {
+        days += bsp_rtc_get_days_in_month(datetime.year, month);
+    }
+
+    days += (uint32_t)(datetime.date - 1U);
+    *epoch_seconds = (days * 86400UL) +
+                     ((uint32_t)datetime.hour * 3600UL) +
+                     ((uint32_t)datetime.minute * 60UL) +
+                     (uint32_t)datetime.second;
     return 0;
 }
 
@@ -375,6 +509,10 @@ int bsp_rtc_set_datetime(const bsp_rtc_datetime_t *datetime)
     uint8_t rtc_year;
 
     if(0U == bsp_rtc_is_valid_datetime(datetime)){
+        return -1;
+    }
+
+    if(0 == rtc_clock_ready) {
         return -1;
     }
 

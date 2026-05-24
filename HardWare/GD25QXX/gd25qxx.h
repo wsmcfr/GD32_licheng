@@ -66,11 +66,29 @@ void spi_flash_buffer_read(uint8_t *pbuffer, uint32_t read_addr, uint16_t num_by
 uint32_t spi_flash_read_id(void);
 void spi_flash_start_read_sequence(uint32_t read_addr);
 void spi_flash_write_enable(void);
-void spi_flash_wait_for_write_end(void);
+/*
+ * 函数作用：
+ *   等待 SPI Flash 内部写入或擦除忙状态结束，并带超时保护。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   0：表示 WIP 已在超时前清零。
+ *  -1：表示等待超时，Flash 可能仍处于内部忙状态。
+ */
+int spi_flash_wait_for_write_end(void);
 uint8_t spi_flash_send_byte_dma(uint8_t byte);
 uint16_t spi_flash_send_halfword_dma(uint16_t half_word);
 void spi_flash_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer, uint16_t size);
-void spi_flash_wait_for_dma_end(void);
+/*
+ * 函数作用：
+ *   等待 GD25QXX SPI DMA 收发完成，并带超时保护。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   0：表示 DMA 收发完成。
+ *  -1：表示等待超时，调用方应放弃本次 SPI 事务。
+ */
+int spi_flash_wait_for_dma_end(void);
 
 /*
  * 函数作用：
@@ -78,9 +96,10 @@ void spi_flash_wait_for_dma_end(void);
  * 参数说明：
  *   无参数。
  * 返回值说明：
- *   无返回值。
+ *   0：表示 deep power-down 指令已经发送完成。
+ *  -1：表示进入深掉电前等待 WIP 清零或 SPI DMA 传输超时。
  */
-void spi_flash_enter_deep_power_down(void);
+int spi_flash_enter_deep_power_down(void);
 
 /*
  * 函数作用：
@@ -88,9 +107,10 @@ void spi_flash_enter_deep_power_down(void);
  * 参数说明：
  *   无参数。
  * 返回值说明：
- *   无返回值。
+ *   0：表示 release 指令已经发送完成。
+ *  -1：表示 SPI DMA 传输超时，Flash 可能仍未可靠退出深掉电。
  */
-void spi_flash_release_from_deep_power_down(void);
+int spi_flash_release_from_deep_power_down(void);
 
 #endif /* GD25QXX_H */
 

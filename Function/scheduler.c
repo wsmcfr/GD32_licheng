@@ -30,9 +30,9 @@ typedef struct {
  */
 static task_t scheduler_task[] =
 {
-     {led_task,  1,    0}
-    ,{adc_task,  100,  0}
-    ,{oled_task, 10,   0}
+     {led_task,  20,    0}
+    ,{adc_task,  50,  0}
+    ,{oled_task, 100,   0}
     ,{btn_task,  5,    0}
     ,{uart_task, 5,    0}
     ,{uart_ota_task, 5, 0}
@@ -50,6 +50,31 @@ static task_t scheduler_task[] =
 void scheduler_init(void)
 {
     task_num = sizeof(scheduler_task) / sizeof(task_t);
+}
+
+/*
+ * 函数作用：
+ *   将调度器所有任务的 last_run 统一重置为当前 timebase tick。
+ * 主要流程：
+ *   1. 读取一次当前 32 位毫秒 tick 作为统一基线。
+ *   2. 遍历静态任务表，把每个任务的 last_run 都设置成该基线。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   深度睡眠唤醒后外设会集中重建，如果沿用睡前 last_run，OLED/UART/RTC/ADC
+ *   等任务可能在恢复后的第一轮同时到期。重基线可以让任务从唤醒时刻重新按周期展开。
+ */
+void scheduler_reset_runtime(void)
+{
+    uint8_t i;
+    uint32_t now_time;
+
+    now_time = timebase_get_ms32();
+    for(i = 0U; i < task_num; i++) {
+        scheduler_task[i].last_run = now_time;
+    }
 }
 
 
@@ -134,6 +159,7 @@ void system_init(void)
 
 		my_printf(DEBUG_USART, "BOOT: oled init...\r\n");
 		OLED_Init();
+		oled_app_reset_cache();
 		my_printf(DEBUG_USART, "BOOT: oled done\r\n");
 
 #if SMART_STORAGE_BOOT_SELF_TEST_ENABLE
@@ -178,8 +204,9 @@ void system_init(void)
 void scheduler_run(void)
 {
     uint32_t now_time = timebase_get_ms32();
+    uint8_t i;
 
-    for (uint8_t i = 0; i < task_num; i++)
+    for (i = 0U; i < task_num; i++)
     {
         /*
          * 32 位毫秒 tick 约 49.7 天回绕一次。

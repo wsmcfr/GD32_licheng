@@ -1,11 +1,38 @@
 #include "oled_app.h"
 
+#define OLED_APP_LINE_COUNT             4U
+#define OLED_APP_LINE_BUFFER_SIZE       32U
+#define OLED_APP_VISIBLE_CHARS          16U
+
+/*
+ * 变量作用：
+ *   缓存 OLED 每一行上一次已经写入的文本内容，用于脏行判断。
+ * 说明：
+ *   128x32 OLED 使用 8 像素步进字符时每行可显示 16 个字符。缓存按 32 字节保留，
+ *   既覆盖当前格式化文本，也显著小于旧版 512 字节栈缓冲。
+ */
+static char g_oled_line_cache[OLED_APP_LINE_COUNT][OLED_APP_LINE_BUFFER_SIZE];
+
+/*
+ * 函数作用：
+ *   清空 OLED 应用层行缓存，让下一次 oled_printf 必定刷新对应行。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void oled_app_reset_cache(void)
+{
+    memset(g_oled_line_cache, 0, sizeof(g_oled_line_cache));
+}
+
 /*
  * 函数作用：
  *   使用 printf 风格格式化文本，并把结果显示到 OLED 指定坐标。
  * 主要流程：
  *   1. 使用 vsnprintf 将可变参数格式化到本地缓冲区，避免无界写入。
- *   2. 调用 OLED_ShowStr 按 6x8 ASCII 字模显示。
+ *   2. 将显示行裁剪/补齐到当前屏幕一行可见宽度。
+ *   3. 与行缓存比较，仅当文本变化时调用 OLED_ShowStr 刷新。
  * 参数说明：
  *   x：OLED 横向像素坐标，当前 128x32 屏建议范围为 0~127。
  *   y：OLED 行号，当前 6x8 字符显示建议范围为 0~3。
@@ -16,17 +43,41 @@
  */
 int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
 {
-  char buffer[512]; /* 临时存储格式化后的字符串，长度与当前调试显示需求匹配。 */
-  va_list arg;      /* 保存可变参数遍历状态，必须与 va_start/va_end 成对使用。 */
-  int len;          /* 记录格式化结果长度，调用者可据此判断是否被截断。 */
+    char buffer[OLED_APP_LINE_BUFFER_SIZE];
+    va_list arg;
+    int len;
+    uint8_t i;
 
-  va_start(arg, format);
-  /* 使用有界格式化，避免 OLED 显示文本超过临时缓冲区导致内存覆盖。 */
-  len = vsnprintf(buffer, sizeof(buffer), format, arg);
-  va_end(arg);
+    va_start(arg, format);
+    /* 使用行级有界格式化，避免调试显示占用过大的任务栈。 */
+    len = vsnprintf(buffer, sizeof(buffer), format, arg);
+    va_end(arg);
 
-  OLED_ShowStr(x, y, buffer, 8);
-  return len;
+    if(y >= OLED_APP_LINE_COUNT) {
+        return len;
+    }
+
+    /*
+     * OLED_ShowStr 不会主动清掉上一帧较长字符串残留，因此先把可见区补齐空格。
+     * 超过一行的内容按当前 128 像素屏宽裁剪，避免自动换行改写下一页内容。
+     */
+    for(i = 0U; i < OLED_APP_VISIBLE_CHARS; i++) {
+        if('\0' == buffer[i]) {
+            break;
+        }
+    }
+    while(i < OLED_APP_VISIBLE_CHARS) {
+        buffer[i] = ' ';
+        i++;
+    }
+    buffer[OLED_APP_VISIBLE_CHARS] = '\0';
+
+    if(0 != memcmp(g_oled_line_cache[y], buffer, OLED_APP_VISIBLE_CHARS + 1U)) {
+        memcpy(g_oled_line_cache[y], buffer, OLED_APP_VISIBLE_CHARS + 1U);
+        OLED_ShowStr(x, y, buffer, 8);
+    }
+
+    return len;
 }
 
 /*

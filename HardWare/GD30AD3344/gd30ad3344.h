@@ -101,9 +101,10 @@ void GD30AD3344_Init(void);
  * 参数说明：
  *   无参数。
  * 返回值说明：
- *   无返回值。
+ *   0：表示低功耗配置已成功下发。
+ *  -1：表示 SPI DMA 等待超时或配置下发失败。
  */
-void GD30AD3344_Enter_LowPower(void);
+int GD30AD3344_Enter_LowPower(void);
 
 /*
  * 函数作用：
@@ -111,9 +112,10 @@ void GD30AD3344_Enter_LowPower(void);
  * 参数说明：
  *   无参数。
  * 返回值说明：
- *   无返回值。
+ *   0：表示恢复配置流程已经执行。
+ *  -1：表示恢复配置下发失败。
  */
-void GD30AD3344_Exit_LowPower(void);
+int GD30AD3344_Exit_LowPower(void);
 
 /*
  * 函数作用：

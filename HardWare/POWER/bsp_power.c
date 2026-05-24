@@ -1,6 +1,9 @@
 #include "bsp_power.h"
 #include "sd_app.h"
 #include "btn_app.h"
+#include "scheduler.h"
+#include "oled_app.h"
+#include "uart_ota_app.h"
 
 /*
  * 函数作用：
@@ -58,18 +61,24 @@ static void bsp_oled_disable_for_deepsleep(void)
  * 参数说明：
  *   无参数。
  * 返回值说明：
- *   无返回值。
+ *   0：表示 Flash 和 GD30AD3344 都已经成功下发低功耗命令。
+ *  -1：表示至少一个器件低功耗命令失败，后续仍会关闭总线和 GPIO 以继续收拢功耗。
  * 说明：
  *   片选先拉高，确保外设在休眠期间不会误进入命令接收状态。
  */
-static void bsp_spi_disable_for_deepsleep(void)
+static int bsp_spi_disable_for_deepsleep(void)
 {
+    int flash_sleep_ok;
+    int gd30_sleep_ok;
+
     /*
      * 板上没有给 SPI Flash / GD30AD3344 做物理断电，因此在关 SPI 总线前先让
      * 两颗芯片各自进入芯片级待机，避免 MCU 睡下去后它们仍保持正常待机电流。
+     * 若器件或 DMA 异常导致低功耗命令失败，驱动会超时返回；这里继续关闭总线，
+     * 避免因为一个外设异常而卡死在“准备休眠”阶段。
      */
-    spi_flash_enter_deep_power_down();
-    GD30AD3344_Enter_LowPower();
+    flash_sleep_ok = spi_flash_enter_deep_power_down();
+    gd30_sleep_ok = GD30AD3344_Enter_LowPower();
 
     SPI_FLASH_CS_HIGH();
     SPI_GD30AD3344_CS_HIGH();
@@ -85,6 +94,12 @@ static void bsp_spi_disable_for_deepsleep(void)
 
     spi_disable(SPI0);
     spi_disable(SPI3);
+
+    if((0 != flash_sleep_ok) || (0 != gd30_sleep_ok)) {
+        return -1;
+    }
+
+    return 0;
 }
 
 /*
@@ -219,15 +234,19 @@ static void bsp_gpio_enter_deepsleep_state(void)
  * 函数作用：
  *   从深度睡眠唤醒后，重新恢复时钟、滴答和所有板级外设。
  * 参数说明：
- *   无参数。
+ *   sleep_epoch：睡前通过 RTC 读取到的秒级时间戳，单位为秒。
+ *   sleep_epoch_valid：sleep_epoch 是否有效，非 0 表示可用于唤醒后补偿 timebase。
  * 返回值说明：
  *   无返回值。
  * 说明：
  *   这里的顺序与上电初始化保持一致，确保依赖关系正确恢复。
- *   本地 timebase 已经接管系统节拍，因此恢复时只调用 timebase_update_after_clock_change()。
+ *   本地 timebase 已经接管系统节拍，恢复时先重建 SysTick，再按 RTC 秒差补偿睡眠时间。
  */
-static void bsp_deepsleep_reinit_after_wakeup(void)
+static void bsp_deepsleep_reinit_after_wakeup(uint32_t sleep_epoch, uint8_t sleep_epoch_valid)
 {
+    uint32_t wake_epoch;
+    uint32_t sleep_elapsed_s;
+
     /*
      * WFI 被 EXTI0 唤醒后，全局中断已经处于打开状态。
      * SystemInit() 会短暂把 VTOR 恢复到默认 Flash 起始地址，因此这里先关中断，
@@ -248,6 +267,25 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
     SystemCoreClockUpdate();
     timebase_update_after_clock_change();
 
+    if((0U != sleep_epoch_valid) && (0 == bsp_rtc_get_epoch_seconds(&wake_epoch))) {
+        if(wake_epoch >= sleep_epoch) {
+            /*
+             * SysTick 在深睡期间停止，RTC 仍然以秒级推进。
+             * 这里用 RTC 秒差补偿本地 timebase，保证跨睡眠日志时间和超时基准不被缩短。
+             */
+            sleep_elapsed_s = wake_epoch - sleep_epoch;
+            while(sleep_elapsed_s > (0xFFFFFFFFUL / 1000UL)) {
+                /*
+                 * 极长休眠超过单次 32 位毫秒补偿能力时分段追加。
+                 * 每段都小于 2^32ms，timebase_adjust_ms() 可以正确处理低 32 位回绕。
+                 */
+                timebase_adjust_ms((0xFFFFFFFFUL / 1000UL) * 1000UL);
+                sleep_elapsed_s -= (0xFFFFFFFFUL / 1000UL);
+            }
+            timebase_adjust_ms(sleep_elapsed_s * 1000UL);
+        }
+    }
+
     /*
      * 时钟、SysTick 和 App 向量表已经恢复后再开中断。
      * 后续外设初始化即使产生中断，也会使用 App 自己的中断入口。
@@ -264,6 +302,7 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
     uart_ota_reset_runtime();
     bsp_oled_init();
     OLED_Init();
+    oled_app_reset_cache();
     bsp_adc_init();
     bsp_dac_init();
     bsp_gd25qxx_init();
@@ -272,16 +311,31 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
      * 若在总线资源尚未重建前发命令，SPI 寄存器和片选 GPIO 还不可用，释放动作
      * 实际不会落到器件上，后续第一次访问就可能拿到无效响应。
      */
-    spi_flash_release_from_deep_power_down();
+    if(0 != spi_flash_release_from_deep_power_down()) {
+        /*
+         * release 指令失败通常表示 SPI 链路异常。这里不在唤醒路径停机，
+         * 后续 SMARTFS/Flash 访问会继续按各自错误处理路径暴露问题。
+         */
+    }
     bsp_gd30ad3344_init();
     bsp_rtc_init();
-    sd_fatfs_init();
+    /*
+     * SD/FatFs 目前只需要恢复 SDIO 中断，但后续如果加入挂载或介质检测，
+     * 不应把这些慢操作压到唤醒关键路径。这里仅标记待恢复，实际访问前再懒初始化。
+     */
+    sd_fatfs_mark_resume_required();
     /*
      * 简化按键方案把边沿检测状态保存在 btn_app 静态变量中。
      * 深睡唤醒后 GPIO 已经重新初始化，因此这里同步重置按键模块状态，
      * 避免沿用睡前缓存导致第一次按键被误判为旧状态延续。
      */
     app_btn_init();
+
+    /*
+     * 唤醒恢复已经完成，所有周期任务从当前 tick 重新计时。
+     * 这样可以避免 OLED/UART/RTC/ADC 在恢复后的第一轮主循环同时集中运行。
+     */
+    scheduler_reset_runtime();
 
     /*
      * EXTI0 只在深睡阶段作为 WK_UP 唤醒源使用。
@@ -299,7 +353,7 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
  *   2. 配置唤醒中断。
  *   3. 暂停本地 timebase 和 SysTick 中断。
  *   4. 进入 PMU 深度睡眠模式。
- *   5. 唤醒后重新初始化系统。
+ *   5. 唤醒后重新初始化系统，并用 RTC 秒差补偿深睡期间停止的 timebase。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -307,13 +361,31 @@ static void bsp_deepsleep_reinit_after_wakeup(void)
  */
 void bsp_enter_deepsleep(void)
 {
+    int spi_sleep_result;
+    uint32_t sleep_epoch = 0U;
+    uint8_t sleep_epoch_valid = 0U;
+
     rcu_periph_clock_enable(RCU_PMU);
+
+    /*
+     * 进入深睡前先保存 RTC 秒级时间戳。后续关闭串口和 SysTick 后无法再依赖日志或
+     * 运行时 tick 估算睡眠时长，因此这里尽量提前取样；失败时只跳过补偿。
+     */
+    if(0 == bsp_rtc_get_epoch_seconds(&sleep_epoch)) {
+        sleep_epoch_valid = 1U;
+    }
 
     __disable_irq();
 
     bsp_usart_disable_for_deepsleep();
     bsp_oled_disable_for_deepsleep();
-    bsp_spi_disable_for_deepsleep();
+    spi_sleep_result = bsp_spi_disable_for_deepsleep();
+    if(0 != spi_sleep_result) {
+        /*
+         * USART 已关闭，不能再输出现场日志。低功耗命令失败时不阻塞睡眠流程，
+         * 继续执行 DMA/SPI/GPIO/时钟收拢，避免外设异常把系统卡在入睡前。
+         */
+    }
     bsp_sdio_disable_for_deepsleep();
 
     adc_disable(ADC0);
@@ -344,5 +416,5 @@ void bsp_enter_deepsleep(void)
     /* 本轮进入低功耗优化阶段，尝试启用 low-driver 进一步压低 MCU 深睡电流。 */
     pmu_to_deepsleepmode(PMU_LDO_LOWPOWER, PMU_LOWDRIVER_ENABLE, WFI_CMD);
 
-    bsp_deepsleep_reinit_after_wakeup();
+    bsp_deepsleep_reinit_after_wakeup(sleep_epoch, sleep_epoch_valid);
 }

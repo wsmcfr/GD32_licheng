@@ -9,6 +9,7 @@ sd_card_info_struct sd_cardinfo;
 
 BYTE buffer[128];
 BYTE filebuffer[128];
+static uint8_t s_sd_fatfs_resume_required = 1U;
 
 /*
  * 函数作用：
@@ -46,6 +47,38 @@ void sd_fatfs_init(void)
 {
     /* SDIO 传输依赖中断完成状态推进，因此在文件系统测试前先打开中断入口。 */
     nvic_irq_enable(SDIO_IRQn, 0, 0);
+    s_sd_fatfs_resume_required = 0U;
+}
+
+/*
+ * 函数作用：
+ *   标记 SD/FatFs 在下次真实访问前需要重新执行轻量初始化。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   深睡唤醒恢复主路径不直接重建 SD/FatFs，避免后续若加入挂载/检测逻辑时拖慢唤醒。
+ *   当前 sd_fatfs_init() 只是打开 SDIO 中断，因此懒恢复的行为与立即调用等价。
+ */
+void sd_fatfs_mark_resume_required(void)
+{
+    s_sd_fatfs_resume_required = 1U;
+}
+
+/*
+ * 函数作用：
+ *   确保 SD/FatFs 轻量运行态已经恢复。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void sd_fatfs_ensure_ready(void)
+{
+    if(0U != s_sd_fatfs_resume_required) {
+        sd_fatfs_init();
+    }
 }
 
 /*
@@ -225,6 +258,9 @@ void sd_fatfs_test(void)
 {
     uint16_t k = 5;
     DSTATUS stat = 0;
+
+    sd_fatfs_ensure_ready();
+
     do
     {
         /* SD 卡上电后可能还未完全就绪，这里保留有限重试而不是无限阻塞。 */
@@ -310,7 +346,7 @@ void sd_fatfs_test(void)
  */
 void sd_lfs_init(void)
 {
-    sd_fatfs_init();
+    sd_fatfs_ensure_ready();
 }
 
 /*

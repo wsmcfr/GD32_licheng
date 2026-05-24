@@ -16,6 +16,18 @@ extern "C" {
 
 /* 当前工程选择 LXTAL 作为 RTC 时钟源。 */
 #define RTC_CLOCK_SOURCE_LXTAL
+
+/*
+ * 宏作用：
+ *   控制 LXTAL 启动失败时是否允许退回片内 IRC32K 作为 RTC 时钟源。
+ * 说明：
+ *   仅在备份域尚未选择 RTC 时钟源的冷启动路径生效；若 VBAT 备份域已经保存
+ *   了有效 RTCSRC，则不会强制切换，避免破坏正在运行的 RTC。
+ */
+#ifndef RTC_CLOCK_FALLBACK_IRC32K_ENABLE
+#define RTC_CLOCK_FALLBACK_IRC32K_ENABLE 1U
+#endif
+
 #define BKP_VALUE                       0x32F0U
 
 /*
@@ -65,6 +77,19 @@ int bsp_rtc_init(void);
  *  -1：表示参数无效，或 RTC 阴影寄存器同步失败导致当前时间不可可靠读取。
  */
 int bsp_rtc_get_datetime(bsp_rtc_datetime_t *datetime);
+
+/*
+ * 函数作用：
+ *   读取当前 RTC 时间，并转换为 2000-01-01 00:00:00 起算的秒级时间戳。
+ * 参数说明：
+ *   epoch_seconds：输出秒计数的指针，必须非空；成功时写入当前秒级时间戳。
+ * 返回值说明：
+ *   0：表示转换成功。
+ *  -1：表示参数无效、RTC 读取失败或日期字段非法。
+ * 说明：
+ *   该时间戳不是 Unix epoch，只用于深睡前后计算 RTC 秒差，保证跨睡眠补偿单调。
+ */
+int bsp_rtc_get_epoch_seconds(uint32_t *epoch_seconds);
 
 /*
  * 函数作用：

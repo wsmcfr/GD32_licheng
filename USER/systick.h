@@ -165,4 +165,16 @@ void timebase_prepare_reconfiguration(void);
  */
 void timebase_update_after_clock_change(void);
 
+/*
+ * 函数作用：
+ *   按指定毫秒数补偿本地 timebase，供深度睡眠期间 SysTick 停止后的墙上时间同步使用。
+ * 参数说明：
+ *   elapsed_ms：需要追加到本地 timebase 的毫秒数，通常由 RTC 睡前/醒后秒差换算得到。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   该接口只调整本地累计 tick，不重新配置 SysTick；调用方应在时钟恢复后、调度器运行前调用。
+ */
+void timebase_adjust_ms(uint32_t elapsed_ms);
+
 #endif /* SYS_TICK_H */
