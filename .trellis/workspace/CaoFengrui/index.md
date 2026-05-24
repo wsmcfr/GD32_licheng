@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 23
+- **Total Sessions**: 24
 - **Last Active**: 2026-05-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1100 | Active |
+| `journal-1.md` | ~1143 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 24 | 2026-05-24 | Optimize LED changed-bit refresh | `3b23b49` | `feature/lowpower-runtime-optimizations` |
 | 23 | 2026-05-24 | Remove migrated BootLoader copy | `51da429` | `feature/lowpower-runtime-optimizations` |
 | 22 | 2026-05-24 | 记录低功耗运行时优化提交 | `9f042fb` | `feature/lowpower-runtime-optimizations` |
 | 21 | 2026-05-24 | 重构工程目录并移除 perf_counter | `e1adf9a` | `template-style-layout` |

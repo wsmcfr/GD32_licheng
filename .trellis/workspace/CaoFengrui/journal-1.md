@@ -1099,3 +1099,47 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Optimize LED changed-bit refresh
+
+**Date**: 2026-05-24
+**Task**: Optimize LED changed-bit refresh
+**Branch**: `feature/lowpower-runtime-optimizations`
+
+### Summary
+
+本次完成 LED 周期刷新路径优化：`led_disp()` 首次运行时同步 6 路 LED，后续只对状态发生变化的 LED 调用控制宏，减少 1ms 周期任务中的重复 GPIO 写入。同步更新工程文档和 Trellis 状态管理规范，并确认代码提交已推送到 GitHub。
+
+### Main Changes
+
+| 项目 | 内容 |
+|------|------|
+| 代码变更 | 将 `Function/led_app.c::led_disp()` 从任意变化时全量刷新 6 路 LED，优化为首次全量刷新、后续只刷新 `changed_mask` 中发生变化的 LED。 |
+| 接口保持 | `led_task()` 和全局 `ucLed[6]` 对外行为不变；私有 `led_disp()` 参数改为 `const uint8_t *`，并新增 `LED_APP_COUNT` / `LED_APP_VALID_MASK`。 |
+| 边界处理 | 新增 `led_cache_valid`，避免使用伪历史状态导致首次调用不能把应用层初始 LED 状态同步到硬件。 |
+| 文档同步 | 更新 `工程文档.md` 的 LED 控制逻辑说明，并更新 `.trellis/spec/frontend/state-management.md` 中的缓存状态示例。 |
+| 验证 | 运行 Keil 命令行构建，`Project.axf - 0 Error(s), 0 Warning(s)`；运行 `git diff --check`，无空白错误，仅有 LF/CRLF 提示。 |
+| 提交 | `3b23b49 optimize led display change refresh` 已推送到 `origin/feature/lowpower-runtime-optimizations`。 |
+| 保留事项 | `project/2026706296.uvprojx` 在本会话开始前已有未提交目标名改动，本次未提交也未回退。 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3b23b49` | (see git log) |
+
+### Testing
+
+- [OK] Keil 命令行构建通过，`Project.axf - 0 Error(s), 0 Warning(s)`。
+- [OK] `git diff --check` 通过，未发现空白格式错误。
+- [OK] 逻辑模拟覆盖首次全量刷新、状态不变不刷新、单个 LED 变化只刷新对应变化位。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
