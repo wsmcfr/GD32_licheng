@@ -998,3 +998,63 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: 记录低功耗运行时优化提交
+
+**Date**: 2026-05-24
+**Task**: 记录低功耗运行时优化提交
+**Branch**: `feature/lowpower-runtime-optimizations`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|------|------|
+| 分支 | `feature/lowpower-runtime-optimizations` |
+| 代码提交 | `9f042fb optimize low power runtime paths` |
+| 推送状态 | 已推送到 `origin/feature/lowpower-runtime-optimizations` |
+| PR 链接 | `https://github.com/wsmcfr/GD32_licheng/pull/new/feature/lowpower-runtime-optimizations` |
+
+| 工作项 | 结果 |
+|--------|------|
+| 低功耗入口可靠性 | 为 SPI Flash WIP、SPI/DMA 等等待路径增加超时返回，避免休眠准备阶段因外设异常无限卡死。 |
+| 唤醒后调度基线 | 新增 `scheduler_reset_runtime()`，唤醒恢复完成后统一重置各周期任务 `last_run`，避免 OLED/UART/RTC/ADC 集中到期。 |
+| SysTick 与睡眠时间 | 明确运行时 tick 与 RTC 墙上时间的边界，并补充跨睡眠计时相关说明。 |
+| OLED 刷新开销 | 缩小 `oled_printf()` 栈缓冲，增加行缓存/脏行刷新，减少 I2C/OLED 重复写入。 |
+| RTC 初始化可靠性 | 为 LXTAL 启动加入显式超时处理，失败时可记录并回退。 |
+| 唤醒恢复分层 | 将 SD/FatFs 等非关键恢复改为按状态/按需处理，避免后续扩展拖慢唤醒主路径。 |
+| GD30AD3344 修正 | 修正 PGA 量程映射分支，并为 ADC/SPI 等等待路径补充超时。 |
+| 调度任务恢复 | 将被临时放入 `oled_task()` 的 `led_task()`、`adc_task()`、`rtc_task()` 恢复为 `scheduler_task[]` 独立调度。 |
+
+| 验证 | 结果 |
+|------|------|
+| `python tools/test_static_optimizations.py` | 通过 |
+| `git diff --check` | 通过，仅 CRLF 提示 |
+| Keil 构建 | 通过，`0 Error(s), 0 Warning(s)`，Program Size: Code=43024 RO-data=4812 RW-data=380 ZI-data=37372 |
+
+**后续注意**:
+- `led_task` 当前仍为 1ms，但实际只同步 `ucLed[6]` 且已有去重，后续可单独改为 20ms 或 50ms，并同步工程文档。
+- `btn_task` 的 5ms 周期与 `BTN_TASK_PERIOD_MS` 去抖累计绑定，若改周期必须同步宏和文档。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9f042fb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
