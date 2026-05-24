@@ -45,7 +45,7 @@ Used to suppress redundant hardware updates or hide internal implementation deta
 
 Examples:
 
-- `static uint8_t temp_old = 0xff;` inside `led_disp()`
+- `static uint8_t led_mask_old` and `static uint8_t led_cache_valid` inside `led_disp()` force the first LED write, then cache the previous bitmap so only changed LEDs are written
 - `static task_t scheduler_task[]` and `static uint8_t task_num` in `scheduler.c`
 
 ---
@@ -98,5 +98,5 @@ After consuming an ISR-produced frame, clear the app flag and reset temporary bu
 
 ### Updating hardware every cycle without change detection
 
-`led_disp()` keeps `temp_old` to avoid redundant writes.
+`led_disp()` keeps `led_mask_old` plus a first-run valid flag and compares the cached bitmap with the current bitmap to avoid redundant writes.
 Follow that idea when output hardware changes are expensive or noisy.
