@@ -1058,3 +1058,44 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Remove migrated BootLoader copy
+
+**Date**: 2026-05-24
+**Task**: Remove migrated BootLoader copy
+**Branch**: `feature/lowpower-runtime-optimizations`
+
+### Summary
+
+删除已迁移到外部目录的旧 BootLoader 副本，整理主 App Keil 工程分组，并同步更新 BootLoader/OTA 文档中的当前路径说明。
+
+### Main Changes
+
+| 项目 | 记录 |
+|---|---|
+| BootLoader 迁移清理 | 删除主仓库内旧的 `BootLoader_Two_Stage` 目录，确认实际 BootLoader 已迁移到 `D:\GD32\2026706296_bootloader`。 |
+| Keil 工程整理 | 将主 App 工程中原 `Peripherals` 分组的 GD32 标准外设库源文件并入 `Library` 分组，删除 IDE 中多余的 `Peripherals` 分组。 |
+| 文档同步 | 更新 `BootLoader_APP_接入说明.md`、`BootLoader_App_实际升级运行流程详解.md`、`工程文档.md`、`Flash分区原理与OTA容量限制说明.md` 和 `.trellis/spec/backend/embedded-ota-guidelines.md`，避免继续指向已删除的 `BootLoader_Two_Stage\27_0_BootLoader` 路径。 |
+| 验证 | `rg` 检查旧本地 BootLoader 源码路径和 `<GroupName>Peripherals</GroupName>` 无残留；Keil 重建 `project\2026706296.uvprojx` 通过，日志为 `0 Error(s), 0 Warning(s)`，程序大小 `Code=43024 RO-data=4812 RW-data=380 ZI-data=37372`。 |
+| 推送 | 提交 `51da429 refactor: remove migrated bootloader copy` 已推送到 `origin/feature/lowpower-runtime-optimizations`。 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `51da429` | (see git log) |
+
+### Testing
+
+- [OK] Keil 重建 `project\2026706296.uvprojx` 通过，构建日志显示 `0 Error(s), 0 Warning(s)`。
+- [OK] `rg` 检查旧本地 BootLoader 源码路径和 `<GroupName>Peripherals</GroupName>` 无残留。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
