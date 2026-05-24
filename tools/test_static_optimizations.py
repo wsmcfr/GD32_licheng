@@ -29,6 +29,10 @@ def main() -> None:
     power = read_text("HardWare/POWER/bsp_power.c")
     scheduler = read_text("Function/scheduler.c")
     scheduler_h = read_text("Function/scheduler.h")
+    system_all = read_text("HeaderFiles/system_all.h")
+    uvproj = read_text("project/2026706296.uvprojx")
+    pt100_app = read_text("Function/gd30ad3344_pt100_app.c")
+    pt100_app_h = read_text("Function/gd30ad3344_pt100_app.h")
     systick = read_text("User/systick.c")
     oled_app = read_text("Function/oled_app.c")
     rtc = read_text("HardWare/RTC/bsp_rtc.c")
@@ -60,9 +64,19 @@ def main() -> None:
 
     require("GD30AD3344_PGA_0V256" in gd30 and "0.256" in gd30, "GD30AD3344 PGA 0.256V 映射缺失")
     require("GD30AD3344_PGA_0V064" in gd30 and "0.064" in gd30, "GD30AD3344 PGA 0.064V 映射缺失")
+    require("PT100_FRONTEND_GAIN" in pt100_app and "16.41f" in pt100_app, "PT100 app 未按 R5=6.49k 配置前端增益")
+    require("PT100_EXCITATION_CURRENT_A" in pt100_app and "0.001f" in pt100_app, "PT100 app 未配置 1mA 激励电流")
+    require("GD30AD3344_Channel_4" in pt100_app, "PT100 app 未默认读取 AIN0~GND 通道")
+    require("GD30AD3344_PGA_4V096" in pt100_app, "PT100 app 未默认使用 ±4.096V 量程")
+    require("gd30ad3344_pt100_task" in pt100_app_h and "pt100_measurement_t" in pt100_app_h, "PT100 app 头文件缺少任务入口或测量结果类型")
+    require("gd30ad3344_pt100_task" in scheduler, "调度器未注册 PT100 周期采样任务")
+    require("gd30ad3344_pt100_app.h" in system_all, "聚合头未包含 PT100 app 头文件")
+    require("gd30ad3344_pt100_app.c" in uvproj, "Keil 工程未包含 PT100 app 源文件")
 
     require("调度器唤醒重基线" in doc, "工程文档未同步调度器唤醒优化说明")
     require("RTC 补偿" in doc, "工程文档未同步 RTC 补偿说明")
+    require("GD30AD3344 PT100 应用层" in doc, "工程文档未同步 GD30AD3344 PT100 app 说明")
+    require("16.41" in doc and "1mA" in doc, "工程文档未说明 PT100 前端增益或激励电流")
 
 
 if __name__ == "__main__":

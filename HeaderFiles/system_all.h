@@ -58,6 +58,7 @@
 #if !defined(SYSTEM_ALL_BASE_ONLY)
 #include "adc_app.h"
 #include "btn_app.h"
+#include "gd30ad3344_pt100_app.h"
 #include "led_app.h"
 #include "oled_app.h"
 #include "rtc_app.h"

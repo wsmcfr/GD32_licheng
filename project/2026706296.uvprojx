@@ -7,7 +7,7 @@
 
   <Targets>
     <Target>
-      <TargetName>Target_1</TargetName>
+      <TargetName>2026706296</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
       <pCCUsed>6240000::V6.24::ARMCLANG</pCCUsed>
@@ -678,6 +678,11 @@
               <FileName>adc_app.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Function\adc_app.c</FilePath>
+            </File>
+            <File>
+              <FileName>gd30ad3344_pt100_app.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Function\gd30ad3344_pt100_app.c</FilePath>
             </File>
             <File>
               <FileName>scheduler.c</FileName>

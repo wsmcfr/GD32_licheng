@@ -32,6 +32,7 @@ static task_t scheduler_task[] =
 {
      {led_task,  20,    0}
     ,{adc_task,  50,  0}
+    ,{gd30ad3344_pt100_task, 200, 0}
     ,{oled_task, 100,   0}
     ,{btn_task,  5,    0}
     ,{uart_task, 5,    0}
@@ -140,6 +141,7 @@ void system_init(void)
 
 		my_printf(DEBUG_USART, "BOOT: gd30 init...\r\n");
 		bsp_gd30ad3344_init();
+		gd30ad3344_pt100_app_init();
 		my_printf(DEBUG_USART, "BOOT: gd30 done\r\n");
 
 		my_printf(DEBUG_USART, "BOOT: adc init...\r\n");
