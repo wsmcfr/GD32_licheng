@@ -15,6 +15,59 @@ static char g_oled_line_cache[OLED_APP_LINE_COUNT][OLED_APP_LINE_BUFFER_SIZE];
 
 /*
  * 函数作用：
+ *   从左到右查找 OLED 行缓存与新显示文本之间第一个不同字符的位置。
+ * 参数说明：
+ *   old_line：该 OLED 行上一次已经显示并缓存的 16 字符文本。
+ *   new_line：本次格式化、裁剪并补空格后的 16 字符文本。
+ * 返回值说明：
+ *   0~15：第一个发生变化的字符索引。
+ *   OLED_APP_VISIBLE_CHARS：整行 16 个可见字符都没有变化。
+ */
+static uint8_t oled_printf_diff_start(const char *old_line, const char *new_line)
+{
+    uint8_t index;
+
+    for(index = 0U; index < OLED_APP_VISIBLE_CHARS; index++) {
+        if(old_line[index] != new_line[index]) {
+            return index;
+        }
+    }
+
+    return OLED_APP_VISIBLE_CHARS;
+}
+
+/*
+ * 函数作用：
+ *   从右到左查找 OLED 行缓存与新显示文本之间最后一个不同字符的后一位。
+ * 参数说明：
+ *   old_line：该 OLED 行上一次已经显示并缓存的 16 字符文本。
+ *   new_line：本次格式化、裁剪并补空格后的 16 字符文本。
+ *   start：差异段起点；当起点已经越过可见区时，表示无需刷新。
+ * 返回值说明：
+ *   start：没有需要刷新的差异段。
+ *   start+1~OLED_APP_VISIBLE_CHARS：差异段结束位置，采用“终点不含”语义。
+ */
+static uint8_t oled_printf_diff_end(const char *old_line, const char *new_line, uint8_t start)
+{
+    uint8_t index;
+
+    if(start >= OLED_APP_VISIBLE_CHARS) {
+        return start;
+    }
+
+    index = OLED_APP_VISIBLE_CHARS;
+    while(index > start) {
+        index--;
+        if(old_line[index] != new_line[index]) {
+            return (uint8_t)(index + 1U);
+        }
+    }
+
+    return start;
+}
+
+/*
+ * 函数作用：
  *   清空 OLED 应用层行缓存，让下一次 oled_printf 必定刷新对应行。
  * 参数说明：
  *   无参数。
@@ -44,9 +97,14 @@ void oled_app_reset_cache(void)
 int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
 {
     char buffer[OLED_APP_LINE_BUFFER_SIZE];
+    char diff_buffer[OLED_APP_LINE_BUFFER_SIZE];
     va_list arg;
     int len;
     uint8_t i;
+    uint8_t diff_start;
+    uint8_t diff_end;
+    uint8_t diff_len;
+    uint8_t segment_x;
 
     va_start(arg, format);
     /* 使用行级有界格式化，避免调试显示占用过大的任务栈。 */
@@ -72,9 +130,26 @@ int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
     }
     buffer[OLED_APP_VISIBLE_CHARS] = '\0';
 
-    if(0 != memcmp(g_oled_line_cache[y], buffer, OLED_APP_VISIBLE_CHARS + 1U)) {
-        memcpy(g_oled_line_cache[y], buffer, OLED_APP_VISIBLE_CHARS + 1U);
-        OLED_ShowStr(x, y, buffer, 8);
+    diff_start = oled_printf_diff_start(g_oled_line_cache[y], buffer);
+    diff_end = oled_printf_diff_end(g_oled_line_cache[y], buffer, diff_start);
+    if(diff_end > diff_start) {
+        diff_len = (uint8_t)(diff_end - diff_start);
+
+        /*
+         * 只把变化的字符段拷贝成临时 C 字符串再显示。底层 6x8 字符批量渲染
+         * 已保持 8 像素步进，因此这里可以直接用字符索引换算横坐标。
+         */
+        memcpy(diff_buffer, &buffer[diff_start], diff_len);
+        diff_buffer[diff_len] = '\0';
+        segment_x = (uint8_t)(x + (diff_start * 8U));
+        OLED_ShowStr(segment_x, y, diff_buffer, 8);
+
+        /*
+         * 屏幕刷新成功路径没有返回值可确认，因此按现有驱动契约在调用后更新缓存。
+         * 后续相同文本不会重复触发 I2C/DMA 写入。
+         */
+        memcpy(&g_oled_line_cache[y][diff_start], &buffer[diff_start], diff_len);
+        g_oled_line_cache[y][OLED_APP_VISIBLE_CHARS] = '\0';
     }
 
     return len;

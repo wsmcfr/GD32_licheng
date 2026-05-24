@@ -1,10 +1,10 @@
 #include "bsp_oled.h"
 
 /* OLED DMA 发送缓冲区：
- * 第 1 字节为控制字，第 2 字节为命令或数据本体。
+ * 命令包保持 2 字节，数据包第 1 字节为控制字，后续最多携带一整页显存数据。
  */
 __IO uint8_t oled_cmd_buf[2] = {0x00U, 0x00U};
-__IO uint8_t oled_data_buf[2] = {0x40U, 0x00U};
+__IO uint8_t oled_data_buf[OLED_TX_BUFFER_SIZE] = {0x40U};
 
 /*
  * 函数作用：

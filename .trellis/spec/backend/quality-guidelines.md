@@ -214,6 +214,97 @@ The current GD25Q16 SMARTFS port uses static metadata and sector buffers in
 `HardWare/GD25QXX/smartfs_port.c`. Follow that pattern unless there is a
 very strong reason to introduce heap use.
 
+### OLED I2C display writes should use page-sized batch transfers
+
+#### 1. Scope / Trigger
+
+- Trigger: modifying `HardWare/OLED/oled.c`, `HardWare/OLED/oled.h`, `HardWare/OLED/bsp_oled.c`, or `HardWare/OLED/bsp_oled.h`.
+- Trigger: changing SSD1306 clear, fill, bitmap, character, or string rendering paths.
+- Trigger: changing OLED I2C0 DMA buffer sizes or public OLED write APIs.
+
+#### 2. Signatures
+
+Expected BSP buffer contract:
+
+```c
+#define OLED_TX_DATA_MAX_SIZE          128U
+#define OLED_TX_BUFFER_SIZE            (OLED_TX_DATA_MAX_SIZE + 1U)
+
+extern __IO uint8_t oled_cmd_buf[2];
+extern __IO uint8_t oled_data_buf[OLED_TX_BUFFER_SIZE];
+```
+
+Expected component API:
+
+```c
+void OLED_Write_cmd(uint8_t cmd);
+void OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length);
+void OLED_Write_data(uint8_t data);
+void OLED_Write_data_buf(const uint8_t *data, uint16_t length);
+```
+
+#### 3. Contracts
+
+- `oled_data_buf[0]` is the SSD1306 I2C control byte `0x40`; the remaining bytes carry display data.
+- `OLED_Write_data_buf()` must split writes larger than `OLED_TX_DATA_MAX_SIZE` into multiple DMA transfers.
+- `OLED_Write_cmd_buf()` must batch consecutive SSD1306 commands and may reuse the DMA data buffer with control byte `0x00`.
+- `OLED_Write_data()` remains a compatibility wrapper for single-byte writes and should route through `OLED_Write_data_buf()`.
+- `OLED_Write_cmd()` remains a compatibility wrapper for single-byte commands and should route through `OLED_Write_cmd_buf()`.
+- `OLED_Set_Position()` should send page, high-column, and low-column commands in one `OLED_Write_cmd_buf()` transaction.
+- `OLED_Clear()` and `OLED_Allfill()` should write one full 128-byte page per transaction instead of issuing 128 single-byte transactions per page.
+- `OLED_ShowStr()` should batch-render 6x8 strings into row buffers instead of calling `OLED_ShowChar()` for every character.
+- For 6x8 text, keep the legacy 8-pixel character step by writing 6 glyph columns plus 2 blank columns per character.
+- App-layer `oled_printf()` should compare its line cache and refresh only the changed character span when possible.
+- The low-level packet helper must wait for DMA FTF and I2C BTC before STOP, so the final byte is shifted out before the bus is released.
+- On bus, address, DMA, or STOP timeout, OLED transmission may set `s_oled_available = 0U`; `OLED_Init()` is responsible for re-enabling OLED attempts.
+
+#### 4. Validation & Error Matrix
+
+| Observation | Meaning | Required Action |
+|-------------|---------|-----------------|
+| `OLED_Clear()` loops over 128 calls to `OLED_Write_data(0)` per page | regressed to per-byte I2C transactions | use a 128-byte zero buffer and `OLED_Write_data_buf()` |
+| `OLED_Set_Position()` calls `OLED_Write_cmd()` three times | regressed to three command transactions per cursor move | send the three position commands with `OLED_Write_cmd_buf()` |
+| `OLED_ShowStr()` calls `OLED_ShowChar()` in a character loop | string updates still pay per-character positioning overhead | render one row/page segment into a buffer and call `OLED_Write_data_buf()` |
+| 6x8 batch text writes only 6 bytes per character | app diff refresh positions drift from the legacy 8-pixel grid | append two blank columns for each 6x8 glyph |
+| `oled_printf()` refreshes a whole 16-character line after a one-character change | high-frequency status rows still do avoidable I2C work | compute start/end diff indexes and refresh only that span |
+| `oled_data_buf` is only 2 bytes | batch API cannot carry a page | restore `OLED_TX_BUFFER_SIZE = OLED_TX_DATA_MAX_SIZE + 1U` |
+| DMA FTF is checked but I2C BTC is not checked before STOP | last byte may still be shifting | wait for `I2C_FLAG_BTC` before `i2c_stop_on_bus()` |
+| new display path writes dynamic heap buffers | avoidable heap use in hot display path | use static buffers, stack buffers, or existing font arrays |
+| OLED task becomes slow after text changes | too many START/STOP transactions | check `OLED_ShowChar()` and bitmap paths for batch writes |
+
+#### 5. Good / Base / Bad Cases
+
+| Case | Expected Result |
+|------|-----------------|
+| Good | `OLED_Set_Position()` uses one command transaction, `OLED_ShowStr()` sends row/page segments, and `OLED_Clear()` sends 4 page data transfers plus page-position commands |
+| Base | `OLED_Write_data()` still works for legacy single-byte callers |
+| Bad | each byte of a character or clear page starts its own I2C transaction |
+
+#### 6. Tests Required
+
+- Run `python tools/test_static_optimizations.py` and confirm OLED batch-transfer assertions pass.
+- Run a Keil rebuild and confirm `project/output/Project.build_log.htm` reports `0 Error(s), 0 Warning(s)`.
+- Search for stale OLED documentation such as `oled_data_buf[2]`, OLED `10ms` task period, or `oled_printf` using a 512-byte buffer.
+- Hardware smoke test after flashing: OLED initializes, clears, displays all four app lines, and still turns off before deep sleep.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```c
+for (n = 0U; n < 128U; n++) {
+    OLED_Write_data(0x00U);
+}
+```
+
+##### Correct
+
+```c
+static const uint8_t zeros[OLED_TX_DATA_MAX_SIZE] = {0U};
+
+OLED_Write_data_buf(zeros, OLED_TX_DATA_MAX_SIZE);
+```
+
 ### Do not expose private helpers through headers
 
 Keep callback glue and local helpers `static` in the `.c` file.

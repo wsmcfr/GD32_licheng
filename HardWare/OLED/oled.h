@@ -24,6 +24,17 @@ void OLED_Write_cmd(uint8_t cmd);
 
 /*
  * 函数作用：
+ *   向 OLED 控制器连续发送多字节命令，底层会按 DMA 缓冲区容量自动分块发送。
+ * 参数说明：
+ *   cmds：待写入的 SSD1306 命令数组指针，调用者需保证数据长度不少于 length。
+ *   length：待写入的命令字节数，不包含 SSD1306 I2C 控制字；为 0 时不发送。
+ * 返回值说明：
+ *   无返回值。
+ */
+void OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length);
+
+/*
+ * 函数作用：
  *   向 OLED 显存写入 1 字节显示数据。
  * 参数说明：
  *   data：需要写入 OLED 显存的数据字节。
@@ -31,6 +42,17 @@ void OLED_Write_cmd(uint8_t cmd);
  *   无返回值。
  */
 void OLED_Write_data(uint8_t data);
+
+/*
+ * 函数作用：
+ *   向 OLED 显存连续写入一段数据，底层会按 DMA 缓冲区容量自动分块发送。
+ * 参数说明：
+ *   data：待写入的显存数据指针，调用者需保证数据长度不少于 length。
+ *   length：待写入的显存字节数，不包含 SSD1306 I2C 控制字；为 0 时不发送。
+ * 返回值说明：
+ *   无返回值。
+ */
+void OLED_Write_data_buf(const uint8_t *data, uint16_t length);
 
 /*
  * 函数作用：
