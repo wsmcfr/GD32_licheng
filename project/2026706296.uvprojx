@@ -599,11 +599,6 @@
               <FileType>1</FileType>
               <FilePath>..\HardWare\BOOTLOADER\bootloader_port.c</FilePath>
             </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>HardWare/GD25QXX</GroupName>
-          <Files>
             <File>
               <FileName>gd25qxx.c</FileName>
               <FileType>1</FileType>
@@ -614,31 +609,16 @@
               <FileType>1</FileType>
               <FilePath>..\HardWare\GD25QXX\smartfs_port.c</FilePath>
             </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>HardWare/OLED</GroupName>
-          <Files>
             <File>
               <FileName>oled.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\HardWare\OLED\oled.c</FilePath>
             </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>HardWare/SDIO</GroupName>
-          <Files>
             <File>
               <FileName>sdio_sdcard.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\HardWare\SDIO\sdio_sdcard.c</FilePath>
             </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>HardWare/GD30AD3344</GroupName>
-          <Files>
             <File>
               <FileName>gd30ad3344.c</FileName>
               <FileType>1</FileType>
@@ -647,7 +627,7 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>Library/Third_Party/fat_fs</GroupName>
+          <GroupName>Library</GroupName>
           <Files>
             <File>
               <FileName>diskio.c</FileName>

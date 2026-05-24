@@ -89,6 +89,17 @@ Use `HardWare/<device>/` for reusable device or protocol logic:
 
 Component code may depend on driver-provided buses, but it should not become the place that owns board-level pin maps.
 
+Keil project display should keep all low-level source entries under a single
+`HardWare` group. Do not create separate uVision groups such as
+`HardWare/OLED`, `HardWare/SDIO`, or `HardWare/GD25QXX`; the physical
+subdirectories still carry ownership boundaries, while the IDE tree stays
+compact and consistent with the top-level firmware layer.
+
+Keil project display should also keep third-party library sources under a
+single `Library` group. Do not expose internal paths such as
+`Library/Third_Party/fat_fs` as uVision group names; keep those paths only in
+the actual file references.
+
 ### Function Layer
 
 Use `Function/` for scheduled application behavior and user-visible policy:
