@@ -382,7 +382,7 @@
       </TargetOption>
       <Groups>
         <Group>
-          <GroupName>Peripherals</GroupName>
+          <GroupName>Library</GroupName>
           <Files>
             <File>
               <FileName>gd32f4xx_adc.c</FileName>
@@ -529,6 +529,21 @@
               <FileType>1</FileType>
               <FilePath>..\Library\GD32F4xx_standard_peripheral\Source\gd32f4xx_wwdgt.c</FilePath>
             </File>
+            <File>
+              <FileName>diskio.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Library\Third_Party\fat_fs\src\diskio.c</FilePath>
+            </File>
+            <File>
+              <FileName>ff.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Library\Third_Party\fat_fs\src\ff.c</FilePath>
+            </File>
+            <File>
+              <FileName>ccsbcs.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Library\Third_Party\fat_fs\src\option\ccsbcs.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -623,26 +638,6 @@
               <FileName>gd30ad3344.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\HardWare\GD30AD3344\gd30ad3344.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Library</GroupName>
-          <Files>
-            <File>
-              <FileName>diskio.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Library\Third_Party\fat_fs\src\diskio.c</FilePath>
-            </File>
-            <File>
-              <FileName>ff.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Library\Third_Party\fat_fs\src\ff.c</FilePath>
-            </File>
-            <File>
-              <FileName>ccsbcs.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Library\Third_Party\fat_fs\src\option\ccsbcs.c</FilePath>
             </File>
           </Files>
         </Group>

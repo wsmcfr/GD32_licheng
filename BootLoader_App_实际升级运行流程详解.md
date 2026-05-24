@@ -651,12 +651,12 @@ App 在 [uart_ota_app.c:642](D:/GD32/2026706296/Function/uart_ota_app.c:642) 收
 
 ## 7. BootLoader 端到底做了什么
 
-BootLoader 核心文件是 [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:137)。
+BootLoader 核心文件已经迁移到 [D:\GD32\2026706296_bootloader\Function\Function.c](D:/GD32/2026706296_bootloader/Function/Function.c:120)。
 
 ### 7.1 读取参数区并决定是否搬运
 
 入口函数：`UsrFunction()`  
-位置：[Function.c:137](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:137)
+位置：[Function.c:120](D:/GD32/2026706296_bootloader/Function/Function.c:120)
 
 它会做：
 
@@ -674,7 +674,7 @@ BootLoader 核心文件是 [BootLoader_Two_Stage/27_0_BootLoader/Function/Functi
 ### 7.2 真正的搬运函数
 
 函数：`Download_Transport()`  
-位置：[Function.c:398](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:398)
+位置：[Function.c:376](D:/GD32/2026706296_bootloader/Function/Function.c:376)
 
 它做的事：
 
@@ -712,7 +712,7 @@ BootLoader 成功后会把：
 ### 8.2 第二次启动时跳转新 App
 
 函数：`jump_to_app()`  
-位置：[Function.c:641](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:641)
+位置：[Function.c:635](D:/GD32/2026706296_bootloader/Function/Function.c:635)
 
 它会：
 
@@ -726,7 +726,7 @@ BootLoader 成功后会把：
 ### 8.3 `iap_load_app()` 的真正跳转动作
 
 函数：`iap_load_app()`  
-位置：[Function.c:578](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:578)
+位置：[Function.c:554](D:/GD32/2026706296_bootloader/Function/Function.c:554)
 
 它不是简单函数跳转，而是完整切换运行现场：
 
@@ -837,9 +837,9 @@ BootLoader : jump app vtor:0x0800d000 msp:0x20005818 entry:0x0800d379
 | 3 | [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:621) | `uart_ota_task()` 如何取帧、解析协议、处理结果 |
 | 4 | [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:313) | App 如何处理 START/DATA/END |
 | 5 | [HardWare/BOOTLOADER/bootloader_port.c](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:461) | App 如何写参数区通知 BootLoader |
-| 6 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:137) | BootLoader 如何决定是否搬运 |
-| 7 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:398) | BootLoader 如何真正搬运 |
-| 8 | [BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c](D:/GD32/2026706296/BootLoader_Two_Stage/27_0_BootLoader/Function/Function.c:578) | BootLoader 如何跳新 App |
+| 6 | [D:\GD32\2026706296_bootloader\Function\Function.c](D:/GD32/2026706296_bootloader/Function/Function.c:120) | BootLoader 如何决定是否搬运 |
+| 7 | [D:\GD32\2026706296_bootloader\Function\Function.c](D:/GD32/2026706296_bootloader/Function/Function.c:376) | BootLoader 如何真正搬运 |
+| 8 | [D:\GD32\2026706296_bootloader\Function\Function.c](D:/GD32/2026706296_bootloader/Function/Function.c:554) | BootLoader 如何跳新 App |
 | 9 | [User/boot_app_config.c](D:/GD32/2026706296/User/boot_app_config.c:1) | 新 App 如何接管现场 |
 
 ---

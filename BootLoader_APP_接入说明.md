@@ -181,7 +181,7 @@ sent stream frames=68, channel=RS485/USART1, port=COM29, baudrate=460800
 | `27_0_BootLoader\Function\Function.c` | `CONFIG_APP_SIZE 1024*20`，一次性读整个 App | 改为 `1024B` 分块搬运 | 避免当前 App 超过 20KB 后造成数组越界或截断 |
 | `27_0_BootLoader\Function\Function.c` | 固定只擦除 App 开头 `3 * 4KB` | 改为按 `appSize` 计算擦除页数 | 当前 App 超过 12KB 时也能完整擦除后再写入 |
 | `27_0_BootLoader\Function\Function.c` | 跳转合法性检查只粗略判断 SRAM 高位 | 改为检查 MSP 位于 `0x20000000~0x20030000`，入口位于 App 区且为 Thumb 地址 | 避免空镜像、错地址或损坏镜像被误跳转 |
-| `27_0_BootLoader\project\CIMC_GD32_BootLoader.uvprojx` | Keil 工程界面 IROM 仍显示 `0x08000000 / 0x080000` | 改为 `0x08000000 / 0x00C000` | 与 BootLoader 实际 48KB 分区保持一致 |
+| `D:\GD32\2026706296_bootloader\project\2026706296.uvprojx` | Keil 工程界面 IROM 仍显示 `0x08000000 / 0x080000` | 改为 `0x08000000 / 0x00C000` | 与 BootLoader 实际 48KB 分区保持一致 |
 | 下载缓存区 | `0x08067000` 起 100KB | 上限检查同步提升到 100KB | 当前 `Project.bin` 已可超过 64KB；后续 App bin 仍必须小于等于 100KB，除非继续重做下载缓存规划 |
 
 ## 8. 当前 BootLoader 搬运逻辑

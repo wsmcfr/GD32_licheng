@@ -1,6 +1,6 @@
 # Embedded OTA Guidelines
 
-> Scope: RS485/USART1 App-side streaming OTA flow for the GD32F470 BootLoader_Two_Stage integration.
+> Scope: RS485/USART1 App-side streaming OTA flow for the GD32F470 standalone BootLoader project at `D:\GD32\2026706296_bootloader`.
 
 ---
 
