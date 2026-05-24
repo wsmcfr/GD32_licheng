@@ -1143,3 +1143,44 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: GD30AD3344 PT100 app
+
+**Date**: 2026-05-24
+**Task**: GD30AD3344 PT100 app
+**Branch**: `feature/lowpower-runtime-optimizations`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|------|------|
+| 实现 | 新增 `Function/gd30ad3344_pt100_app.c/h`，封装 GD30AD3344 读取 PT100 调理板输出后的电阻和温度换算。 |
+| 采样参数 | 默认 `AIN0~GND`、`GD30AD3344_PGA_4V096`、`1mA` 激励电流、`R5=6.49kΩ` 对应前端增益 `16.41`。 |
+| 调度集成 | 在 `scheduler_task[]` 中以 `200ms` 周期注册 `gd30ad3344_pt100_task()`，并在 GD30AD3344 初始化后调用 `gd30ad3344_pt100_app_init()`。 |
+| 接口 | 提供 `pt100_measurement_t` 缓存结果结构体、`gd30ad3344_pt100_get_latest()` 读取最近采样。 |
+| 文档 | 同步 `工程文档.md` 和 `.trellis/spec/frontend/directory-structure.md`，说明启动流程、Function 目录和 PT100 换算参数。 |
+| 验证 | 运行 `python tools/test_static_optimizations.py`、`git diff --check`，均通过；本机未找到 `UV4/UV5/armclang`，未进行 Keil/ArmClang 编译。 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9774f9a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
