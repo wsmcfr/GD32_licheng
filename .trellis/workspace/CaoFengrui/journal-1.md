@@ -1184,3 +1184,58 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: OLED I2C refresh path optimization
+
+**Date**: 2026-05-25
+**Task**: OLED I2C refresh path optimization
+**Branch**: `feature/lowpower-runtime-optimizations`
+
+### Summary
+
+Optimized the SSD1306 OLED refresh path after hardware testing confirmed display output is normal. The work reduced I2C transaction count for command positioning, string rendering, and app-layer status updates while preserving the legacy 8-pixel text grid.
+
+### Main Changes
+
+| 内容 | 说明 |
+|------|------|
+| OLED 命令批量发送 | 新增 `OLED_Write_cmd_buf()`，`OLED_Write_cmd()` 保留为兼容封装，连续 SSD1306 命令可按 DMA 缓冲区批量发送。 |
+| OLED 定位事务压缩 | `OLED_Set_Position()` 改为通过 `oled_set_position_buf()` 一次发送页地址、高列地址和低列地址，定位从 3 次 I2C 命令事务降为 1 次。 |
+| 字符串批量渲染 | `OLED_ShowStr()` 不再逐字符调用 `OLED_ShowChar()`；6x8 字符按 8 像素步进拼入行缓冲，8x16 字符按上下页批量写入。 |
+| 应用层差异段刷新 | `oled_printf()` 新增 `oled_printf_diff_start()` 和 `oled_printf_diff_end()`，只刷新变化字符段，降低 `uwTick`、ADC 等状态行的 I2C/DMA 写入量。 |
+| 文档与规则同步 | 更新 `工程文档.md`、`.trellis/spec/backend/quality-guidelines.md` 和 `tools/test_static_optimizations.py`，固化 OLED 批量传输与差异刷新契约。 |
+| 验证 | 已通过 `python tools/test_static_optimizations.py`、`python -m py_compile tools/test_static_optimizations.py`、`git diff --check`、Keil rebuild；构建日志显示 `0 Error(s), 0 Warning(s)`。 |
+
+**Updated Files**:
+- `HardWare/OLED/oled.c`
+- `HardWare/OLED/oled.h`
+- `HardWare/OLED/bsp_oled.c`
+- `HardWare/OLED/bsp_oled.h`
+- `Function/oled_app.c`
+- `tools/test_static_optimizations.py`
+- `工程文档.md`
+- `.trellis/spec/backend/quality-guidelines.md`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `49125a2` | (see git log) |
+
+### Testing
+
+- [OK] Human hardware check: OLED display output is normal.
+- [OK] `python tools/test_static_optimizations.py`
+- [OK] `python -m py_compile tools/test_static_optimizations.py`
+- [OK] `git diff --check`
+- [OK] Keil rebuild of target `2026706296`; `project/output/Project.build_log.htm` reports `0 Error(s), 0 Warning(s)`.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
