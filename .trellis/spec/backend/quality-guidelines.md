@@ -429,7 +429,9 @@ Expected low-power entries and ownership:
 
 ```c
 void bsp_wkup_key_exti_init(void);
+void bsp_enter_sleep(void);
 void bsp_enter_deepsleep(void);
+void bsp_enter_standby(void);
 static void bsp_deepsleep_reinit_after_wakeup(void);
 void boot_app_vector_table_init(void);
 void EXTI0_IRQHandler(void);
@@ -443,12 +445,18 @@ Expected App relocation contract:
 | `boot_app_vector_table_init()` | Writes `SCB->VTOR = BOOT_APP_START_ADDRESS`, then executes `__DSB()` and `__ISB()` |
 | `SystemInit()` | May restore clock tree and default `SCB->VTOR`; callers in relocated App code must correct VTOR immediately afterward |
 | `bsp_wkup_key_exti_init()` | Configures PA0/WK_UP as EXTI0 wake source and clears stale EXTI/NVIC pending state |
+| `bsp_enter_sleep()` | Masks non-wakeup runtime IRQs, uses EXTI0 as the wake source, stops SysTick before `pmu_to_sleepmode(WFI_CMD)`, then restores timebase, runtime IRQs, and scheduler baselines |
 | `EXTI0_IRQHandler()` | Clears EXTI0 interrupt flag only; heavy re-init stays in the WFI return path |
+| `bsp_enter_standby()` | Uses PA0 as the PMU WKUP source, not as an EXTI wake source; wake resumes through reset/startup |
 
 #### 3. Contracts
 
 - WK_UP hardware polarity must be checked against the board schematic before choosing EXTI trigger edge.
 - For the current board, WK_UP is externally pulled up and the button shorts to ground, so the wake trigger is `EXTI_TRIG_FALLING`.
+- Sleep and Deep-sleep use `EXTI0` falling edge for KEYW wakeup and return to the interrupted call path after recovery.
+- Sleep can be woken by any enabled interrupt, so the current KEYW-only Sleep contract must temporarily mask USART0, USART1, and SDIO NVIC interrupts before WFI, then restore them after wake.
+- Standby uses the PMU WKUP function on the same PA0 pin, not the EXTI0 interrupt path. The current KEYW circuit is high when released and low while pressed, so `bsp_enter_standby()` must wait for KEYW to be held low before entering Standby; releasing KEYW then creates the high-level/rising WKUP condition that resets and restarts the chip.
+- Startup code should enable `RCU_PMU`, check `PMU_FLAG_STANDBY` after the debug UART is available, emit a short boot log such as `BOOT: wake from standby`, then clear standby/wakeup flags before normal initialization continues.
 - Clear both `exti_interrupt_flag_clear(EXTI_0)` and `NVIC_ClearPendingIRQ(EXTI0_IRQn)` before entering WFI so stale events are not consumed as the wake event.
 - If `SystemInit()` is called after wake in a relocated App, wrap the clock/vector-table recovery in a short interrupt-disabled section.
 - After `SystemInit()`, call `boot_app_vector_table_init()` before enabling interrupts or allowing SysTick/peripheral IRQs to run.
@@ -463,12 +471,16 @@ Expected App relocation contract:
 - `delay_us()` should use a DWT cycle conversion rounded up to the next cycle boundary when the core clock is not an integer multiple of 1 MHz; microsecond delays must not underrun for the sake of nominal precision.
 - Prefer `PMU_LOWDRIVER_DISABLE` while validating wake reliability. Re-enable low-driver mode only after hardware smoke tests prove the board wakes consistently.
 - Keep `EXTI0_IRQHandler()` small: clear the flag and return. Do not rebuild clocks, storage, OLED, or serial drivers inside the ISR.
+- If adding or changing button mappings, keep the user-facing low-power mapping explicit: KEY1 = Sleep, KEY2 = Deep-sleep, KEY3 = Standby, KEYW = wake source.
 
 #### 4. Validation & Error Matrix
 
 | Observation | Likely Meaning | First Check |
 |-------------|----------------|-------------|
 | KEY2 enters deep sleep, WK_UP press has no visible effect | EXTI0 did not wake, stale pending was consumed, wrong edge, or PMU low-driver issue | Check WK_UP polarity, EXTI trigger, and EXTI/NVIC pending clear |
+| KEY1 Sleep wakes immediately without pressing WK_UP | SysTick or another interrupt was left enabled as a wake source | Confirm `timebase_prepare_reconfiguration()` runs before `pmu_to_sleepmode(WFI_CMD)` |
+| KEY3 Standby exits immediately after entering | PA0 was high when Standby started or WKUP flag was stale | Confirm KEYW is held low before enabling WKUP and both PMU flags are cleared |
+| KEY3 Standby wakes but code appears to continue after `pmu_to_standbymode()` | Debug option bytes or debugger hold prevented true Standby | Treat the post-Standby path as abnormal and force `NVIC_SystemReset()` |
 | WK_UP wakes once but later interrupts or serial logs stop | VTOR may still point to BootLoader after `SystemInit()` | Check `boot_app_vector_table_init()` is called immediately after `SystemInit()` |
 | Wake returns only with debugger attached | Timing or pending interrupt race is hiding the issue | Add LED/RAM markers before WFI and after WFI return |
 | Wake returns but OLED/UART/ADC stay broken | Re-init order or disabled peripheral clock is incomplete | Compare `bsp_deepsleep_reinit_after_wakeup()` against `system_init()` dependency order |
@@ -479,6 +491,8 @@ Expected App relocation contract:
 | Case | Expected Result |
 |------|-----------------|
 | Good | KEY2 enters deep sleep; WK_UP falling edge wakes; App restores VTOR to `0x0800D000`; UART/OLED/tasks resume |
+| Good | KEY1 enters Sleep; WK_UP falling edge wakes; App resumes without full peripheral reinitialization and scheduler baselines are reset |
+| Good | KEY3 waits for KEYW to be held low, enters Standby, then releasing KEYW restarts the App and logs `BOOT: wake from standby` |
 | Base | Normal reset still prints BootLoader/App logs and App starts at `0x0800D000` |
 | Bad | Calling `SystemInit()` after wake and leaving VTOR at `0x08000000` |
 | Bad | Using both-edge wake for a pulled-up button and letting release generate an unnecessary EXTI0 interrupt |
@@ -490,6 +504,8 @@ Expected App relocation contract:
 - Upgrade or flash the App, then reset and confirm the boot log reports the expected `appVersion`.
 - Press KEY2 and confirm the board enters the intended low-power state.
 - Press WK_UP and confirm the App visibly returns: debug UART logs resume, OLED/tasks recover, and the board remains responsive.
+- Press KEY1 and confirm Sleep pauses the CPU until WK_UP is pressed, then normal tasks resume.
+- Press KEY3, hold WK_UP low until Standby is entered, release WK_UP, and confirm the App restarts with `BOOT: wake from standby`.
 - If wake still fails, add one-shot markers in this order: before WFI, inside `EXTI0_IRQHandler()`, immediately after WFI return, after `boot_app_vector_table_init()`, and after peripheral re-init.
 
 #### 7. Wrong vs Correct

@@ -232,6 +232,157 @@ static void bsp_gpio_enter_deepsleep_state(void)
 
 /*
  * 函数作用：
+ *   在进入 Standby 前等待 KEYW/PA0 被用户按下并保持为低电平。
+ * 主要流程：
+ *   1. 确保 PA0 仍为上拉输入。
+ *   2. 轮询 KEYW 电平，直到检测到按下低电平。
+ *   3. 连续保持低电平达到消抖时间后返回。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   当前原理图中 KEYW 释放态被上拉到高电平，按下接地。PMU WKUP 在
+ *   Standby 中按高电平/上升沿唤醒，因此必须先让用户按住 KEYW 使 PA0
+ *   处于低电平，再进入 Standby；随后松开 KEYW 产生上升沿完成唤醒复位。
+ */
+static void bsp_wait_keyw_low_before_standby(void)
+{
+    uint32_t stable_low_ms = 0U;
+
+    rcu_periph_clock_enable(KEYA_CLK_PORT);
+    gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEYW_PIN);
+
+    while(stable_low_ms < 20U) {
+        if(!KEYW_READ) {
+            stable_low_ms++;
+        } else {
+            stable_low_ms = 0U;
+        }
+        delay_ms(1U);
+    }
+}
+
+/*
+ * 函数作用：
+ *   临时屏蔽 Sleep 期间不希望唤醒 CPU 的运行态外设中断。
+ * 主要流程：
+ *   1. 关闭调试串口 USART0、RS485/OTA USART1 和 SDIO 的 NVIC 中断。
+ *   2. 清除这些中断的挂起状态，避免刚执行 WFI 就被旧事件唤醒。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   Sleep 模式本身会被任意已使能中断唤醒。当前 KEY1 语义要求由 KEYW 唤醒，
+ *   因此只保留 EXTI0 作为本轮明确唤醒源。
+ */
+static void bsp_sleep_mask_runtime_irqs(void)
+{
+    nvic_irq_disable(USART0_IRQn);
+    nvic_irq_disable(USART1_IRQn);
+    nvic_irq_disable(SDIO_IRQn);
+
+    NVIC_ClearPendingIRQ(USART0_IRQn);
+    NVIC_ClearPendingIRQ(USART1_IRQn);
+    NVIC_ClearPendingIRQ(SDIO_IRQn);
+}
+
+/*
+ * 函数作用：
+ *   恢复 Sleep 前临时屏蔽的运行态外设中断。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   这里按当前工程默认运行态恢复 USART0、USART1 和 SDIO 中断优先级。
+ *   若后续新增可在 Sleep 期间保留的唤醒源，应同步调整屏蔽和恢复列表。
+ */
+static void bsp_sleep_unmask_runtime_irqs(void)
+{
+    NVIC_ClearPendingIRQ(USART0_IRQn);
+    NVIC_ClearPendingIRQ(USART1_IRQn);
+    NVIC_ClearPendingIRQ(SDIO_IRQn);
+
+    nvic_irq_enable(USART0_IRQn, 0U, 0U);
+    nvic_irq_enable(USART1_IRQn, 1U, 0U);
+    nvic_irq_enable(SDIO_IRQn, 0U, 0U);
+}
+
+/*
+ * 函数作用：
+ *   根据睡前和醒后的 RTC 秒级时间戳补偿本地毫秒 timebase。
+ * 主要流程：
+ *   1. 判断睡前时间戳是否有效。
+ *   2. 读取当前 RTC 秒级时间戳。
+ *   3. 只在醒后时间不早于睡前时间时追加毫秒补偿。
+ *   4. 对超过 32 位毫秒表达范围的极长睡眠做分段补偿。
+ * 参数说明：
+ *   sleep_epoch：睡前通过 RTC 读取到的秒级时间戳，单位为秒。
+ *   sleep_epoch_valid：sleep_epoch 是否有效，非 0 表示可用于补偿。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void bsp_apply_rtc_sleep_compensation(uint32_t sleep_epoch, uint8_t sleep_epoch_valid)
+{
+    uint32_t wake_epoch;
+    uint32_t sleep_elapsed_s;
+
+    if((0U == sleep_epoch_valid) || (0 != bsp_rtc_get_epoch_seconds(&wake_epoch))) {
+        return;
+    }
+
+    if(wake_epoch < sleep_epoch) {
+        /*
+         * RTC 被重新设置或备份域异常时，醒后秒计数可能小于睡前值。
+         * 这种情况下不能用负向差值补偿 timebase，直接保留当前运行时基。
+         */
+        return;
+    }
+
+    /*
+     * SysTick 在低功耗期间停止，RTC 仍然以秒级推进。
+     * 这里用 RTC 秒差补偿本地 timebase，保证跨睡眠日志时间和超时基准不被缩短。
+     */
+    sleep_elapsed_s = wake_epoch - sleep_epoch;
+    while(sleep_elapsed_s > (0xFFFFFFFFUL / 1000UL)) {
+        /*
+         * 极长休眠超过单次 32 位毫秒补偿能力时分段追加。
+         * 每段都小于 2^32ms，timebase_adjust_ms() 可以正确处理低 32 位回绕。
+         */
+        timebase_adjust_ms((0xFFFFFFFFUL / 1000UL) * 1000UL);
+        sleep_elapsed_s -= (0xFFFFFFFFUL / 1000UL);
+    }
+    timebase_adjust_ms(sleep_elapsed_s * 1000UL);
+}
+
+/*
+ * 函数作用：
+ *   执行轻量 Sleep 唤醒后的运行时状态恢复。
+ * 主要流程：
+ *   1. 重新建立 SysTick/DWT timebase。
+ *   2. 用 RTC 秒差补偿 Sleep 期间停止的本地 tick。
+ *   3. 重置按键和调度器运行基线，避免唤醒后误消费睡前按键状态。
+ *   4. 关闭仅用于本次 Sleep 的 EXTI0 唤醒通道。
+ * 参数说明：
+ *   sleep_epoch：睡前通过 RTC 读取到的秒级时间戳，单位为秒。
+ *   sleep_epoch_valid：sleep_epoch 是否有效，非 0 表示可用于补偿。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void bsp_sleep_recover_after_wakeup(uint32_t sleep_epoch, uint8_t sleep_epoch_valid)
+{
+    timebase_update_after_clock_change();
+    bsp_apply_rtc_sleep_compensation(sleep_epoch, sleep_epoch_valid);
+    bsp_sleep_unmask_runtime_irqs();
+    app_btn_init();
+    scheduler_reset_runtime();
+    bsp_wkup_key_exti_deinit();
+}
+
+/*
+ * 函数作用：
  *   从深度睡眠唤醒后，重新恢复时钟、滴答和所有板级外设。
  * 参数说明：
  *   sleep_epoch：睡前通过 RTC 读取到的秒级时间戳，单位为秒。
@@ -244,9 +395,6 @@ static void bsp_gpio_enter_deepsleep_state(void)
  */
 static void bsp_deepsleep_reinit_after_wakeup(uint32_t sleep_epoch, uint8_t sleep_epoch_valid)
 {
-    uint32_t wake_epoch;
-    uint32_t sleep_elapsed_s;
-
     /*
      * WFI 被 EXTI0 唤醒后，全局中断已经处于打开状态。
      * SystemInit() 会短暂把 VTOR 恢复到默认 Flash 起始地址，因此这里先关中断，
@@ -266,25 +414,7 @@ static void bsp_deepsleep_reinit_after_wakeup(uint32_t sleep_epoch, uint8_t slee
 
     SystemCoreClockUpdate();
     timebase_update_after_clock_change();
-
-    if((0U != sleep_epoch_valid) && (0 == bsp_rtc_get_epoch_seconds(&wake_epoch))) {
-        if(wake_epoch >= sleep_epoch) {
-            /*
-             * SysTick 在深睡期间停止，RTC 仍然以秒级推进。
-             * 这里用 RTC 秒差补偿本地 timebase，保证跨睡眠日志时间和超时基准不被缩短。
-             */
-            sleep_elapsed_s = wake_epoch - sleep_epoch;
-            while(sleep_elapsed_s > (0xFFFFFFFFUL / 1000UL)) {
-                /*
-                 * 极长休眠超过单次 32 位毫秒补偿能力时分段追加。
-                 * 每段都小于 2^32ms，timebase_adjust_ms() 可以正确处理低 32 位回绕。
-                 */
-                timebase_adjust_ms((0xFFFFFFFFUL / 1000UL) * 1000UL);
-                sleep_elapsed_s -= (0xFFFFFFFFUL / 1000UL);
-            }
-            timebase_adjust_ms(sleep_elapsed_s * 1000UL);
-        }
-    }
+    bsp_apply_rtc_sleep_compensation(sleep_epoch, sleep_epoch_valid);
 
     /*
      * 时钟、SysTick 和 App 向量表已经恢复后再开中断。
@@ -343,6 +473,57 @@ static void bsp_deepsleep_reinit_after_wakeup(uint32_t sleep_epoch, uint8_t slee
      * 每次下降沿都额外打进一次低功耗专用中断。
      */
     bsp_wkup_key_exti_deinit();
+}
+
+/*
+ * 函数作用：
+ *   进入 Sleep 轻量睡眠模式，并在 KEYW/PA0 唤醒后继续运行。
+ * 主要流程：
+ *   1. 保存睡前 RTC 秒级时间戳，供唤醒后补偿本地 timebase。
+ *   2. 配置 KEYW/PA0 的 EXTI0 下降沿中断作为本轮 Sleep 唤醒源。
+ *   3. 停止 SysTick，避免 1ms tick 立即把 CPU 唤醒。
+ *   4. 调用 `pmu_to_sleepmode(WFI_CMD)` 停止 CPU。
+ *   5. 唤醒后恢复 timebase、按键扫描基线和调度器运行基线。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void bsp_enter_sleep(void)
+{
+    uint32_t sleep_epoch = 0U;
+    uint8_t sleep_epoch_valid = 0U;
+
+    rcu_periph_clock_enable(RCU_PMU);
+
+    /*
+     * Sleep 不关闭 RTC 和大部分外设，但会暂停 SysTick。
+     * 提前记录 RTC 秒级时间戳后，唤醒阶段可以把停止的 tick 时间补回来。
+     */
+    if(0 == bsp_rtc_get_epoch_seconds(&sleep_epoch)) {
+        sleep_epoch_valid = 1U;
+    }
+
+    __disable_irq();
+    bsp_sleep_mask_runtime_irqs();
+    bsp_wkup_key_exti_init();
+    pmu_flag_clear(PMU_FLAG_RESET_WAKEUP);
+    timebase_prepare_reconfiguration();
+
+    /*
+     * 配置完 EXTI 后再次清 NVIC pending，保证 WFI 等待的是用户后续按下 KEYW
+     * 产生的新下降沿，而不是配置过程或按键抖动留下的旧事件。
+     */
+    NVIC_ClearPendingIRQ(EXTI0_IRQn);
+    __enable_irq();
+
+    pmu_to_sleepmode(WFI_CMD);
+
+    /*
+     * Sleep 只停 CPU，不破坏系统时钟和外设配置，因此唤醒后不需要重跑
+     * SystemInit() 或外设初始化，只恢复被主动暂停的本地运行时状态。
+     */
+    bsp_sleep_recover_after_wakeup(sleep_epoch, sleep_epoch_valid);
 }
 
 /*
@@ -417,4 +598,79 @@ void bsp_enter_deepsleep(void)
     pmu_to_deepsleepmode(PMU_LDO_LOWPOWER, PMU_LOWDRIVER_ENABLE, WFI_CMD);
 
     bsp_deepsleep_reinit_after_wakeup(sleep_epoch, sleep_epoch_valid);
+}
+
+/*
+ * 函数作用：
+ *   收拢板级外设后进入 Standby 待机模式。
+ * 主要流程：
+ *   1. 关闭串口、OLED、SPI、SDIO、ADC、DAC、TIMER 等外设。
+ *   2. 将 GPIO 收拢为低漏电状态，并保留 KEYW/PA0 的 WKUP 引脚条件。
+ *   3. 清除 PMU 唤醒/待机标志，启用 PMU WKUP 引脚。
+ *   4. 调用 `pmu_to_standbymode()` 进入 Standby。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值；Standby 唤醒会走复位启动流程，正常情况下本函数不会返回。
+ * 说明：
+ *   当前 KEYW 原理图为上拉、按下接地。PMU WKUP 为高电平/上升沿唤醒，
+ *   因此 Standby 下按下 KEYW 后松开时触发唤醒复位。
+ */
+void bsp_enter_standby(void)
+{
+    int spi_sleep_result;
+
+    rcu_periph_clock_enable(RCU_PMU);
+
+    /*
+     * Standby 的 WKUP 唤醒依赖 PA0 从低电平回到高电平。
+     * 用户按 KEY3 后需要按住 KEYW，等待系统真正进入 Standby 后再松开 KEYW 唤醒。
+     * 这一步必须放在关闭串口和 SysTick 前，保证 delay_ms() 仍可用于稳定消抖。
+     */
+    bsp_wait_keyw_low_before_standby();
+
+    __disable_irq();
+
+    bsp_usart_disable_for_deepsleep();
+    bsp_oled_disable_for_deepsleep();
+    spi_sleep_result = bsp_spi_disable_for_deepsleep();
+    if(0 != spi_sleep_result) {
+        /*
+         * Standby 前调试串口已经关闭，即使外设低功耗命令失败，也继续收拢
+         * 其他资源，避免在无法输出日志的路径里永久停住。
+         */
+    }
+    bsp_sdio_disable_for_deepsleep();
+
+    adc_disable(ADC0);
+    adc_dma_mode_disable(ADC0);
+    dma_channel_disable(DMA1, DMA_CH0);
+    dac_disable(DAC0, DAC_OUT0);
+    dac_dma_disable(DAC0, DAC_OUT0);
+    dma_channel_disable(DMA0, DMA_CH5);
+    timer_disable(TIMER5);
+
+    bsp_gpio_enter_deepsleep_state();
+    bsp_clock_disable_for_deepsleep();
+
+    pmu_wakeup_pin_disable();
+    pmu_flag_clear(PMU_FLAG_RESET_WAKEUP);
+    pmu_flag_clear(PMU_FLAG_RESET_STANDBY);
+    pmu_wakeup_pin_enable();
+
+    timebase_prepare_reconfiguration();
+
+    /*
+     * Standby 唤醒后不会回到当前调用栈，因此不需要配置 EXTI0 或恢复调度器。
+     * 这里只重新开全局中断，让 PMU 的 WFI 入口按标准流程进入待机状态。
+     */
+    __enable_irq();
+
+    pmu_to_standbymode();
+
+    /*
+     * 若调试器或选项字导致 Standby 没有真正进入，这里用复位回到明确的启动态，
+     * 避免在外设已关闭、timebase 已停用的半初始化环境中继续执行。
+     */
+    NVIC_SystemReset();
 }

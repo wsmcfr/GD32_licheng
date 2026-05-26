@@ -114,6 +114,17 @@ void system_init(void)
 		 */
 		bsp_usart_init();
 		my_printf(DEBUG_USART, "BOOT: handoff start\r\n");
+		rcu_periph_clock_enable(RCU_PMU);
+		if(SET == pmu_flag_get(PMU_FLAG_STANDBY)) {
+			/*
+			 * Standby 唤醒会按复位流程重新启动，无法从睡前调用栈返回。
+			 * 这里在调试串口可用后尽早输出来源标记，方便区分普通上电复位和
+			 * KEYW/PMU WKUP 触发的 Standby 唤醒复位。
+			 */
+			my_printf(DEBUG_USART, "BOOT: wake from standby\r\n");
+			pmu_flag_clear(PMU_FLAG_RESET_STANDBY);
+			pmu_flag_clear(PMU_FLAG_RESET_WAKEUP);
+		}
 
 		systick_config();
 		my_printf(DEBUG_USART, "BOOT: systick/timebase done\r\n");

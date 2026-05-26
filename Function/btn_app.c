@@ -136,8 +136,8 @@ static uint8_t prv_btn_read_mask(void)
  *   根据稳定的按下沿位图，执行与当前工程一致的按键业务动作。
  * 主要流程：
  *   1. 依次检查每个按键对应的按下沿 bit。
- *   2. 对应 bit 置位时执行 LED 翻转或深度睡眠动作。
- *   3. 保持原先功能映射不变，只替换触发方式。
+ *   2. KEY1/KEY2/KEY3 分别触发 Sleep、Deep-sleep、Standby 三档低功耗。
+ *   3. 其余按键保持 LED 翻转动作，便于继续作为普通交互和硬件反馈。
  * 参数说明：
  *   key_down_mask：本轮确认稳定后新增的按下沿位图。
  * 返回值说明：
@@ -148,13 +148,19 @@ static void prv_btn_dispatch(uint8_t key_down_mask)
     if ((key_down_mask & BTN_KEY1_MASK) != 0U)
     {
         LED1_TOGGLE;
+        /*
+         * KEY1 进入最轻量 Sleep。该模式只暂停 CPU 和本地 SysTick，
+         * KEYW 唤醒后函数会返回，因此这里结束本轮分发，避免唤醒后继续消费
+         * 睡前同一轮扫描得到的其它按下沿。
+         */
+        bsp_enter_sleep();
+        return;
     }
     if ((key_down_mask & BTN_KEY2_MASK) != 0U)
     {
         LED2_TOGGLE;
         /*
-         * 先翻转 LED2 再进入深睡，保持和历史行为一致，
-         * 这样用户在按下 KEY2 时仍能先看到一次可见反馈。
+         * KEY2 进入 Deep-sleep。先翻转 LED2 再进入深睡，保留可见反馈。
          * 该函数会在唤醒恢复后才返回，因此这里直接结束本轮分发，
          * 避免唤醒后继续消费睡前这一次扫描得到的其他按下沿位。
          */
@@ -164,6 +170,12 @@ static void prv_btn_dispatch(uint8_t key_down_mask)
     if ((key_down_mask & BTN_KEY3_MASK) != 0U)
     {
         LED3_TOGGLE;
+        /*
+         * KEY3 进入 Standby。Standby 唤醒后走复位启动流程，正常不会回到
+         * 当前函数；这里仍保留 return，覆盖调试模式下未真正进入 Standby 的情况。
+         */
+        bsp_enter_standby();
+        return;
     }
     if ((key_down_mask & BTN_KEY4_MASK) != 0U)
     {
