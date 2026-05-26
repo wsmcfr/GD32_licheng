@@ -1239,3 +1239,55 @@ Optimized the SSD1306 OLED refresh path after hardware testing confirmed display
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Three-level low power modes
+
+**Date**: 2026-05-26
+**Task**: Three-level low power modes
+**Branch**: `feature/lowpower-runtime-optimizations`
+
+### Summary
+
+Added KEY1 Sleep, KEY2 Deep-sleep, and KEY3 Standby runtime low-power modes. This session did not include hardware board validation.
+
+### Main Changes
+
+| Item | Description |
+|------|-------------|
+| Low-power mapping | KEY1 now enters Sleep, KEY2 enters Deep-sleep, and KEY3 enters Standby; KEYW/PA0 remains the wake source. |
+| Sleep mode | Added `bsp_enter_sleep()`, which masks USART0/USART1/SDIO runtime IRQs, stops SysTick, enters PMU Sleep, then restores timebase, runtime IRQs, button baseline, and scheduler baseline after KEYW/EXTI0 wake. |
+| Deep-sleep mode | Kept the existing Deep-sleep resource shutdown and wake recovery path, and extracted RTC sleep-time compensation into a shared helper. |
+| Standby mode | Added `bsp_enter_standby()`, which waits for KEYW to be held low, shuts down board resources, enables PMU WKUP on PA0, and enters Standby; releasing KEYW wakes by reset. |
+| Startup marker | Startup now detects `PMU_FLAG_STANDBY`, prints `BOOT: wake from standby`, then clears PMU standby/wakeup flags. |
+| Documentation | Updated `工程文档.md`, `.trellis/spec/backend/quality-guidelines.md`, and `tools/test_static_optimizations.py` with the new low-power contracts. |
+
+**Updated Files**:
+- `HardWare/POWER/bsp_power.c`
+- `HardWare/POWER/bsp_power.h`
+- `Function/btn_app.c`
+- `Function/scheduler.c`
+- `tools/test_static_optimizations.py`
+- `工程文档.md`
+- `.trellis/spec/backend/quality-guidelines.md`
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b132d93` | feat: add three-level low power modes |
+
+### Testing
+
+- [OK] `python tools/test_static_optimizations.py`
+- [OK] `git diff --check`
+- [OK] Keil/uVision rebuild target `2026706296`; log reports `0 Error(s), 0 Warning(s)`.
+- [!] Hardware board validation was not performed in this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Perform board validation for KEY1 Sleep, KEY2 Deep-sleep, KEY3 Standby, and KEYW wake behavior.

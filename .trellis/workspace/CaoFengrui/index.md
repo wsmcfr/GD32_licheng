@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
-- **Last Active**: 2026-05-25
+- **Total Sessions**: 27
+- **Last Active**: 2026-05-26
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1237 | Active |
+| `journal-1.md` | ~1292 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-05-26 | Three-level low power modes | `b132d93` | `feature/lowpower-runtime-optimizations` |
 | 26 | 2026-05-25 | OLED I2C refresh path optimization | `49125a2` | `feature/lowpower-runtime-optimizations` |
 | 25 | 2026-05-24 | GD30AD3344 PT100 app | `9774f9a` | `feature/lowpower-runtime-optimizations` |
 | 24 | 2026-05-24 | Optimize LED changed-bit refresh | `3b23b49` | `feature/lowpower-runtime-optimizations` |
