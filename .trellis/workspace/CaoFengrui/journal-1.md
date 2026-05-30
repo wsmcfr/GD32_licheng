@@ -1359,3 +1359,48 @@ Removed the obsolete SD card/FatFs stack and refined the deepest low-power workf
 
 - Flash the App and verify: KEY3 blanks OLED/LED, KEY4 press-release confirms Standby entry, KEYW/PA0 wakes and boot log prints `BOOT: wake from standby`.
 - If Standby immediately wakes after KEY4 confirmation, verify PA0/KEYW PMU WKUP active-level behavior against the board hardware.
+
+
+## Session 29: 添加 YModem OTA 升级与规则
+
+**Date**: 2026-05-31
+**Task**: 添加 YModem OTA 升级与规则
+**Branch**: `feature/ymodem-ota`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|---|---|
+| 本次目标 | 增加不依赖 Python 引导的 OTA 升级方式，让用户可用串口工具直接以 YModem 发送 `Project.bin`。 |
+| 功能实现 | 新增 App 侧 YModem OTA 接收模块，支持纸飞机调试助手等串口工具通过 `文件 -> 发送文件 -> YModem` 发送 bin 文件。 |
+| BootLoader 影响 | 第一版方案保持 BootLoader 不变，仍复用下载缓存区 `0x08067000` 和参数区 `0x0800C000` 完成 App 到 BootLoader 的升级交接。 |
+| 兼容性 | 保留旧 Python `START/DATA/END` 协议，新增 YModem 只是补充入口，不破坏原有升级脚本。 |
+| 工程接入 | 将 `Function/uart_ota_ymodem.c/.h` 接入 UART OTA 轮询逻辑，并加入 Keil 工程文件。 |
+| 缓冲区规则 | 将 USART1 RX 缓冲区调整为可容纳 1K YModem 包的数据规模，避免 1024 数据包加协议头尾后溢出。 |
+| 文档同步 | 更新 `工程文档.md`、`BootLoader_APP_接入说明.md`、`BootLoader_App_实际升级运行流程详解.md` 和 `.trellis/spec/backend/embedded-ota-guidelines.md`，写明新升级流程和长期维护规则。 |
+| 测试规则 | 新增 `tools/test_ymodem_ota_static.py`，静态校验 YModem 接入契约、缓冲区大小、Keil 工程配置和文档同步。 |
+| 验证结果 | 已运行 `python -m tools.test_ymodem_ota_static`、`python -m unittest tools.test_uart_ota_packet`、`python tools/test_static_optimizations.py`、`git diff --check`，均通过；Keil 构建日志确认 `0 Error(s), 0 Warning(s)`。 |
+| 分支上传 | 已在新分支 `feature/ymodem-ota` 提交并推送功能提交 `b27b9e2 feat: add ymodem ota receiver`。 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b27b9e2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
