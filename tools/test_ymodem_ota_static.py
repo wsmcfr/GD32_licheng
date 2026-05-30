@@ -62,9 +62,20 @@ def main() -> None:
     require("UART_OTA_RESULT_SUCCESS == ymodem_result" in uart_ota,
             "uart_ota_task 未在 YModem 成功后触发统一复位流程")
     require("uart_ota_ymodem_send_poll" in uart_ota,
-            "uart_ota_task 未周期发送 YModem CRC 请求字符")
+            "uart_ota_task 未调用 YModem 周期维护入口")
+    require("uart_ota_ymodem_request_start" in uart_ota,
+            "uart_ota_task 未提供显式 YModem 启动命令入口，空闲态不应自动发送 C")
     require("uart_ota_ymodem.h" in uart_ota_h,
             "uart_ota_app.h 未包含 YModem 公共声明")
+
+    require("uart_ota_ymodem_request_start" in ymodem_h and "uart_ota_ymodem_request_start" in ymodem_c,
+            "YModem 模块必须提供显式启动轮询接口")
+    require("poll_enabled" in ymodem_c,
+            "YModem 模块缺少轮询使能状态，无法保证非升级空闲时静默")
+    require("#define UART_OTA_YMODEM_START_WINDOW_MS      30000U" in ymodem_c,
+            "YModem 显式启动请求窗口必须保持为 30 秒，避免长期占用 RS485")
+    require("空闲时不会周期发送" in ymodem_h,
+            "YModem 公共头注释必须说明非升级空闲时不会周期发送 C")
 
     require("uart_ota_ymodem.h" in system_all,
             "聚合头未包含 YModem OTA 头文件")
@@ -72,10 +83,18 @@ def main() -> None:
             "Keil 工程未包含 YModem OTA 源文件")
     require("YModem" in ota_doc and "纸飞机调试助手" in ota_doc,
             "OTA 用户文档未说明纸飞机调试助手 YModem 发送 Project.bin")
+    require("`YMODEM`" in ota_doc and "不会连续刷 C" in ota_doc,
+            "OTA 用户文档未说明发送 YMODEM 启动命令后才会请求 CRC 模式")
+    require("约 30 秒 YModem 请求窗口" in ota_doc,
+            "OTA 用户文档未说明 YModem 请求窗口时长")
     require("BootLoader 端不需要修改" in ota_doc,
             "OTA 用户文档未说明第一版 YModem 不改 BootLoader")
     require("YModem" in spec and "BSP_USART1_RX_BUFFER_SIZE` | `1152U`" in spec,
             "Trellis OTA 规范未同步 YModem 和新缓冲区大小")
+    require("explicitly requested" in spec and "does not keep sending" in spec,
+            "Trellis OTA 规范未同步 YModem 显式启动和空闲静默约束")
+    require("limited YModem request window" in spec,
+            "Trellis OTA 规范未说明 YModem 请求窗口是有限窗口")
 
 
 if __name__ == "__main__":

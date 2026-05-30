@@ -20,6 +20,7 @@
 #define UART_OTA_YMODEM_FRAME_128_TOTAL_SIZE (UART_OTA_YMODEM_PACKET_128_SIZE + UART_OTA_YMODEM_FRAME_OVERHEAD)
 #define UART_OTA_YMODEM_FRAME_1K_TOTAL_SIZE  (UART_OTA_YMODEM_PACKET_1K_SIZE + UART_OTA_YMODEM_FRAME_OVERHEAD)
 #define UART_OTA_YMODEM_POLL_PERIOD_MS       1000U
+#define UART_OTA_YMODEM_START_WINDOW_MS      30000U
 #define UART_OTA_YMODEM_FINISH_WAIT_MS       1500U
 #define UART_OTA_YMODEM_DEFAULT_VERSION      0x00000001UL
 
@@ -50,8 +51,10 @@ typedef enum
  *   vector_checked：是否已经校验过固件首包向量表。
  *   eot_seen：是否已经收到过第一次 EOT，用于兼容标准 YModem 的双 EOT 结束流程。
  *   flash_verified：下载区回读 CRC 是否已经通过，避免超时完成时重复校验。
+ *   poll_enabled：是否允许空闲态发送 'C'；只有收到显式启动命令后才置 1。
  *   final_crc32：完整固件 CRC32，写参数区和日志使用。
  *   last_poll_ms：上一次向上位机发送 'C' 请求的毫秒时间戳。
+ *   poll_deadline_ms：显式启动命令打开的等待窗口到期时间。
  *   finish_deadline_ms：进入结束等待态后的超时点，兼容不发送最终空包的工具。
  */
 typedef struct
@@ -64,8 +67,10 @@ typedef struct
     uint8_t vector_checked;
     uint8_t eot_seen;
     uint8_t flash_verified;
+    uint8_t poll_enabled;
     uint32_t final_crc32;
     uint32_t last_poll_ms;
+    uint32_t poll_deadline_ms;
     uint32_t finish_deadline_ms;
 } uart_ota_ymodem_session_t;
 
@@ -217,6 +222,33 @@ void uart_ota_ymodem_reset_runtime(void)
     g_uart_ota_ymodem_session.state = UART_OTA_YMODEM_STATE_IDLE;
     g_uart_ota_ymodem_session.running_crc = 0xFFFFFFFFUL;
     g_uart_ota_ymodem_session.expected_block = 1U;
+}
+
+/*
+ * 函数作用：
+ *   响应上位机文本命令，打开 YModem 接收请求窗口。
+ * 主要流程：
+ *   1. 当前处于空闲态时才重新初始化 YModem 状态，避免升级过程中误复位接收进度。
+ *   2. 设置 poll_enabled，并把 last_poll_ms 调整到“已超时”状态，让下一轮立即发送 'C'。
+ *   3. 设置窗口截止时间，防止用户未真正选择文件时设备长期占用 RS485 发送。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void uart_ota_ymodem_request_start(void)
+{
+    uint32_t now_ms;
+
+    if(UART_OTA_YMODEM_STATE_IDLE != g_uart_ota_ymodem_session.state){
+        return;
+    }
+
+    now_ms = timebase_get_ms32();
+    uart_ota_ymodem_reset_runtime();
+    g_uart_ota_ymodem_session.poll_enabled = 1U;
+    g_uart_ota_ymodem_session.last_poll_ms = now_ms - UART_OTA_YMODEM_POLL_PERIOD_MS;
+    g_uart_ota_ymodem_session.poll_deadline_ms = now_ms + UART_OTA_YMODEM_START_WINDOW_MS;
 }
 
 /*
@@ -463,6 +495,20 @@ uint8_t uart_ota_ymodem_send_poll(void)
     uint32_t now_ms = timebase_get_ms32();
 
     if(UART_OTA_YMODEM_STATE_IDLE == g_uart_ota_ymodem_session.state){
+        if(0U == g_uart_ota_ymodem_session.poll_enabled){
+            return UART_OTA_YMODEM_RESULT_FRAME_CONSUMED;
+        }
+
+        if((uint32_t)(now_ms - g_uart_ota_ymodem_session.poll_deadline_ms) <
+           0x80000000UL){
+            /*
+             * YModem 启动命令只打开一个有限等待窗口。
+             * 如果用户没有继续选择文件，超时后回到静默态，避免不升级时持续刷 C。
+             */
+            g_uart_ota_ymodem_session.poll_enabled = 0U;
+            return UART_OTA_YMODEM_RESULT_FRAME_CONSUMED;
+        }
+
         if((uint32_t)(now_ms - g_uart_ota_ymodem_session.last_poll_ms) >=
            UART_OTA_YMODEM_POLL_PERIOD_MS){
             g_uart_ota_ymodem_session.last_poll_ms = now_ms;

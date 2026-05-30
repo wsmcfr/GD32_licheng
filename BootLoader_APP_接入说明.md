@@ -8,8 +8,8 @@
 | 参考 BootLoader | `D:\GD32\04 例程模板\04 例程模板\27_BootLoader_Two_Stage` |
 | App 链接地址 | `0x0800D000` |
 | App 最大运行区 | `0x0005A000` |
-| 当前已完成内容 | 当前工程已经按 App 地址链接，并在启动时重定位中断向量表；复制到本工程内的 BootLoader 已按当前 App 优化搬运逻辑；App 侧已拆分为 `USART0` 日志/LittleFS 调试口 + `RS485/USART1` 专用 OTA；BootLoader 交接层已独立为 `bootloader_port.c/.h`；App/上位机工具默认升级波特率已统一为 `460800`；现在同时支持旧 Python START/DATA/END 分包流和纸飞机调试助手 YModem 直接发送 `Project.bin` |
-| 仍需注意内容 | 首次导入 OTA 功能时仍需先用 SWD/烧录器把带 OTA 接收逻辑的 App 写到 `0x0800D000`；现场推荐使用纸飞机调试助手 `文件 -> 发送文件 -> YModem` 选择 `Project.bin`；旧 Python `tools/make_uart_ota_packet.py --mode send --port COMx --baudrate 460800` 仍可保留调试回退；若板子里还是旧 BootLoader，也必须一起重刷本仓库内更新后的 BootLoader，否则它仍会按旧 `64KB` 下载区限制工作 |
+| 当前已完成内容 | 当前工程已经按 App 地址链接，并在启动时重定位中断向量表；复制到本工程内的 BootLoader 已按当前 App 优化搬运逻辑；App 侧已拆分为 `USART0` 日志/LittleFS 调试口 + `RS485/USART1` 专用 OTA；BootLoader 交接层已独立为 `bootloader_port.c/.h`；App/上位机工具默认升级波特率已统一为 `460800`；现在同时支持旧 Python START/DATA/END 分包流，以及纸飞机调试助手先发送 `YMODEM` 命令再传 `Project.bin` 的 YModem 流程 |
+| 仍需注意内容 | 首次导入 OTA 功能时仍需先用 SWD/烧录器把带 OTA 接收逻辑的 App 写到 `0x0800D000`；现场推荐先向 RS485 口发送 `YMODEM` 文本命令，再使用纸飞机调试助手 `文件 -> 发送文件 -> YModem` 选择 `Project.bin`；旧 Python `tools/make_uart_ota_packet.py --mode send --port COMx --baudrate 460800` 仍可保留调试回退；若板子里还是旧 BootLoader，也必须一起重刷本仓库内更新后的 BootLoader，否则它仍会按旧 `64KB` 下载区限制工作 |
 
 ## 2. Flash 分区关系
 
@@ -112,7 +112,7 @@
 | `project/output/Project.bin` | 纯二进制 App 镜像，用于纸飞机调试助手 YModem 发送，也可作为 Python 分包工具输入 |
 | `project/output/Project.uota` | 旧完整包格式，仍可生成用于离线检查；低 RAM 流式 OTA 不再推荐直接发送该文件 |
 
-如果通过当前 App 侧 `RS485/USART1` 在线升级，现场优先使用纸飞机调试助手 `文件 -> 发送文件 -> YModem` 直接发送 `Project.bin`。旧 Python 分包方式仍可用作调试回退：`tools/make_uart_ota_packet.py --mode send --port COMx --baudrate 460800`。不要发送 `Project.hex` 或旧完整包。
+如果通过当前 App 侧 `RS485/USART1` 在线升级，现场优先使用纸飞机调试助手先发送文本命令 `YMODEM`，再通过 `文件 -> 发送文件 -> YModem` 发送 `Project.bin`。旧 Python 分包方式仍可用作调试回退：`tools/make_uart_ota_packet.py --mode send --port COMx --baudrate 460800`。不要发送 `Project.hex` 或旧完整包。
 
 ## 6.1 生成并发送串口升级包
 
@@ -122,11 +122,12 @@
 |---|---|---|
 | 1 | 在 Keil 中重新编译当前 App 工程 | 构建后生成 `project/output/Project.bin` |
 | 2 | 打开纸飞机调试助手，连接 `RS485/USART1` 对应串口 | 波特率 `460800`，8N1 |
-| 3 | 重新上电或复位板子 | RS485 口应能看到一次 `OTA485: ready`；USART0 日志口应看到 `BOOT: start` |
-| 4 | 选择 `文件 -> 发送文件 -> YModem` | 不要选 `直接发送`，直接发送是裸字节流 |
-| 5 | 选择 `project/output/Project.bin` | YModem 首包会携带文件大小，App 按大小写入下载缓存区 |
-| 6 | 等待发送完成 | USART0 日志应出现 `YMODEM: start size=...` 和 `YMODEM: ready size=... crc=...` |
-| 7 | 观察 BootLoader 日志 | 应打印 `app crc32 check pass` 和 `app update success` |
+| 3 | 重新上电或复位板子 | RS485 口应能看到一次 `OTA485: ready`；没有升级命令时不会连续刷 `C` |
+| 4 | 在 RS485 发送输入框发送一行 `YMODEM` | USART0 日志应出现 `YMODEM: request start, waiting file`，RS485 随后在约 30 秒窗口内发送 `C` 请求 |
+| 5 | 选择 `文件 -> 发送文件 -> YModem` | 不要选 `直接发送`，直接发送是裸字节流 |
+| 6 | 选择 `project/output/Project.bin` | YModem 首包会携带文件大小，App 按大小写入下载缓存区 |
+| 7 | 等待发送完成 | USART0 日志应出现 `YMODEM: start size=...` 和 `YMODEM: ready size=... crc=...` |
+| 8 | 观察 BootLoader 日志 | 应打印 `app crc32 check pass` 和 `app update success` |
 
 第一版 YModem 只改 App 侧接收逻辑，**BootLoader 端不需要修改**。App 仍然把固件写入 `0x08067000` 下载缓存区，再写 `0x0800C000` 参数区，BootLoader 复位后按原流程搬运。
 
@@ -147,7 +148,7 @@
 | 串口 | 引脚 | 你应该看到什么 |
 |---|---|---|
 | `USART0` | `PA9/PA10` | `BOOT: start`、`OTA: rx ...`、`OTA: ready, reset to BootLoader` 等日志 |
-| `RS485/USART1` | `PD5/PD6 + PE8 方向控制` | 上电一次性探测串 `OTA485: ready`，以及 OTA 过程中返回给上位机的二进制 ACK |
+| `RS485/USART1` | `PD5/PD6 + PE8 方向控制` | 上电一次性探测串 `OTA485: ready`；收到 `YMODEM` 命令后才会发送 `C`；OTA 过程中返回给上位机 ACK/NAK/CAN 或二进制 ACK |
 
 注意：`RS485/USART1` **看不到** `BOOT: start` 属于正常现象，因为启动日志固定走 `USART0`。
 
@@ -230,7 +231,7 @@ sent stream frames=68, channel=RS485/USART1, port=COM29, baudrate=460800
 | App 必须禁用 semihosting | AC6 默认 C 库可能通过 `BKPT 0xAB` 请求调试器服务，脱机运行时会表现为 BootLoader 已 `jump app` 但 App 无日志 |
 | 不要把 App 链接回 `0x08000000` | `0x08000000` 必须留给 BootLoader |
 | SWD 调试时不要整片擦除 | 整片擦除会把 BootLoader 和参数区一起擦掉 |
-| 在线升级推荐使用 YModem | 纸飞机调试助手应选择 `文件 -> 发送文件 -> YModem` 发送 `Project.bin`；旧 Python START/DATA/END 分包仍可作为调试回退，直接裸发 `.bin` 或旧完整包不推荐 |
+| 在线升级推荐使用 YModem | 纸飞机调试助手应先向 RS485 口发送 `YMODEM` 文本命令，再选择 `文件 -> 发送文件 -> YModem` 发送 `Project.bin`；旧 Python START/DATA/END 分包仍可作为调试回退，直接裸发 `.bin` 或旧完整包不推荐 |
 
 ## 9.1 `jump app` 后脱机卡死的快速判断
 
@@ -246,7 +247,7 @@ sent stream frames=68, channel=RS485/USART1, port=COM29, baudrate=460800
 
 | 步骤 | 当前实现 |
 |---|---|
-| 1 | 纸飞机调试助手 `文件 -> 发送文件 -> YModem` 直接选择 `Project.bin`；或使用 `tools/make_uart_ota_packet.py --mode send --baudrate 460800` 生成 START/DATA/END 帧 |
+| 1 | 纸飞机调试助手先发送 `YMODEM` 文本命令，再通过 `文件 -> 发送文件 -> YModem` 选择 `Project.bin`；或使用 `tools/make_uart_ota_packet.py --mode send --baudrate 460800` 生成 START/DATA/END 帧 |
 | 2 | App 的 `RS485/USART1` IDLE + DMA 每次接收一个 OTA 帧，处理完成后切换 RS485 方向并返回 ACK/NAK；`USART0` 仅保留日志和 LittleFS 调试命令 |
 | 3 | YModem 首包提供固件大小；旧 START 帧提供固件长度、固件 CRC32，并在首个数据包中校验 App 向量表 |
 | 4 | App 每收到一个 YModem 数据块或 DATA 帧就写入下载缓存区 `0x08067000`，结束阶段读回计算 CRC32 |

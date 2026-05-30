@@ -6,7 +6,7 @@
 
 | 角色 | 负责什么 | 不负责什么 |
 |---|---|---|
-| 上位机工具 | 可用 Python 把 `Project.bin` 拆成 START / DATA / END 帧，也可用纸飞机调试助手通过 YModem 直接发送 `Project.bin` | 不直接改 MCU Flash |
+| 上位机工具 | 可用 Python 把 `Project.bin` 拆成 START / DATA / END 帧，也可用纸飞机调试助手先发 `YMODEM` 命令再通过 YModem 发送 `Project.bin` | 不直接改 MCU Flash |
 | App | 接收 START/DATA/END 或 YModem 分包、写下载缓存区、写参数区、软件复位 | 不把新固件搬到正式 App 区 |
 | BootLoader | 上电后读取参数区、把下载缓存区新固件搬到正式 App 区、CRC 校验、跳转新 App | 不负责接收整包 OTA 数据 |
 
@@ -254,7 +254,7 @@ App 侧 OTA 已拆成两个层次：
 
 ### 4.1 App 接收上位机的完整链路
 
-当前 App 侧支持两种升级入口。第一种是旧 Python START/DATA/END 分包流，按“发送一帧、等待 ACK、再发下一帧”的方式节流；第二种是串口工具的 YModem，推荐现场使用纸飞机调试助手 `文件 -> 发送文件 -> YModem` 直接选择 `project/output/Project.bin`。
+当前 App 侧支持两种升级入口。第一种是旧 Python START/DATA/END 分包流，按“发送一帧、等待 ACK、再发下一帧”的方式节流；第二种是串口工具的 YModem，推荐现场先在纸飞机调试助手里向 RS485 口发送 `YMODEM` 文本命令，再用 `文件 -> 发送文件 -> YModem` 选择 `project/output/Project.bin`。
 
 ```text
 上位机 make_uart_ota_packet.py
@@ -273,9 +273,11 @@ YModem 路径是：
 
 ```text
 纸飞机调试助手
+  -> RS485 发送输入框发送一行 YMODEM
+  -> App 打开约 30 秒 YModem 请求窗口
+  -> App 在请求窗口内发送 'C' 请求 CRC 模式
   -> 文件 -> 发送文件 -> YModem
   -> 选择 project/output/Project.bin
-  -> App 周期性在 RS485/USART1 发 'C' 请求 CRC 模式
   -> YModem 首包携带文件名和文件大小
   -> YModem 数据包携带 128B 或 1024B 固件数据 + CRC16
   -> App 边收边写 0x08067000，结束后回读下载区计算 CRC32
@@ -287,9 +289,9 @@ YModem 路径是：
 |---|---|---|
 | 初始化 USART1/RS485 | [bsp_usart.c:172](D:/GD32/2026706296/HardWare/USART/bsp_usart.c:172) | 配置 USART1、DMA 接收、RS485 方向脚、IDLE 中断。 |
 | 中断接收一帧 | [gd32f4xx_it.c:223](D:/GD32/2026706296/User/gd32f4xx_it.c:223) | USART1 IDLE 后暂停 DMA，计算本帧长度，复制到 OTA 共享缓冲。 |
-| 任务取帧 | [uart_ota_app.c:250](D:/GD32/2026706296/Function/uart_ota_app.c:250) | 在临界区复制共享缓冲到任务私有缓冲，并清接收标志。 |
-| 协议分发 | [uart_ota_app.c:547](D:/GD32/2026706296/Function/uart_ota_app.c:547) | 先检查 `magic=0xA55A5AA5`，再按帧类型分发到 START/DATA/END。 |
-| 周期任务 | [uart_ota_app.c:621](D:/GD32/2026706296/Function/uart_ota_app.c:621) | 每 5ms 左右处理一次 OTA 帧，成功 END 后延时并软件复位。 |
+| 任务取帧 | [uart_ota_app.c:251](D:/GD32/2026706296/Function/uart_ota_app.c:251) | 在临界区复制共享缓冲到任务私有缓冲，并清接收标志。 |
+| 协议分发 | [uart_ota_app.c:652](D:/GD32/2026706296/Function/uart_ota_app.c:652) | 先检查 `magic=0xA55A5AA5`，再按帧类型分发到 START/DATA/END。 |
+| 周期任务 | [uart_ota_app.c:776](D:/GD32/2026706296/Function/uart_ota_app.c:776) | 每 5ms 左右处理一次 OTA 帧，成功 END 后延时并软件复位。 |
 
 USART1 中断只做“搬运和置标志”，不会在中断里擦 Flash、写 Flash 或解析协议。这样做是为了避免 ISR 执行时间过长，影响后续串口接收。
 
@@ -330,7 +332,7 @@ YModem 相关常量如下：
 | `UART_OTA_YMODEM_SOH` | `0x01` | 128 字节数据块帧头。 |
 | `UART_OTA_YMODEM_STX` | `0x02` | 1024 字节数据块帧头。 |
 | `UART_OTA_YMODEM_EOT` | `0x04` | 文件正文结束标志。 |
-| `UART_OTA_YMODEM_CRC_REQ` | `'C'` / `0x43` | App 周期性发送，要求上位机用 CRC 模式发送。 |
+| `UART_OTA_YMODEM_CRC_REQ` | `'C'` / `0x43` | App 收到 `YMODEM` 启动命令后才会在有限窗口内发送，要求上位机用 CRC 模式发送。 |
 | `BSP_USART1_RX_BUFFER_SIZE` | `1152` | 必须容纳 YModem 1K 完整帧：`1 + 1 + 1 + 1024 + 2 = 1029` 字节。 |
 
 纸飞机调试助手操作方式：
@@ -338,10 +340,11 @@ YModem 相关常量如下：
 | 步骤 | 操作 |
 |---|---|
 | 1 | 打开连接到 `RS485/USART1` 的串口，波特率 `460800`，8N1。 |
-| 2 | 重新上电或复位板子，确认 RS485 口能看到一次 `OTA485: ready`。 |
-| 3 | 选择 `文件 -> 发送文件 -> YModem`。 |
-| 4 | 选择 `project/output/Project.bin`，不要选 `.hex` 或旧 `.uota`。 |
-| 5 | 等待发送完成，随后观察 USART0 日志里的 `YMODEM: ready ...` 和 BootLoader 搬运日志。 |
+| 2 | 重新上电或复位板子，确认 RS485 口能看到一次 `OTA485: ready`；没有升级命令时不会连续刷 C。 |
+| 3 | 在 RS485 发送输入框发送一行 `YMODEM`，触发 App 发送 `C` 等待文件。 |
+| 4 | 选择 `文件 -> 发送文件 -> YModem`。 |
+| 5 | 选择 `project/output/Project.bin`，不要选 `.hex` 或旧 `.uota`。 |
+| 6 | 等待发送完成，随后观察 USART0 日志里的 `YMODEM: ready ...` 和 BootLoader 搬运日志。 |
 
 ### 4.2.1 协议分发入口：为什么按 `frame_type` 进入三个函数
 
@@ -411,7 +414,7 @@ END 成功
 ### 4.3 START 阶段
 
 入口函数：`prv_uart_ota_process_start()`  
-位置：[uart_ota_app.c:313](D:/GD32/2026706296/Function/uart_ota_app.c:313)
+位置：[uart_ota_app.c:418](D:/GD32/2026706296/Function/uart_ota_app.c:418)
 
 它做的事：
 
@@ -467,7 +470,7 @@ START ACK 的含义：
 ### 4.4 DATA 阶段
 
 入口函数：`prv_uart_ota_process_data()`  
-位置：[uart_ota_app.c:384](D:/GD32/2026706296/Function/uart_ota_app.c:384)
+位置：[uart_ota_app.c:489](D:/GD32/2026706296/Function/uart_ota_app.c:489)
 
 它做的事：
 
@@ -546,7 +549,7 @@ DATA ACK 的含义：
 ### 4.5 END 阶段
 
 入口函数：`prv_uart_ota_process_end()`  
-位置：[uart_ota_app.c:475](D:/GD32/2026706296/Function/uart_ota_app.c:475)
+位置：[uart_ota_app.c:580](D:/GD32/2026706296/Function/uart_ota_app.c:580)
 
 它做的事：
 
@@ -674,7 +677,7 @@ END ACK 的含义：
 
 ## 6. App 为什么要复位，而不是自己直接跳新 App
 
-App 在 [uart_ota_app.c:642](D:/GD32/2026706296/Function/uart_ota_app.c:642) 收到 `UART_OTA_RESULT_SUCCESS` 后，会延时 50ms，再调用 [bootloader_port_request_upgrade_reset](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:535) 触发软件复位。
+App 在 [uart_ota_app.c:818](D:/GD32/2026706296/Function/uart_ota_app.c:818) 收到 `UART_OTA_RESULT_SUCCESS` 后，会延时 50ms，再调用 [bootloader_port_request_upgrade_reset](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:535) 触发软件复位。
 
 原因有三个：
 
@@ -871,8 +874,8 @@ BootLoader : jump app vtor:0x0800d000 msp:0x20005818 entry:0x0800d379
 |---|---|---|
 | 1 | [HardWare/USART/bsp_usart.c](D:/GD32/2026706296/HardWare/USART/bsp_usart.c:172) | USART1/RS485 和 DMA 接收链路如何初始化 |
 | 2 | [User/gd32f4xx_it.c](D:/GD32/2026706296/User/gd32f4xx_it.c:223) | USART1 IDLE 中断如何把一帧数据移交给 OTA 任务 |
-| 3 | [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:621) | `uart_ota_task()` 如何取帧、解析协议、处理结果 |
-| 4 | [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:313) | App 如何处理 START/DATA/END |
+| 3 | [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:776) | `uart_ota_task()` 如何取帧、解析协议、处理结果 |
+| 4 | [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:418) | App 如何处理 START/DATA/END |
 | 5 | [HardWare/BOOTLOADER/bootloader_port.c](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:461) | App 如何写参数区通知 BootLoader |
 | 6 | [D:\GD32\2026706296_bootloader\Function\Function.c](D:/GD32/2026706296_bootloader/Function/Function.c:120) | BootLoader 如何决定是否搬运 |
 | 7 | [D:\GD32\2026706296_bootloader\Function\Function.c](D:/GD32/2026706296_bootloader/Function/Function.c:376) | BootLoader 如何真正搬运 |

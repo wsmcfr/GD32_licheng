@@ -23,6 +23,7 @@ __IO uint16_t uart_ota_last_irq_length = 0U;
 #define UART_OTA_END_FRAME_SIZE        16U
 #define UART_OTA_ACK_FRAME_SIZE        20U
 #define UART_OTA_STREAM_CHUNK_SIZE     512U
+#define UART_OTA_YMODEM_COMMAND_LENGTH 6U
 
 /*
  * 枚举作用：
@@ -298,6 +299,110 @@ static void prv_uart_ota_log_frame_summary(const uint8_t *packet, uint16_t packe
               (unsigned long)magic,
               (unsigned long)frame_type,
               (unsigned long)uart_ota_overwrite_count);
+}
+
+/*
+ * 函数作用：
+ *   判断一个字节是否属于串口文本命令尾部常见的空白结束符。
+ * 参数说明：
+ *   value：待判断的原始字节。
+ * 返回值说明：
+ *   1：该字节是空格、制表、回车、换行或字符串结束符。
+ *   0：该字节不是命令尾部空白。
+ */
+static uint8_t prv_uart_ota_is_command_tail(uint8_t value)
+{
+    if((' ' == value) || ('\t' == value) ||
+       ('\r' == value) || ('\n' == value) ||
+       ('\0' == value)){
+        return 1U;
+    }
+
+    return 0U;
+}
+
+/*
+ * 函数作用：
+ *   判断 RS485/USART1 收到的一帧文本是否为 YModem 启动命令。
+ * 主要流程：
+ *   1. 跳过帧头空格和制表符，允许串口助手发送带前导空白的命令。
+ *   2. 按不区分大小写的方式匹配 `YMODEM` 六个字符。
+ *   3. 只允许命令后接空白或行尾，避免把其它长文本误识别成启动命令。
+ * 参数说明：
+ *   packet：USART1/RS485 本次 IDLE 中断移交的数据缓冲区。
+ *   packet_length：本次移交的数据长度。
+ * 返回值说明：
+ *   1：当前帧是 YModem 显式启动命令。
+ *   0：当前帧不是该命令。
+ */
+static uint8_t prv_uart_ota_is_ymodem_start_command(const uint8_t *packet, uint32_t packet_length)
+{
+    static const uint8_t command_text[UART_OTA_YMODEM_COMMAND_LENGTH] = {
+        (uint8_t)'Y', (uint8_t)'M', (uint8_t)'O',
+        (uint8_t)'D', (uint8_t)'E', (uint8_t)'M'
+    };
+    uint32_t index = 0U;
+    uint32_t cmd_index;
+    uint8_t value;
+
+    if((NULL == packet) || (packet_length < UART_OTA_YMODEM_COMMAND_LENGTH)){
+        return 0U;
+    }
+
+    while((index < packet_length) &&
+          ((' ' == packet[index]) || ('\t' == packet[index]))){
+        index++;
+    }
+
+    if((packet_length - index) < UART_OTA_YMODEM_COMMAND_LENGTH){
+        return 0U;
+    }
+
+    for(cmd_index = 0U; cmd_index < UART_OTA_YMODEM_COMMAND_LENGTH; cmd_index++){
+        value = packet[index + cmd_index];
+        if((value >= (uint8_t)'a') && (value <= (uint8_t)'z')){
+            value = (uint8_t)(value - ((uint8_t)'a' - (uint8_t)'A'));
+        }
+        if(value != command_text[cmd_index]){
+            return 0U;
+        }
+    }
+
+    index += UART_OTA_YMODEM_COMMAND_LENGTH;
+    while(index < packet_length){
+        if(0U == prv_uart_ota_is_command_tail(packet[index])){
+            return 0U;
+        }
+        index++;
+    }
+
+    return 1U;
+}
+
+/*
+ * 函数作用：
+ *   处理 RS485/USART1 上的 OTA 文本控制命令。
+ * 主要流程：
+ *   1. 当前只接受 `YMODEM`，用于显式打开 YModem CRC 请求窗口。
+ *   2. 收到命令后只改变 YModem 轮询门控，不擦 Flash、不写参数区。
+ *   3. 给 USART0 输出一行日志，便于确认不是设备异常自发刷 C。
+ * 参数说明：
+ *   packet：USART1/RS485 本次 IDLE 中断移交的数据缓冲区。
+ *   packet_length：本次移交的数据长度。
+ * 返回值说明：
+ *   1：当前帧是已处理的 OTA 控制命令。
+ *   0：当前帧不是 OTA 控制命令。
+ */
+static uint8_t prv_uart_ota_try_process_control_command(const uint8_t *packet,
+                                                        uint32_t packet_length)
+{
+    if(0U == prv_uart_ota_is_ymodem_start_command(packet, packet_length)){
+        return 0U;
+    }
+
+    uart_ota_ymodem_request_start();
+    my_printf(DEBUG_USART, "YMODEM: request start, waiting file\r\n");
+    return 1U;
 }
 
 /*
@@ -675,8 +780,9 @@ void uart_ota_task(void)
     uint8_t ymodem_result;
 
     /*
-     * YModem 发送端需要接收方先周期性发出 'C'，才会进入 CRC 模式发送。
-     * 该维护动作放在取帧前执行，保证上位机刚打开 YModem 菜单时也能看到请求字符。
+     * YModem 发送端需要接收方先发出 'C' 才会开始传文件。
+     * 为避免设备不升级时持续刷 C，这里只执行维护入口；是否真正发 C
+     * 由 YModem 模块内部的显式启动门控决定。
      */
     if(UART_OTA_SESSION_IDLE == g_uart_ota_session.state){
         ymodem_result = uart_ota_ymodem_send_poll();
@@ -714,10 +820,12 @@ void uart_ota_task(void)
         /* 当前帧已经消费完毕，等待上位机发下一帧即可。 */
     }else if(UART_OTA_RESULT_NOT_PACKET == result){
         /*
-         * 不是原 START/DATA/END 协议帧时，再尝试按 YModem 解析。
+         * 不是原 START/DATA/END 协议帧时，先识别文本控制命令，再尝试按 YModem 解析。
          * 这样保留旧 Python 协议的同时，也允许串口助手直接用 YModem 发送 Project.bin。
          */
-        if(0U == prv_uart_ota_try_process_ymodem(g_uart_ota_frame_buffer, frame_length)){
+        if(0U != prv_uart_ota_try_process_control_command(g_uart_ota_frame_buffer, frame_length)){
+            /* 文本命令已处理；下一轮周期维护会在请求窗口内发送 'C'。 */
+        }else if(0U == prv_uart_ota_try_process_ymodem(g_uart_ota_frame_buffer, frame_length)){
             /* RS485/USART1 已被定义为 OTA 专用口，普通数据在这里直接忽略。 */
         }
     }else if(UART_OTA_RESULT_WAIT_MORE == result){

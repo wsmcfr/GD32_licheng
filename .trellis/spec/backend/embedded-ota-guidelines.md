@@ -24,13 +24,14 @@ This is a cross-layer contract. The PC-side sender, App-side receiver, internal 
 
 | Boundary | Signature / Entry | Contract |
 |----------|-------------------|----------|
-| YModem sender | Paper-plane serial assistant `File -> Send File -> YModem`, select `project/output/Project.bin` | Recommended operator path when Python is not allowed; App receives YModem on RS485/USART1 and writes the same download buffer |
+| YModem sender | Paper-plane serial assistant sends text command `YMODEM`, then `File -> Send File -> YModem`, select `project/output/Project.bin` | Recommended operator path when Python is not allowed; App receives YModem on RS485/USART1 and writes the same download buffer |
 | Stream info | `python tools\make_uart_ota_packet.py --mode stream-info --version <u32> --chunk-size 512` | Debug fallback; reads `project/output/Project.bin`, prints size, CRC32, version, chunk size, and chunk count |
 | Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Debug fallback; sends START/DATA/END frames at default `460800` baud, prints ACK progress, and waits for ACK after every frame |
 | Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `project/output/Project.uota` for offline inspection only; current low-RAM RS485 OTA must not send it directly |
 | App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one START/DATA/END streaming frame; only returns success after download-buffer CRC and parameter writes pass |
 | YModem parser | `uart_ota_ymodem_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one YModem SOH/STX/EOT frame; writes real firmware bytes to the download buffer and leaves reset to `uart_ota_task()` |
-| YModem poll | `uart_ota_ymodem_send_poll(void)` | Sends `'C'` only when the legacy START/DATA/END session is idle, so YModem can start without disrupting Python streaming OTA |
+| YModem start request | `uart_ota_ymodem_request_start(void)` | Opens a short YModem request window only after the operator explicitly requested YModem, so an idle board does not keep sending `'C'` |
+| YModem poll | `uart_ota_ymodem_send_poll(void)` | Maintains the request window and sends `'C'` only while YModem has been explicitly requested and the legacy START/DATA/END session is idle |
 | ISR handoff | `USART1_IRQHandler(void)` | Copies one RS485 IDLE DMA frame into `uart_ota_dma_buffer`, records `uart_ota_dma_length`, and sets `uart_ota_rx_flag` |
 | Task polling | `uart_ota_task(void)` | Handles OTA frames on RS485/USART1; `uart_task(void)` is reserved for the USART0-side SMARTFS shell command path |
 | Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA485: ready` on RS485/USART1 after boot so operators can confirm the OTA port and TX path |
@@ -53,7 +54,8 @@ YModem support contract:
 
 | Frame | Direction | Size / Format | Required Behavior |
 |-------|-----------|---------------|-------------------|
-| CRC request | App to PC | ASCII `'C'` (`0x43`) | App sends it periodically while no legacy OTA session is active, requesting CRC mode |
+| Start command | PC to App | ASCII text `YMODEM` plus optional CR/LF | App enables a limited YModem request window; without this explicit command, idle firmware stays quiet after the one-shot `OTA485: ready` probe |
+| CRC request | App to PC | ASCII `'C'` (`0x43`) | App sends it periodically only after YModem was explicitly requested, requesting CRC mode; it does not keep sending `C` when no upgrade is intended |
 | Header | PC to App | SOH/STX block `0`, filename, decimal file size | App validates size, erases `0x08067000`, ACKs, then requests data with `'C'` |
 | Data | PC to App | SOH 128B or STX 1024B payload plus CRC16 | App validates block number, inverse, CRC16, vector table for first data, and writes only real firmware bytes |
 | EOT | PC to App | `0x04` | App handles the standard two-EOT sequence, then requests the final empty header |
@@ -179,10 +181,11 @@ The legacy Python path is still useful for scripted regression because it carrie
 |------|------------------|-------------------|
 | 1 | Build the Keil target | Build log reports `0 Error(s)` and `project/output/Project.bin` is non-empty |
 | 2 | Open paper-plane serial assistant on the RS485/USART1 COM port at `460800 8N1` | Fresh boot shows one `OTA485: ready` probe on the RS485 terminal |
-| 3 | Choose `File -> Send File -> YModem`, select `project/output/Project.bin` | App debug UART prints `YMODEM: start size=...`, then `YMODEM: ready size=... crc=...` |
-| 4 | Watch `RS485/USART1 (PD5/PD6 + PE8 direction)` during a fresh boot | App prints one-shot `OTA485: ready`, proving the OTA TX path, direction control, and port selection are correct |
-| 5 | Watch the debug UART on `USART0 (PA9/PA10)` | App prints YModem progress, or legacy `OTA: rx ...` / `OTA: ready, reset to BootLoader` when using Python |
-| 6 | Watch the BootLoader UART log after reset | BootLoader prints `app crc32 check pass`, `app update success`, and the new `appVersion` |
+| 3 | Send text command `YMODEM` on the RS485/USART1 terminal | App debug UART prints `YMODEM: request start, waiting file`, then RS485 emits `C` during the request window |
+| 4 | Choose `File -> Send File -> YModem`, select `project/output/Project.bin` | App debug UART prints `YMODEM: start size=...`, then `YMODEM: ready size=... crc=...` |
+| 5 | Watch `RS485/USART1 (PD5/PD6 + PE8 direction)` during a fresh boot | App prints one-shot `OTA485: ready`, proving the OTA TX path, direction control, and port selection are correct; it stays quiet until `YMODEM` is requested |
+| 6 | Watch the debug UART on `USART0 (PA9/PA10)` | App prints YModem progress, or legacy `OTA: rx ...` / `OTA: ready, reset to BootLoader` when using Python |
+| 7 | Watch the BootLoader UART log after reset | BootLoader prints `app crc32 check pass`, `app update success`, and the new `appVersion` |
 
 Current known-good hardware command for the local board:
 
