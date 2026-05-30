@@ -95,10 +95,14 @@ def main() -> None:
 
     require("GD30AD3344_PGA_0V256" in gd30 and "0.256" in gd30, "GD30AD3344 PGA 0.256V 映射缺失")
     require("GD30AD3344_PGA_0V064" in gd30 and "0.064" in gd30, "GD30AD3344 PGA 0.064V 映射缺失")
-    require("PT100_FRONTEND_GAIN" in pt100_app and "16.41f" in pt100_app, "PT100 app 未按 R5=6.49k 配置前端增益")
-    require("PT100_EXCITATION_CURRENT_A" in pt100_app and "0.001f" in pt100_app, "PT100 app 未配置 1mA 激励电流")
+    require("PT100_COMMERCIAL_OFFSET_V" in pt100_app and "0.9617f" in pt100_app, "PT100 app 未配置商业版模块 Vout 零点偏置")
+    require("PT100_COMMERCIAL_RESISTANCE_SLOPE_V_PER_OHM" in pt100_app and "0.001957f" in pt100_app, "PT100 app 未配置商业版模块 Vout-电阻斜率")
+    require("PT100_COMMERCIAL_TEMPERATURE_GAIN" in pt100_app and "2.635f" in pt100_app, "PT100 app 未配置商业版模块线性温度增益")
+    require("PT100_COMMERCIAL_TEMPERATURE_OFFSET_C" in pt100_app and "263.5f" in pt100_app, "PT100 app 未配置商业版模块线性温度偏移")
+    require("PT100_FRONTEND_GAIN" not in pt100_app and "PT100_EXCITATION_CURRENT_A" not in pt100_app, "PT100 app 仍保留工业版前端增益/激励电流换算")
     require("GD30AD3344_Channel_4" in pt100_app, "PT100 app 未默认读取 AIN0~GND 通道")
     require("GD30AD3344_PGA_4V096" in pt100_app, "PT100 app 未默认使用 ±4.096V 量程")
+    require("my_printf(DEBUG_USART" in pt100_app and "PT100:" in pt100_app, "PT100 app 未在任务末尾通过 USART0 打印测量结果")
     require("gd30ad3344_pt100_task" in pt100_app_h and "pt100_measurement_t" in pt100_app_h, "PT100 app 头文件缺少任务入口或测量结果类型")
     require("gd30ad3344_pt100_task" in scheduler, "调度器未注册 PT100 周期采样任务")
     require("gd30ad3344_pt100_app.h" in system_all, "聚合头未包含 PT100 app 头文件")
@@ -111,7 +115,7 @@ def main() -> None:
     require("OLED 底层批量写入优化" in doc, "工程文档未同步 OLED 底层批量写入说明")
     require("OLED 二轮事务压缩优化" in doc, "工程文档未同步 OLED 二轮事务压缩说明")
     require("GD30AD3344 PT100 应用层" in doc, "工程文档未同步 GD30AD3344 PT100 app 说明")
-    require("16.41" in doc and "1mA" in doc, "工程文档未说明 PT100 前端增益或激励电流")
+    require("0.9617" in doc and "0.001957" in doc and "2.635" in doc, "工程文档未同步商业版 PT100 线性标定公式")
 
 
 if __name__ == "__main__":

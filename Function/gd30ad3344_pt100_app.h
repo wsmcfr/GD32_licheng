@@ -12,11 +12,11 @@ extern "C" {
  *   保存一次 GD30AD3344 + PT100 前端采样链路换算后的应用层结果。
  * 成员说明：
  *   sample_ready：为 1 表示已经完成至少一次非丢弃采样，缓存数据可被显示或上传。
- *   range_valid：为 1 表示电阻落在本应用支持的 -50℃~150℃ PT100 换算范围内。
- *   adc_voltage_v：GD30AD3344 采集到的前端放大后电压，单位 V。
- *   pt100_voltage_v：反推到 PT100 电阻两端的原始电压，单位 V。
- *   resistance_ohm：根据 1mA 激励电流反算出的 PT100 电阻，单位 Ω。
- *   temperature_c：根据 PT100 Callendar-Van Dusen 模型换算出的温度，单位 ℃。
+ *   range_valid：为 1 表示温度落在本应用支持的 -50℃~150℃ 范围内。
+ *   adc_voltage_v：GD30AD3344 采集到的商业版 PT100 调理模块 Vout，单位 V。
+ *   pt100_voltage_v：Vout 扣除 0.9617V 偏置后的有效信号电压，单位 V。
+ *   resistance_ohm：按 R测=(Vout-0.9617)/0.001957 反算出的 PT100 电阻，单位 Ω。
+ *   temperature_c：按 T≈2.635*R测-263.5 换算并限幅后的温度，单位 ℃。
  */
 typedef struct {
     uint8_t sample_ready;

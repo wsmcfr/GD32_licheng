@@ -12,48 +12,50 @@
  * 宏作用：
  *   指定 GD30AD3344 的默认量程。
  * 说明：
- *   1mA 激励、R5=6.49kΩ 对应约 16.41 倍前端增益，-50℃~150℃ 输出约
- *   1.32V~2.58V，落在 ±4.096V 量程的有效区间内。
+ *   商业版 PT100 调理模块的 Vout 带约 0.9617V 偏置，常用温区输出落在
+ *   ±4.096V 量程的有效区间内，同时给异常高输出保留余量。
  */
 #define PT100_ADC_PGA                  GD30AD3344_PGA_4V096
 
 /*
  * 宏作用：
- *   PT100 恒流源激励电流，单位 A。
+ *   商业版 PT100 调理模块在 0Ω 等效输入附近的输出偏置，单位 V。
  * 说明：
- *   该值来自当前硬件设计目标 1mA；若实际标定电流不同，应同步修改本值和文档。
+ *   用户实测标定公式为 R测=(Vout-0.9617)/0.001957，这里把 0.9617V
+ *   单独命名，便于后续按实测两点标定重新修正。
  */
-#define PT100_EXCITATION_CURRENT_A     0.001f
+#define PT100_COMMERCIAL_OFFSET_V      0.9617f
 
 /*
  * 宏作用：
- *   PT100 前端仪表放大器电压增益。
+ *   商业版 PT100 调理模块输出电压相对 PT100 电阻的斜率，单位 V/Ω。
  * 说明：
- *   U3 采用 R5=6.49kΩ 作为增益电阻，按 INA333/NA333 兼容公式
- *   G=1+100kΩ/RG 得到约 16.41。
+ *   该值来自用户给出的商业版模块公式 R测=(Vout-0.9617)/0.001957，
+ *   表示电阻每增加 1Ω，模块输出约增加 1.957mV。
  */
-#define PT100_FRONTEND_GAIN            16.41f
+#define PT100_COMMERCIAL_RESISTANCE_SLOPE_V_PER_OHM 0.001957f
 
-/* PT100 在 0℃ 时的标称电阻，单位 Ω。 */
-#define PT100_R0_OHM                   100.0f
+/*
+ * 宏作用：
+ *   商业版 PT100 调理模块从电阻换算到温度的线性增益，单位 ℃/Ω。
+ * 说明：
+ *   用户给出的公式为 T≈2.635*R测-263.5，适合当前商业版模块的现场标定。
+ */
+#define PT100_COMMERCIAL_TEMPERATURE_GAIN 2.635f
 
-/* PT100 Callendar-Van Dusen A 系数。 */
-#define PT100_CVD_A                    3.9083e-3f
-
-/* PT100 Callendar-Van Dusen B 系数。 */
-#define PT100_CVD_B                    (-5.775e-7f)
-
-/* PT100 Callendar-Van Dusen C 系数，仅在 0℃ 以下参与计算。 */
-#define PT100_CVD_C                    (-4.183e-12f)
+/*
+ * 宏作用：
+ *   商业版 PT100 调理模块线性温度公式中的常量偏移，单位 ℃。
+ * 说明：
+ *   公式写作 T≈2.635*R测-263.5，因此实现中会减去该偏移值。
+ */
+#define PT100_COMMERCIAL_TEMPERATURE_OFFSET_C 263.5f
 
 /* 本应用按题目要求覆盖的最低温度，单位 ℃。 */
 #define PT100_TEMPERATURE_MIN_C        (-50.0f)
 
 /* 本应用按题目要求覆盖的最高温度，单位 ℃。 */
 #define PT100_TEMPERATURE_MAX_C        150.0f
-
-/* 二分法求解温度的迭代次数，24 次足够让 200℃ 区间收敛到远小于 0.01℃。 */
-#define PT100_SOLVE_ITERATIONS         24U
 
 /*
  * 变量作用：
@@ -74,64 +76,23 @@ static uint8_t s_pt100_discard_next_sample = 1U;
 
 /*
  * 函数作用：
- *   根据给定温度计算 PT100 理论电阻。
+ *   判断商业版模块线性公式换算出的温度是否落在应用支持范围内。
  * 参数说明：
- *   temperature_c：待换算的温度，单位 ℃，本应用主要使用 -50℃~150℃。
+ *   temperature_c：由商业版模块线性公式得到的温度，单位 ℃。
+ *   range_valid：输出参数；为 1 表示温度位于 -50℃~150℃，为 0 表示越界。
  * 返回值说明：
- *   返回该温度下 PT100 的理论电阻，单位 Ω。
+ *   返回限制后的温度；低于下限时返回 -50℃，高于上限时返回 150℃。
  */
-static float prv_pt100_temperature_to_resistance(float temperature_c)
+static float prv_pt100_clamp_temperature(float temperature_c, uint8_t *range_valid)
 {
-    float resistance_ratio;
-
-    resistance_ratio = 1.0f +
-                       (PT100_CVD_A * temperature_c) +
-                       (PT100_CVD_B * temperature_c * temperature_c);
-
-    if(temperature_c < 0.0f) {
-        /*
-         * 0℃ 以下需要加入 C 项，避免负温区简单二次模型带来系统误差。
-         * 题目范围最低到 -50℃，该分支会覆盖低温测试点。
-         */
-        resistance_ratio += PT100_CVD_C *
-                            (temperature_c - 100.0f) *
-                            temperature_c *
-                            temperature_c *
-                            temperature_c;
-    }
-
-    return PT100_R0_OHM * resistance_ratio;
-}
-
-/*
- * 函数作用：
- *   将 PT100 电阻反算成温度。
- * 参数说明：
- *   resistance_ohm：由 ADC 电压、前端增益和激励电流反算出的 PT100 电阻，单位 Ω。
- *   range_valid：输出参数；为 1 表示输入电阻落在 -50℃~150℃ 理论范围内，为 0 表示越界。
- * 返回值说明：
- *   返回二分求解得到的温度，单位 ℃；越界时返回被限制在边界内的估算温度。
- */
-static float prv_pt100_resistance_to_temperature(float resistance_ohm, uint8_t *range_valid)
-{
-    uint8_t i;
-    float low_c = PT100_TEMPERATURE_MIN_C;
-    float high_c = PT100_TEMPERATURE_MAX_C;
-    float mid_c;
-    float min_resistance;
-    float max_resistance;
-
-    min_resistance = prv_pt100_temperature_to_resistance(PT100_TEMPERATURE_MIN_C);
-    max_resistance = prv_pt100_temperature_to_resistance(PT100_TEMPERATURE_MAX_C);
-
     if(NULL != range_valid) {
         *range_valid = 1U;
     }
 
-    if(resistance_ohm <= min_resistance) {
+    if(temperature_c <= PT100_TEMPERATURE_MIN_C) {
         /*
-         * 电阻低于 -50℃ 理论值时仍返回边界温度，调用方可通过 range_valid
-         * 识别断线、短路、激励电流偏差或测试电阻越界等异常。
+         * 商业版模块公式是现场线性标定，超出应用温区时只发布边界值，
+         * 并通过 range_valid 提醒上层不要把边界值当作精确温度。
          */
         if(NULL != range_valid) {
             *range_valid = 0U;
@@ -139,9 +100,9 @@ static float prv_pt100_resistance_to_temperature(float resistance_ohm, uint8_t *
         return PT100_TEMPERATURE_MIN_C;
     }
 
-    if(resistance_ohm >= max_resistance) {
+    if(temperature_c >= PT100_TEMPERATURE_MAX_C) {
         /*
-         * 电阻高于 150℃ 理论值时返回上边界，避免上层误把越界值当成精确温度。
+         * 高于题目/应用温区时同样限制到上边界，便于 OLED 或串口显示保持稳定。
          */
         if(NULL != range_valid) {
             *range_valid = 0U;
@@ -149,20 +110,7 @@ static float prv_pt100_resistance_to_temperature(float resistance_ohm, uint8_t *
         return PT100_TEMPERATURE_MAX_C;
     }
 
-    for(i = 0U; i < PT100_SOLVE_ITERATIONS; i++) {
-        mid_c = (low_c + high_c) * 0.5f;
-
-        /*
-         * PT100 在该温区内电阻随温度单调增加，因此可以用电阻大小决定二分方向。
-         */
-        if(prv_pt100_temperature_to_resistance(mid_c) < resistance_ohm) {
-            low_c = mid_c;
-        } else {
-            high_c = mid_c;
-        }
-    }
-
-    return (low_c + high_c) * 0.5f;
+    return temperature_c;
 }
 
 /*
@@ -190,8 +138,9 @@ void gd30ad3344_pt100_app_init(void)
 void gd30ad3344_pt100_task(void)
 {
     float adc_voltage_v;
-    float pt100_voltage_v;
+    float module_signal_v;
     float resistance_ohm;
+    float temperature_c;
     uint8_t range_valid = 0U;
 
     adc_voltage_v = GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA);
@@ -204,15 +153,33 @@ void gd30ad3344_pt100_task(void)
         return;
     }
 
-    pt100_voltage_v = adc_voltage_v / PT100_FRONTEND_GAIN;
-    resistance_ohm = pt100_voltage_v / PT100_EXCITATION_CURRENT_A;
+    /*
+     * GD30AD3344 读到的是商业版 PT100 模块的 Vout，先扣除模块零点偏置，
+     * 再按用户实测斜率反算电阻，避免沿用工业版 16 倍放大链路导致温度偏高。
+     */
+    module_signal_v = adc_voltage_v - PT100_COMMERCIAL_OFFSET_V;
+    resistance_ohm = module_signal_v / PT100_COMMERCIAL_RESISTANCE_SLOPE_V_PER_OHM;
+    temperature_c = (PT100_COMMERCIAL_TEMPERATURE_GAIN * resistance_ohm) -
+                    PT100_COMMERCIAL_TEMPERATURE_OFFSET_C;
 
     s_pt100_latest.adc_voltage_v = adc_voltage_v;
-    s_pt100_latest.pt100_voltage_v = pt100_voltage_v;
+    s_pt100_latest.pt100_voltage_v = module_signal_v;
     s_pt100_latest.resistance_ohm = resistance_ohm;
-    s_pt100_latest.temperature_c = prv_pt100_resistance_to_temperature(resistance_ohm, &range_valid);
+    s_pt100_latest.temperature_c = prv_pt100_clamp_temperature(temperature_c, &range_valid);
     s_pt100_latest.range_valid = range_valid;
     s_pt100_latest.sample_ready = 1U;
+
+    /*
+     * 任务末尾把本次换算结果发到 USART0 调试口，便于现场直接观察商业版模块
+     * 标定公式的输出效果；valid=0 表示温度已经被限制到应用边界。
+     */
+    my_printf(DEBUG_USART,
+              "PT100: Vout=%.4fV signal=%.4fV R=%.2fohm T=%.2fC valid=%u\r\n",
+              s_pt100_latest.adc_voltage_v,
+              s_pt100_latest.pt100_voltage_v,
+              s_pt100_latest.resistance_ohm,
+              s_pt100_latest.temperature_c,
+              s_pt100_latest.range_valid);
 }
 
 /*
