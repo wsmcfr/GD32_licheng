@@ -47,10 +47,11 @@ extern "C" {
  */
 #define BSP_USART0_RX_BUFFER_SIZE      1024U
 /*
- * USART1/RS485 当前承载 OTA 流式 DATA 帧，必须能放下 512B 载荷 + 24B 协议头。
- * 保留 1KB 余量也能覆盖上位机一帧中混入少量串口驱动附加字节的情况。
+ * USART1/RS485 当前同时承载旧 START/DATA/END OTA 和 YModem OTA。
+ * YModem 1K 数据块完整帧为 1B 头 + 1B 序号 + 1B 反码 + 1024B 数据 + 2B CRC，
+ * 因此缓冲区必须大于 1029B；这里取 1152B，给 IDLE 截帧和工具差异保留余量。
  */
-#define BSP_USART1_RX_BUFFER_SIZE      1024U
+#define BSP_USART1_RX_BUFFER_SIZE      1152U
 #define BSP_USART5_RX_BUFFER_SIZE      256U
 
 /* USART0 引脚与 DMA 映射。 */

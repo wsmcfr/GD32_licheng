@@ -9,6 +9,7 @@
  */
 
 #include "system_all.h"
+#include "uart_ota_ymodem.h"
 
 #ifdef __cplusplus
 extern "C" {

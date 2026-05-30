@@ -12,10 +12,10 @@ Use this guideline whenever changing:
 
 | Area | Files / Entries |
 |------|-----------------|
-| App OTA parser | `Function/uart_ota_app.c`, `Function/uart_ota_app.h` |
+| App OTA parser | `Function/uart_ota_app.c`, `Function/uart_ota_app.h`, `Function/uart_ota_ymodem.c`, `Function/uart_ota_ymodem.h` |
 | Boot handoff helper | `HardWare/BOOTLOADER/bootloader_port.c`, `HardWare/BOOTLOADER/bootloader_port.h` |
 | RS485/USART1 DMA handoff | `User/gd32f4xx_it.c`, `HardWare/USART/bsp_usart.h`, `HardWare/USART/bsp_usart.c` |
-| PC OTA tool | `tools/make_uart_ota_packet.py`, `tools/test_uart_ota_packet.py` |
+| PC OTA tool | `tools/make_uart_ota_packet.py`, `tools/test_uart_ota_packet.py`, paper-plane serial assistant YModem |
 | Boot handoff | BootLoader/App Flash partition constants, parameter layout, or CRC logic |
 
 This is a cross-layer contract. The PC-side sender, App-side receiver, internal Flash layout, and BootLoader parameter reader must agree exactly.
@@ -24,16 +24,21 @@ This is a cross-layer contract. The PC-side sender, App-side receiver, internal 
 
 | Boundary | Signature / Entry | Contract |
 |----------|-------------------|----------|
-| Stream info | `python tools\make_uart_ota_packet.py --mode stream-info --version <u32> --chunk-size 512` | Reads `project/output/Project.bin`, prints size, CRC32, version, chunk size, and chunk count |
-| Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Sends START/DATA/END frames at default `460800` baud, prints ACK progress, and waits for ACK after every frame |
+| YModem sender | Paper-plane serial assistant `File -> Send File -> YModem`, select `project/output/Project.bin` | Recommended operator path when Python is not allowed; App receives YModem on RS485/USART1 and writes the same download buffer |
+| Stream info | `python tools\make_uart_ota_packet.py --mode stream-info --version <u32> --chunk-size 512` | Debug fallback; reads `project/output/Project.bin`, prints size, CRC32, version, chunk size, and chunk count |
+| Stream sender | `python tools\make_uart_ota_packet.py --mode send --port COMx --version <u32> --chunk-size 512` | Debug fallback; sends START/DATA/END frames at default `460800` baud, prints ACK progress, and waits for ACK after every frame |
 | Legacy packet | `python tools\make_uart_ota_packet.py --mode packet --version <u32>` | Still writes `project/output/Project.uota` for offline inspection only; current low-RAM RS485 OTA must not send it directly |
-| App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one streaming frame; only returns success after download-buffer CRC and parameter writes pass |
+| App parser | `prv_uart_ota_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one START/DATA/END streaming frame; only returns success after download-buffer CRC and parameter writes pass |
+| YModem parser | `uart_ota_ymodem_try_process_packet(const uint8_t *packet, uint32_t packet_length)` | Consumes one YModem SOH/STX/EOT frame; writes real firmware bytes to the download buffer and leaves reset to `uart_ota_task()` |
+| YModem poll | `uart_ota_ymodem_send_poll(void)` | Sends `'C'` only when the legacy START/DATA/END session is idle, so YModem can start without disrupting Python streaming OTA |
 | ISR handoff | `USART1_IRQHandler(void)` | Copies one RS485 IDLE DMA frame into `uart_ota_dma_buffer`, records `uart_ota_dma_length`, and sets `uart_ota_rx_flag` |
 | Task polling | `uart_ota_task(void)` | Handles OTA frames on RS485/USART1; `uart_task(void)` is reserved for the USART0-side SMARTFS shell command path |
 | Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA485: ready` on RS485/USART1 after boot so operators can confirm the OTA port and TX path |
 | Half-duplex ACK | `prv_uart_ota_send_ack(...)` | Switches RS485 to transmit before ACK bytes, waits for USART TC through `bsp_usart_send_buffer()`, then returns to receive mode |
 
 ### 3. Protocol Contract
+
+The recommended operator protocol is YModem. The legacy START/DATA/END protocol remains available for scripted debugging and regression tests.
 
 All multi-byte fields are little-endian `uint32_t`.
 
@@ -44,11 +49,22 @@ All multi-byte fields are little-endian `uint32_t`.
 | END | PC to App | `magic=0xA55A5AA5`, `type=3`, `firmwareSize`, `firmwareCRC32` | App validates total size, running CRC, Flash readback CRC, writes BootLoader parameters, then ACKs and resets |
 | ACK | App to PC | `magic=0xA55A5AA5`, `type=0x80|原帧类型`, `status`, `value0`, `value1` | PC must wait for status `0` before sending the next frame |
 
+YModem support contract:
+
+| Frame | Direction | Size / Format | Required Behavior |
+|-------|-----------|---------------|-------------------|
+| CRC request | App to PC | ASCII `'C'` (`0x43`) | App sends it periodically while no legacy OTA session is active, requesting CRC mode |
+| Header | PC to App | SOH/STX block `0`, filename, decimal file size | App validates size, erases `0x08067000`, ACKs, then requests data with `'C'` |
+| Data | PC to App | SOH 128B or STX 1024B payload plus CRC16 | App validates block number, inverse, CRC16, vector table for first data, and writes only real firmware bytes |
+| EOT | PC to App | `0x04` | App handles the standard two-EOT sequence, then requests the final empty header |
+| Empty header | PC to App | block `0` with empty payload | App finalizes CRC32, writes BootLoader parameters, then lets `uart_ota_task()` reset |
+| ACK/NAK/CAN | App to PC | `0x06` / `0x15` / `0x18` | App uses RS485 direction control around every response byte |
+
 Current App-side limits:
 
 | Constant | Current Value | Reason |
 |----------|---------------|--------|
-| `BSP_USART1_RX_BUFFER_SIZE` | `1024U` | Must hold one DATA frame, not a full firmware image |
+| `BSP_USART1_RX_BUFFER_SIZE` | `1152U` | Must hold a YModem 1K frame (`1029B`) and one legacy DATA frame |
 | `UART_OTA_STREAM_CHUNK_SIZE` | `512U` | `512B` payload + `24B` DATA header fits safely in 1KB |
 | `UART_OTA_DEFAULT_BAUDRATE` | `460800` | App, BootLoader, and PC tool default UART baudrate must match |
 | `UART_OTA_DOWNLOAD_MAX_SIZE` | `100KB` | Internal Flash download buffer remains `0x08067000..0x0807FFFF` |
@@ -106,16 +122,21 @@ When OTA succeeds, App must write these fields in the BootLoader-compatible para
 | Download writeback CRC | CRC32 at `0x08067000` equals firmware CRC | `UART_OTA_RESULT_VERIFY_ERROR` | ACK error; do not write BootLoader parameters |
 | Parameter write | Full 4KB parameter area write succeeds | `UART_OTA_RESULT_FLASH_ERROR` | ACK error; do not reset if update flags were not written correctly |
 | Success | Download and parameter writes both pass | `UART_OTA_RESULT_SUCCESS` | Send END ACK, print ready log, software-reset into BootLoader |
+| YModem header size | `1 <= fileSize <= 100KB` | `UART_OTA_YMODEM_RESULT_BAD_LENGTH` | Send CAN; do not erase/write beyond download buffer |
+| YModem CRC16 | payload CRC16 equals packet CRC | `UART_OTA_YMODEM_RESULT_VERIFY_ERROR` | Send NAK; do not write the packet |
+| YModem block order | current block equals expected 8-bit block number; duplicate previous block only re-ACKs | `UART_OTA_YMODEM_RESULT_BAD_LENGTH` | Reject out-of-order packets without advancing Flash offset |
+| YModem EOT | standard two-EOT flow or final-empty-header timeout after full file received | success or verify error | Finalize only after received size equals header file size |
 
 ### 7. Good / Base / Bad Cases
 
 | Case | Input | Expected Result |
 |------|-------|-----------------|
+| Good | Paper-plane serial assistant `YModem`, `Project.bin <= 100KB`, correct vector table | App prints `YMODEM: start ...` and `YMODEM: ready ...`; BootLoader prints `app crc32 check pass` and `app update success` |
 | Good | `--mode send`, `Project.bin <= 100KB`, correct CRC and vector table | App prints `OTA: stream start ...` and `OTA: ready, reset to BootLoader`; BootLoader prints `app crc32 check pass` and `app update success` |
 | Base | Normal USART0 data that does not start with streaming OTA magic | Data is handled by the USART0 debug-task path and must not affect the RS485 OTA state machine |
 | Base | Normal RS485/USART1 data that does not start with streaming OTA magic | OTA task ignores it and does not pollute USART0 debug-shell state |
 | Base | USB-to-serial sends one START/DATA/END frame per IDLE receive | App consumes each frame and returns ACK before the next frame |
-| Bad | Operator sends `Project.bin` directly | No OTA write is triggered because frame magic/type/header are missing |
+| Bad | Operator sends `Project.bin` through raw/direct send instead of YModem | No reliable file size/end/retry contract exists; do not document this as a supported upgrade path |
 | Bad | Operator sends legacy `Project.uota` directly | Current low-RAM streaming parser rejects it because magic is `0x5AA5C33C`, not `0xA55A5AA5` |
 | Bad | `firmwareSize > 100KB` | App rejects START before writing firmware chunks |
 | Bad | CRC mismatch or invalid vector table | App rejects and does not set BootLoader update flags |
@@ -125,6 +146,7 @@ When OTA succeeds, App must write these fields in the BootLoader-compatible para
 Before committing OTA-related changes, run:
 
 ```powershell
+python -m tools.test_ymodem_ota_static
 python -m unittest tools.test_uart_ota_packet
 python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000003 --chunk-size 512
 python tools\make_uart_ota_packet.py --version 0x00000003
@@ -138,27 +160,28 @@ Required assertions:
 
 | Assertion | Expected Evidence |
 |-----------|-------------------|
+| YModem static contract | `tools.test_ymodem_ota_static` exits with status 0 |
 | Python tests | `OK` from `tools.test_uart_ota_packet` |
 | Stream info | Output contains firmware size, CRC, version, chunk size, and chunk count |
 | Legacy packet mode | Still generates `Project.uota`, but docs must mark it as not recommended for current low-RAM OTA sending |
 | Keil build | Build log reports `0 Error(s)` |
 | No semihosting | Map shows `__use_no_semihosting`, and `_sys_open/_sys_write/_sys_exit/_ttywrch` resolve to `main.o`, not semihosting library stubs |
-| RAM usage | `fromelf` shows `usart1_rxbuffer` and `uart_ota_dma_buffer` at `0x400` each, not `100KB+16B` |
-| Hardware, when available | Use `--mode send --port COMx`; log must include `OTA: ready, reset to BootLoader`, then BootLoader `app crc32 check pass` and `app update success` |
+| RAM usage | `fromelf` shows `usart1_rxbuffer` and `uart_ota_dma_buffer` at `0x480` each, not `100KB+16B` |
+| Hardware, when available | Use paper-plane serial assistant YModem; log must include `YMODEM: ready`, then BootLoader `app crc32 check pass` and `app update success` |
 
 ### 9. Operator Procedure
 
-Use this procedure whenever sending a new App image through RS485/USART1 streaming OTA.
-Always increment `--version` for each hardware trial so the BootLoader log proves the
-new image was actually installed.
+Use this procedure whenever sending a new App image through RS485/USART1 OTA.
+Paper-plane serial assistant YModem is the recommended operator path when Python is not allowed.
+The legacy Python path is still useful for scripted regression because it carries an explicit app version.
 
 | Step | Command / Action | Required Evidence |
 |------|------------------|-------------------|
 | 1 | Build the Keil target | Build log reports `0 Error(s)` and `project/output/Project.bin` is non-empty |
-| 2 | `python tools\make_uart_ota_packet.py --mode stream-info --version <new_version> --chunk-size 512` | Output shows firmware size, CRC, version, chunk size, and chunk count |
-| 3 | `python tools\make_uart_ota_packet.py --mode send --port <COMx> --version <new_version> --chunk-size 512` | PC prints stream metadata, `START/DATA/END acked` progress, then `sent stream frames=<n>` |
+| 2 | Open paper-plane serial assistant on the RS485/USART1 COM port at `460800 8N1` | Fresh boot shows one `OTA485: ready` probe on the RS485 terminal |
+| 3 | Choose `File -> Send File -> YModem`, select `project/output/Project.bin` | App debug UART prints `YMODEM: start size=...`, then `YMODEM: ready size=... crc=...` |
 | 4 | Watch `RS485/USART1 (PD5/PD6 + PE8 direction)` during a fresh boot | App prints one-shot `OTA485: ready`, proving the OTA TX path, direction control, and port selection are correct |
-| 5 | Watch the debug UART on `USART0 (PA9/PA10)` | App prints `OTA: rx ...` when frames arrive, then `OTA: ready, reset to BootLoader` after END succeeds |
+| 5 | Watch the debug UART on `USART0 (PA9/PA10)` | App prints YModem progress, or legacy `OTA: rx ...` / `OTA: ready, reset to BootLoader` when using Python |
 | 6 | Watch the BootLoader UART log after reset | BootLoader prints `app crc32 check pass`, `app update success`, and the new `appVersion` |
 
 Current known-good hardware command for the local board:
@@ -193,8 +216,15 @@ If the PC times out waiting for START ACK, apply this decision tree first:
 #### Wrong
 
 ```powershell
-# Raw firmware has no streaming frame header, so App will not enter OTA mode.
-send-file project\output\Project.bin
+# Raw/direct send has no YModem file size/end/retry contract.
+direct-send project\output\Project.bin
+```
+
+#### Correct
+
+```text
+Paper-plane serial assistant:
+File -> Send File -> YModem -> project/output/Project.bin
 ```
 
 #### Wrong
@@ -208,7 +238,7 @@ send-file project\output\Project.uota
 #### Correct
 
 ```powershell
-# First check metadata, then send streaming frames and wait for ACK after every frame.
+# Debug fallback: first check metadata, then send streaming frames and wait for ACK after every frame.
 python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512
 python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512
 ```
@@ -223,15 +253,15 @@ python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 
 #### Correct
 
 ```c
-/* 512B DATA 载荷 + 24B 协议头可安全放入 1024B OTA DMA 缓冲。 */
-#define BSP_USART1_RX_BUFFER_SIZE 1024U
+/* YModem 1K 完整帧 1029B，可安全放入 1152B OTA DMA 缓冲。 */
+#define BSP_USART1_RX_BUFFER_SIZE 1152U
 ```
 
 ---
 
 ## Common Mistakes
 
-- Do not send `Project.bin`, `Project.hex`, or legacy `Project.uota` directly for the current low-RAM OTA flow.
+- Do not send `Project.bin` through raw/direct send; use YModem or the legacy Python START/DATA/END sender.
 - Do not reduce `BSP_USART1_RX_BUFFER_SIZE` below the largest DATA frame size plus header.
 - Do not raise `--chunk-size` above `UART_OTA_STREAM_CHUNK_SIZE` unless App and tests are updated together.
 - Do not change App, BootLoader, and PC sender baudrates independently; the three defaults must stay aligned.

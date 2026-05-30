@@ -6,13 +6,15 @@
 
 | 角色 | 负责什么 | 不负责什么 |
 |---|---|---|
-| 上位机工具 | 把 `Project.bin` 拆成 START / DATA / END 帧，并按 ACK 节流发送 | 不直接改 MCU Flash |
-| App | 接收分包、写下载缓存区、写参数区、软件复位 | 不把新固件搬到正式 App 区 |
+| 上位机工具 | 可用 Python 把 `Project.bin` 拆成 START / DATA / END 帧，也可用纸飞机调试助手通过 YModem 直接发送 `Project.bin` | 不直接改 MCU Flash |
+| App | 接收 START/DATA/END 或 YModem 分包、写下载缓存区、写参数区、软件复位 | 不把新固件搬到正式 App 区 |
 | BootLoader | 上电后读取参数区、把下载缓存区新固件搬到正式 App 区、CRC 校验、跳转新 App | 不负责接收整包 OTA 数据 |
 
 一句话：
 
 > **App 负责“准备好升级现场”，BootLoader 负责“执行最终切换”。**
+
+第一版 YModem 接入只修改 App 侧接收流程，**BootLoader 端不需要修改**。BootLoader 仍然只看参数区里的 `updateFlag/updateStatus/appSize/appCRC32`，并从 `0x08067000` 下载缓存区搬运到 `0x0800D000` 正式 App 区。
 
 ---
 
@@ -224,11 +226,11 @@ BootLoader 搬运完成后，CPU 最终仍然跳到 `0x0800D000` 的 App Flash �
 
 | 顺序 | 执行方 | 动作 | 结果 |
 |---|---|---|---|
-| 1 | 上位机 | 发送 START 帧 | 告诉 App：接下来要升级，固件多大、CRC 是多少、版本号是多少 |
-| 2 | App | 校验 START，擦下载缓存区 | 为接收新固件腾出干净空间 |
-| 3 | 上位机 | 逐帧发送 DATA | 每帧携带 `seq`、`offset`、`length`、`chunkCRC32` |
+| 1 | 上位机 | 发送 START 帧，或用纸飞机调试助手 YModem 发送 `Project.bin` | 告诉 App：接下来要升级，并提供固件大小等信息 |
+| 2 | App | 校验 START 或 YModem 首包，擦下载缓存区 | 为接收新固件腾出干净空间 |
+| 3 | 上位机 | 逐帧发送 DATA，或由 YModem 发送 128B/1K 数据块 | 持续传输 `Project.bin` 正文 |
 | 4 | App | 每收一帧就写到 `0x08067000 + offset` | 新固件逐步写入下载缓存区 |
-| 5 | 上位机 | 发送 END 帧 | 告诉 App：固件发送结束 |
+| 5 | 上位机 | 发送 END 帧，或由 YModem 发送 EOT/结束空包 | 告诉 App：固件发送结束 |
 | 6 | App | 校验整包 CRC、回读下载区 CRC、写参数区 | 告诉 BootLoader“新固件已准备好” |
 | 7 | App | 软件复位 | 控制权交还 BootLoader |
 | 8 | BootLoader | 启动后读取参数区 | 看到 `updateFlag=0x5A`、`updateStatus=0x01` |
@@ -245,13 +247,14 @@ App 侧 OTA 已拆成两个层次：
 
 | 文件 | 作用 |
 |---|---|
-| [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:1) | 负责 RS485/USART1 START/DATA/END 分包协议、ACK、会话状态和复位交接。 |
+| [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:1) | 负责 RS485/USART1 OTA 总入口、旧 START/DATA/END 分包协议、ACK、会话状态和复位交接。 |
+| [Function/uart_ota_ymodem.c](D:/GD32/2026706296/Function/uart_ota_ymodem.c:1) | 负责纸飞机调试助手等串口工具的 YModem 接收、CRC16 校验、数据块写入和参数区准备。 |
 | [HardWare/BOOTLOADER/bootloader_port.c](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:1) | 负责下载缓存区擦写、固件向量表校验、CRC32、参数区回写和软件复位。 |
 | [User/gd32f4xx_it.c](D:/GD32/2026706296/User/gd32f4xx_it.c:223) | 负责 USART1 IDLE 中断，把 DMA 收到的一帧原始数据移交给 OTA 任务。 |
 
 ### 4.1 App 接收上位机的完整链路
 
-上位机不是直接把整包一次性塞给 App，而是按“发送一帧、等待 ACK、再发下一帧”的方式节流。
+当前 App 侧支持两种升级入口。第一种是旧 Python START/DATA/END 分包流，按“发送一帧、等待 ACK、再发下一帧”的方式节流；第二种是串口工具的 YModem，推荐现场使用纸飞机调试助手 `文件 -> 发送文件 -> YModem` 直接选择 `project/output/Project.bin`。
 
 ```text
 上位机 make_uart_ota_packet.py
@@ -264,6 +267,20 @@ App 侧 OTA 已拆成两个层次：
   -> 复制到 g_uart_ota_frame_buffer 私有快照
   -> 解析 magic + frame_type
   -> START 擦下载区 / DATA 写下载区 / END 写参数区并复位
+```
+
+YModem 路径是：
+
+```text
+纸飞机调试助手
+  -> 文件 -> 发送文件 -> YModem
+  -> 选择 project/output/Project.bin
+  -> App 周期性在 RS485/USART1 发 'C' 请求 CRC 模式
+  -> YModem 首包携带文件名和文件大小
+  -> YModem 数据包携带 128B 或 1024B 固件数据 + CRC16
+  -> App 边收边写 0x08067000，结束后回读下载区计算 CRC32
+  -> 写参数区 updateFlag/updateStatus/appSize/appCRC32
+  -> uart_ota_task() 延时并软件复位
 ```
 
 | 阶段 | 关键代码 | 说明 |
@@ -305,6 +322,26 @@ OTA 接收入口前半部分是中断和任务之间的共享状态：
 | `UART_OTA_END_FRAME_SIZE` | `16` | END 帧固定长度。 |
 | `UART_OTA_ACK_FRAME_SIZE` | `20` | App 回给上位机的 ACK 固定长度。 |
 | `UART_OTA_STREAM_CHUNK_SIZE` | `512` | 单个 DATA 帧最多携带 512 字节固件数据。 |
+
+YModem 相关常量如下：
+
+| 常量 | 值 | 含义 |
+|---|---:|---|
+| `UART_OTA_YMODEM_SOH` | `0x01` | 128 字节数据块帧头。 |
+| `UART_OTA_YMODEM_STX` | `0x02` | 1024 字节数据块帧头。 |
+| `UART_OTA_YMODEM_EOT` | `0x04` | 文件正文结束标志。 |
+| `UART_OTA_YMODEM_CRC_REQ` | `'C'` / `0x43` | App 周期性发送，要求上位机用 CRC 模式发送。 |
+| `BSP_USART1_RX_BUFFER_SIZE` | `1152` | 必须容纳 YModem 1K 完整帧：`1 + 1 + 1 + 1024 + 2 = 1029` 字节。 |
+
+纸飞机调试助手操作方式：
+
+| 步骤 | 操作 |
+|---|---|
+| 1 | 打开连接到 `RS485/USART1` 的串口，波特率 `460800`，8N1。 |
+| 2 | 重新上电或复位板子，确认 RS485 口能看到一次 `OTA485: ready`。 |
+| 3 | 选择 `文件 -> 发送文件 -> YModem`。 |
+| 4 | 选择 `project/output/Project.bin`，不要选 `.hex` 或旧 `.uota`。 |
+| 5 | 等待发送完成，随后观察 USART0 日志里的 `YMODEM: ready ...` 和 BootLoader 搬运日志。 |
 
 ### 4.2.1 协议分发入口：为什么按 `frame_type` 进入三个函数
 

@@ -664,6 +664,11 @@
               <FileType>1</FileType>
               <FilePath>..\Function\uart_ota_app.c</FilePath>
             </File>
+            <File>
+              <FileName>uart_ota_ymodem.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Function\uart_ota_ymodem.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

@@ -585,6 +585,55 @@ static uart_ota_result_t prv_uart_ota_try_process_packet(const uint8_t *packet, 
 
 /*
  * 函数作用：
+ *   统一处理 YModem OTA 解析结果。
+ * 参数说明：
+ *   packet：USART1/RS485 本次 IDLE 中断移交的数据缓冲区。
+ *   packet_length：本次移交的数据长度。
+ * 返回值说明：
+ *   1：当前数据已被 YModem 接收器消费或已触发复位。
+ *   0：当前数据不是 YModem 帧，外层可以按普通无效 OTA 数据处理。
+ */
+static uint8_t prv_uart_ota_try_process_ymodem(const uint8_t *packet, uint32_t packet_length)
+{
+    uint8_t ymodem_result;
+
+    ymodem_result = uart_ota_ymodem_try_process_packet(packet, packet_length);
+    if(UART_OTA_RESULT_SUCCESS == ymodem_result){
+        /*
+         * YModem 模块只负责完成下载区和参数区准备，复位入口仍集中放在
+         * uart_ota_task()，这样两种 OTA 协议共享同一条 BootLoader 交接路径。
+         */
+        delay_ms(50);
+        bootloader_port_request_upgrade_reset();
+        return 1U;
+    }
+
+    if(UART_OTA_RESULT_FRAME_CONSUMED == ymodem_result){
+        /* 当前 YModem 帧已处理完毕，等待上位机继续发送下一帧。 */
+        return 1U;
+    }
+
+    if(UART_OTA_RESULT_WAIT_MORE == ymodem_result){
+        /* YModem 正在等待后续数据或结束空包，本轮不复位会话。 */
+        return 1U;
+    }
+
+    if(UART_OTA_RESULT_NOT_PACKET == ymodem_result){
+        return 0U;
+    }
+
+    my_printf(DEBUG_USART,
+              "YMODEM: failed result=%u len=%u irq=%lu ovw=%lu\r\n",
+              ymodem_result,
+              packet_length,
+              (unsigned long)uart_ota_irq_count,
+              (unsigned long)uart_ota_overwrite_count);
+    uart_ota_ymodem_reset_runtime();
+    return 1U;
+}
+
+/*
+ * 函数作用：
  *   对外提供 OTA 运行态复位接口，便于系统初始化后恢复到干净状态。
  * 参数说明：
  *   无参数。
@@ -604,6 +653,7 @@ void uart_ota_reset_runtime(void)
     memset(g_uart_ota_frame_buffer, 0, sizeof(g_uart_ota_frame_buffer));
     g_uart_ota_rx_trace_budget = 3U;
     prv_uart_ota_reset_session();
+    uart_ota_ymodem_reset_runtime();
 }
 
 /*
@@ -622,6 +672,19 @@ void uart_ota_task(void)
 {
     uint16_t frame_length;
     uart_ota_result_t result;
+    uint8_t ymodem_result;
+
+    /*
+     * YModem 发送端需要接收方先周期性发出 'C'，才会进入 CRC 模式发送。
+     * 该维护动作放在取帧前执行，保证上位机刚打开 YModem 菜单时也能看到请求字符。
+     */
+    if(UART_OTA_SESSION_IDLE == g_uart_ota_session.state){
+        ymodem_result = uart_ota_ymodem_send_poll();
+        if(UART_OTA_RESULT_SUCCESS == ymodem_result){
+            delay_ms(50);
+            bootloader_port_request_upgrade_reset();
+        }
+    }
 
     frame_length = prv_uart_ota_take_frame();
     if(0U == frame_length){
@@ -650,16 +713,24 @@ void uart_ota_task(void)
     }else if(UART_OTA_RESULT_FRAME_CONSUMED == result){
         /* 当前帧已经消费完毕，等待上位机发下一帧即可。 */
     }else if(UART_OTA_RESULT_NOT_PACKET == result){
-        /* RS485/USART1 已被定义为 OTA 专用口，普通数据在这里直接忽略。 */
+        /*
+         * 不是原 START/DATA/END 协议帧时，再尝试按 YModem 解析。
+         * 这样保留旧 Python 协议的同时，也允许串口助手直接用 YModem 发送 Project.bin。
+         */
+        if(0U == prv_uart_ota_try_process_ymodem(g_uart_ota_frame_buffer, frame_length)){
+            /* RS485/USART1 已被定义为 OTA 专用口，普通数据在这里直接忽略。 */
+        }
     }else if(UART_OTA_RESULT_WAIT_MORE == result){
         /* 理论上上位机会整帧发送；若收到短前缀，这里保守等待下一轮。 */
     }else{
-        my_printf(DEBUG_USART,
-                  "OTA: failed result=%d len=%u irq=%lu ovw=%lu\r\n",
-                  result,
-                  frame_length,
-                  (unsigned long)uart_ota_irq_count,
-                  (unsigned long)uart_ota_overwrite_count);
-        prv_uart_ota_reset_session();
+        if(0U == prv_uart_ota_try_process_ymodem(g_uart_ota_frame_buffer, frame_length)){
+            my_printf(DEBUG_USART,
+                      "OTA: failed result=%d len=%u irq=%lu ovw=%lu\r\n",
+                      result,
+                      frame_length,
+                      (unsigned long)uart_ota_irq_count,
+                      (unsigned long)uart_ota_overwrite_count);
+            prv_uart_ota_reset_session();
+        }
     }
 }

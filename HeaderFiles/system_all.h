@@ -58,6 +58,7 @@
 #include "oled_app.h"
 #include "rtc_app.h"
 #include "usart_app.h"
+#include "uart_ota_ymodem.h"
 #include "uart_ota_app.h"
 #endif
 
