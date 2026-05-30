@@ -279,19 +279,6 @@ void EXTI0_IRQHandler(void)
 
 /*
  * 函数作用：
- *   处理 SDIO 中断，并转交给 SD 卡组件完成底层状态推进。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void SDIO_IRQHandler(void)
-{
-    sd_interrupts_process();
-}
-
-/*
- * 函数作用：
  *   处理 SysTick 中断，推进本地 1ms timebase。
  * 参数说明：
  *   无参数。

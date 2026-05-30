@@ -29,8 +29,8 @@ Function/
 ├── usart_app.c / usart_app.h
 ├── uart_ota_app.c / uart_ota_app.h
 ├── adc_app.c / adc_app.h
-├── rtc_app.c / rtc_app.h
-└── sd_app.c / sd_app.h
+├── gd30ad3344_pt100_app.c / gd30ad3344_pt100_app.h
+└── rtc_app.c / rtc_app.h
 
 HardWare/
 ├── LED/
@@ -43,15 +43,13 @@ HardWare/
 ├── POWER/
 ├── BOOTLOADER/
 ├── GD25QXX/
-├── GD30AD3344/
-└── SDIO/
+└── GD30AD3344/
 
 HeaderFiles/
 └── system_all.h                   # Shared aggregation header
 
 Library/
-├── GD32F4xx_standard_peripheral/  # Vendor standard peripheral library
-└── Third_Party/fat_fs/            # FatFs headers and sources
+└── GD32F4xx_standard_peripheral/  # Vendor standard peripheral library
 
 CMSIS/                             # ARM CMSIS core and GD32 device files
 Startup/                           # Keil startup assembly
@@ -84,21 +82,14 @@ Use `HardWare/<device>/` for reusable device or protocol logic:
 - SSD1306 display primitives in `HardWare/OLED/`
 - GD25Qxx SPI Flash and SMARTFS operations in `HardWare/GD25QXX/`
 - GD30AD3344 command/data protocol in `HardWare/GD30AD3344/`
-- SDIO card access in `HardWare/SDIO/`
-- third-party libraries such as FatFs in `Library/Third_Party/fat_fs/`
 
 Component code may depend on driver-provided buses, but it should not become the place that owns board-level pin maps.
 
 Keil project display should keep all low-level source entries under a single
 `HardWare` group. Do not create separate uVision groups such as
-`HardWare/OLED`, `HardWare/SDIO`, or `HardWare/GD25QXX`; the physical
+`HardWare/OLED` or `HardWare/GD25QXX`; the physical
 subdirectories still carry ownership boundaries, while the IDE tree stays
 compact and consistent with the top-level firmware layer.
-
-Keil project display should also keep third-party library sources under a
-single `Library` group. Do not expose internal paths such as
-`Library/Third_Party/fat_fs` as uVision group names; keep those paths only in
-the actual file references.
 
 ### Function Layer
 

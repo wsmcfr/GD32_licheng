@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_STDPERIPH_DRIVER,GD32F470</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Library\GD32F4xx_standard_peripheral\Include;..\User;..\HeaderFiles;..\Function;..\HardWare\LED;..\HardWare\KEY;..\HardWare\USART;..\HardWare\OLED;..\HardWare\STORAGE;..\HardWare\ANALOG;..\HardWare\RTC;..\HardWare\POWER;..\HardWare\BOOTLOADER;..\HardWare\GD25QXX;..\HardWare\GD30AD3344;..\HardWare\SDIO;..\CMSIS;..\CMSIS\GD\GD32F4xx\Include;..\Library\Third_Party\fat_fs\inc</IncludePath>
+              <IncludePath>..\Library\GD32F4xx_standard_peripheral\Include;..\User;..\HeaderFiles;..\Function;..\HardWare\LED;..\HardWare\KEY;..\HardWare\USART;..\HardWare\OLED;..\HardWare\STORAGE;..\HardWare\ANALOG;..\HardWare\RTC;..\HardWare\POWER;..\HardWare\BOOTLOADER;..\HardWare\GD25QXX;..\HardWare\GD30AD3344;..\CMSIS;..\CMSIS\GD\GD32F4xx\Include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -490,11 +490,6 @@
               <FilePath>..\Library\GD32F4xx_standard_peripheral\Source\gd32f4xx_rtc.c</FilePath>
             </File>
             <File>
-              <FileName>gd32f4xx_sdio.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Library\GD32F4xx_standard_peripheral\Source\gd32f4xx_sdio.c</FilePath>
-            </File>
-            <File>
               <FileName>gd32f4xx_spi.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Library\GD32F4xx_standard_peripheral\Source\gd32f4xx_spi.c</FilePath>
@@ -528,21 +523,6 @@
               <FileName>gd32f4xx_wwdgt.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Library\GD32F4xx_standard_peripheral\Source\gd32f4xx_wwdgt.c</FilePath>
-            </File>
-            <File>
-              <FileName>diskio.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Library\Third_Party\fat_fs\src\diskio.c</FilePath>
-            </File>
-            <File>
-              <FileName>ff.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Library\Third_Party\fat_fs\src\ff.c</FilePath>
-            </File>
-            <File>
-              <FileName>ccsbcs.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Library\Third_Party\fat_fs\src\option\ccsbcs.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -630,11 +610,6 @@
               <FilePath>..\HardWare\OLED\oled.c</FilePath>
             </File>
             <File>
-              <FileName>sdio_sdcard.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\HardWare\SDIO\sdio_sdcard.c</FilePath>
-            </File>
-            <File>
               <FileName>gd30ad3344.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\HardWare\GD30AD3344\gd30ad3344.c</FilePath>
@@ -663,11 +638,6 @@
               <FileName>usart_app.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Function\usart_app.c</FilePath>
-            </File>
-            <File>
-              <FileName>sd_app.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Function\sd_app.c</FilePath>
             </File>
             <File>
               <FileName>rtc_app.c</FileName>

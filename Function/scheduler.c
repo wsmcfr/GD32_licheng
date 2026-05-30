@@ -85,7 +85,7 @@ void scheduler_reset_runtime(void)
  * 主要流程：
  *   1. 初始化本地 SysTick timebase 和基础板级外设。
  *   2. 按依赖顺序初始化存储、串口、ADC/DAC、RTC、OLED 和按键应用层。
- *   3. 执行 SPI Flash 与可选 SD/FatFs 冒烟测试。
+ *   3. 执行 SPI Flash 冒烟测试。
  *   4. 初始化调度器任务数量，进入主循环前完成任务表准备。
  * 参数说明：
  *   无参数。
@@ -110,7 +110,7 @@ void system_init(void)
 		boot_app_handoff_init();
 		/*
 		 * 调试串口必须尽早初始化。这样 BootLoader 跳到 App 后，哪怕后续 SPI Flash、
-		 * OLED、SD 卡或 SMARTFS 初始化卡住，也能从 USART0 日志判断已经进入 App。
+		 * OLED 或 SMARTFS 初始化卡住，也能从 USART0 日志判断已经进入 App。
 		 */
 		bsp_usart_init();
 		my_printf(DEBUG_USART, "BOOT: handoff start\r\n");
@@ -167,7 +167,6 @@ void system_init(void)
 		bsp_rtc_init();
 		my_printf(DEBUG_USART, "BOOT: rtc done\r\n");
 
-		sd_fatfs_init();
 		app_btn_init();
 
 		my_printf(DEBUG_USART, "BOOT: oled init...\r\n");
@@ -192,12 +191,6 @@ void system_init(void)
 #else
 		my_printf(DEBUG_USART, "BOOT: test_spi_flash skipped (SPI_FLASH_RAW_TEST_ENABLE=0)\r\n");
 #endif
-
-#if SD_FATFS_DEMO_ENABLE
-		sd_fatfs_test();
-#else
-		my_printf(DEBUG_USART, "BOOT: sd_fatfs_test skipped (SD_FATFS_DEMO_ENABLE=0)\r\n");
-	#endif
 
 		scheduler_init();
 }

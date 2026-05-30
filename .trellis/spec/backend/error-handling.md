@@ -21,8 +21,8 @@ Error handling is done with a small set of concrete mechanisms:
 | Error Surface | Where It Appears | Handling Style |
 |---------------|------------------|----------------|
 | CPU fault handlers | `User/gd32f4xx_it.c` | Infinite loop for fail-stop debugging |
-| Assertion backend | `Function/sd_app.c::__aeabi_assert` | UART log + infinite loop |
-| Vendor status enums | `FRESULT`, `DSTATUS`, `sd_error_enum`, `ErrStatus` | Check immediately and branch |
+| Assertion backend | `User/main.c` retarget/assert support | UART log + infinite loop |
+| Storage status enums | `SMART_STORAGE_ERR_*`, `ErrStatus` | Check immediately and branch |
 | Soft runtime flags | `rx_flag` in UART flow | Set/clear flag and return early |
 
 Example fatal handler from `User/gd32f4xx_it.c`:
@@ -35,7 +35,7 @@ void HardFault_Handler(void)
 }
 ```
 
-Example assert backend from `Function/sd_app.c`:
+Example assert behavior:
 
 ```c
 my_printf(DEBUG_USART, "ASSERT: %s, file: %s, line: %d\r\n", ...);
@@ -50,14 +50,14 @@ while (1) {
 ### 1. Check result codes at the call site
 
 The project does not defer status handling to a later layer.
-When using FatFs, SDIO helpers, or vendor APIs, check the result immediately.
+When using SMARTFS helpers, SPI Flash helpers, or vendor APIs, check the result immediately.
 
 Example:
 
 ```c
-fres = f_open(&long_file, long_path, FA_CREATE_ALWAYS | FA_WRITE);
-if (FR_OK != fres) {
-    my_printf(DEBUG_USART, "FATFS long-name open(write) failed (%d)\r\n", fres);
+err = smart_storage_write_file(path, data, length);
+if (SMART_STORAGE_ERR_OK != err) {
+    my_printf(DEBUG_USART, "SMARTFS: write failed (%d)\r\n", err);
     return;
 }
 ```
@@ -101,8 +101,6 @@ Interrupt handlers should:
 
 | Function Family | Failure Signal | Expected Caller Behavior |
 |-----------------|----------------|--------------------------|
-| FatFs operations | `FRESULT` | Log the code, stop the current demo step, close handles if needed |
-| SD physical init | `DSTATUS` / `sd_error_enum` | Retry if appropriate, then log the final status |
 | SMARTFS metadata init | `SMART_STORAGE_ERR_*` | Reject invalid metadata or bad pointers, do not continue with a corrupt image |
 | Timebase setup | implicit fatal loop | Treat as unrecoverable startup failure |
 | UART receive handoff | `rx_flag` stays `0` | Task returns immediately without processing |
@@ -113,7 +111,7 @@ Interrupt handlers should:
 
 ### Continuing after a failed storage operation
 
-Do not keep reading or verifying if `f_open()`, `f_write()`, or `f_read()` already failed.
+Do not keep reading or verifying if `smart_storage_write_file()`, `smart_storage_read_file()`, or metadata loading already failed.
 Return after logging.
 
 ### Copying DMA data without a length guard

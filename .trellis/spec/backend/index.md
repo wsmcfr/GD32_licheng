@@ -10,7 +10,7 @@ In this repository, the Trellis `backend` layer does **not** mean a web server.
 It maps to hardware-near firmware code:
 
 - `HardWare/` board-support, peripheral resource ownership, and reusable device drivers
-- `Library/` vendor standard peripheral library and third-party middleware such as FatFs
+- `Library/` vendor standard peripheral library
 - `User/gd32f4xx_it.c` interrupt handlers
 - `User/systick.c`, `User/main.c`, and shared runtime infrastructure code
 - `HeaderFiles/system_all.h` shared include aggregation
@@ -23,7 +23,7 @@ It maps to hardware-near firmware code:
 |---------------|-------------------------|
 | Backend | Drivers, interrupts, storage, peripheral initialization, low-level resource management |
 | API | Public C functions declared in module headers |
-| Database | Persistent storage on SD/FatFs or SPI Flash/SMARTFS |
+| Database | Persistent storage on SPI Flash/SMARTFS |
 | Logging | Debug UART output through `my_printf()` or `printf` redirection |
 | Error response | Return code, debug log, assert trap, or fail-stop loop |
 
@@ -36,7 +36,7 @@ It maps to hardware-near firmware code:
 - [ ] Read [Logging Guidelines](./logging-guidelines.md)
 - [ ] Read [Quality Guidelines](./quality-guidelines.md)
 - [ ] If touching BootLoader, App relocation, RS485/USART1 OTA, or Flash partition constants, read [Embedded OTA Guidelines](./embedded-ota-guidelines.md)
-- [ ] If touching SD card, SPI Flash, or SMARTFS, read [Database Guidelines](./database-guidelines.md)
+- [ ] If touching SPI Flash or SMARTFS, read [Database Guidelines](./database-guidelines.md)
 - [ ] If touching ISR-to-task handoff, DMA buffers, or wakeup flow, also read [`../guides/cross-layer-thinking-guide.md`](../guides/cross-layer-thinking-guide.md)
 - [ ] Search existing pin, DMA, IRQ, and buffer-size values before changing them
 
@@ -47,7 +47,7 @@ It maps to hardware-near firmware code:
 | Guide | Description | Status |
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Layer boundaries, file placement, naming | Project-specific |
-| [Database Guidelines](./database-guidelines.md) | SD/FatFs and SPI Flash/SMARTFS persistence conventions | Project-specific |
+| [Database Guidelines](./database-guidelines.md) | SPI Flash/SMARTFS persistence conventions | Project-specific |
 | [Error Handling](./error-handling.md) | Fail-stop, return-code, and ISR safety patterns | Project-specific |
 | [Logging Guidelines](./logging-guidelines.md) | Debug UART logging conventions | Project-specific |
 | [Quality Guidelines](./quality-guidelines.md) | Review checklist and forbidden low-level patterns | Project-specific |
@@ -59,7 +59,6 @@ It maps to hardware-near firmware code:
 
 - `HeaderFiles/system_all.h`: shared include aggregation and layer ordering
 - `HardWare/USART/bsp_usart.c`: typical peripheral/DMA/IRQ initialization style
-- `Function/sd_app.c`: storage status checking, logging, and compatibility wrappers
 - `User/gd32f4xx_it.c`: ISR structure and fail-stop handlers
 - `Function/uart_ota_app.c`: RS485/USART1 OTA packet parsing and BootLoader parameter handoff
 - `tools/make_uart_ota_packet.py`: PC-side `.uota` packet generator

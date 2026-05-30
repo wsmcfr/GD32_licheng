@@ -31,6 +31,8 @@ def main() -> None:
     btn_app = read_text("Function/btn_app.c")
     scheduler = read_text("Function/scheduler.c")
     scheduler_h = read_text("Function/scheduler.h")
+    interrupts = read_text("User/gd32f4xx_it.c")
+    libopt = read_text("User/gd32f4xx_libopt.h")
     system_all = read_text("HeaderFiles/system_all.h")
     uvproj = read_text("project/2026706296.uvprojx")
     pt100_app = read_text("Function/gd30ad3344_pt100_app.c")
@@ -56,6 +58,7 @@ def main() -> None:
     require("void bsp_enter_standby(void)" in power, "POWER 实现缺少 Standby 模式入口")
     require("pmu_to_sleepmode(WFI_CMD)" in power, "Sleep 模式未通过 PMU WFI 入口进入")
     require("bsp_sleep_mask_runtime_irqs" in power and "bsp_sleep_unmask_runtime_irqs" in power, "Sleep 模式未临时屏蔽并恢复运行态外设中断")
+    require("SDIO_IRQn" not in power and "RCU_SDIO" not in power, "POWER 仍保留已删除 SDIO 的低功耗处理")
     require("pmu_wakeup_pin_enable()" in power, "Standby 模式未启用 PMU WKUP 唤醒脚")
     require("pmu_to_standbymode()" in power, "Standby 模式未调用 PMU standby 入口")
     require("bsp_wait_keyw_low_before_standby" in power, "Standby 模式进入前未等待 KEYW 拉低")
@@ -107,6 +110,11 @@ def main() -> None:
     require("gd30ad3344_pt100_task" in scheduler, "调度器未注册 PT100 周期采样任务")
     require("gd30ad3344_pt100_app.h" in system_all, "聚合头未包含 PT100 app 头文件")
     require("gd30ad3344_pt100_app.c" in uvproj, "Keil 工程未包含 PT100 app 源文件")
+    require("sd_app" not in scheduler and "SD_FATFS" not in scheduler, "启动流程仍保留 SD/FatFs 初始化或测试")
+    require("SDIO_IRQHandler" not in interrupts and "sd_interrupts_process" not in interrupts, "中断文件仍保留 SDIO 中断入口")
+    require("sdio_sdcard.h" not in system_all and "diskio.h" not in system_all and "ff.h" not in system_all and "sd_app.h" not in system_all, "聚合头仍包含 SD/FatFs 头文件")
+    require("gd32f4xx_sdio.h" not in libopt, "标准库选项头仍启用 SDIO 外设头")
+    require("sd_app.c" not in uvproj and "sdio_sdcard.c" not in uvproj and "fat_fs" not in uvproj and "gd32f4xx_sdio.c" not in uvproj, "Keil 工程仍包含 SD/FatFs/SDIO 源文件或路径")
 
     require("调度器唤醒重基线" in doc, "工程文档未同步调度器唤醒优化说明")
     require("RTC 补偿" in doc, "工程文档未同步 RTC 补偿说明")
@@ -116,6 +124,7 @@ def main() -> None:
     require("OLED 二轮事务压缩优化" in doc, "工程文档未同步 OLED 二轮事务压缩说明")
     require("GD30AD3344 PT100 应用层" in doc, "工程文档未同步 GD30AD3344 PT100 app 说明")
     require("0.9617" in doc and "0.001957" in doc and "2.635" in doc, "工程文档未同步商业版 PT100 线性标定公式")
+    require("SD_FATFS" not in doc and "fat_fs" not in doc and "FatFs" not in doc and "SDIO" not in doc and "SD 卡" not in doc, "工程文档仍保留 SD/FatFs 用户说明")
 
 
 if __name__ == "__main__":

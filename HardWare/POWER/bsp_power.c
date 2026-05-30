@@ -1,5 +1,4 @@
 #include "bsp_power.h"
-#include "sd_app.h"
 #include "btn_app.h"
 #include "scheduler.h"
 #include "oled_app.h"
@@ -122,7 +121,6 @@ static void bsp_clock_disable_for_deepsleep(void)
     rcu_periph_clock_disable(RCU_I2C0);
     rcu_periph_clock_disable(RCU_SPI0);
     rcu_periph_clock_disable(RCU_SPI3);
-    rcu_periph_clock_disable(RCU_SDIO);
     rcu_periph_clock_disable(RCU_ADC0);
     rcu_periph_clock_disable(RCU_DAC);
     rcu_periph_clock_disable(RCU_TIMER5);
@@ -132,26 +130,6 @@ static void bsp_clock_disable_for_deepsleep(void)
     rcu_periph_clock_disable(RCU_GPIOC);
     rcu_periph_clock_disable(RCU_GPIOD);
     rcu_periph_clock_disable(RCU_GPIOE);
-}
-
-/*
- * 函数作用：
- *   在进入深度睡眠前关闭 SDIO 外设。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- * 说明：
- *   SD 卡组件内部自带 GPIO 初始化，因此唤醒后不需要额外保留旧的 bsp_sdio_init。
- */
-static void bsp_sdio_disable_for_deepsleep(void)
-{
-    nvic_irq_disable(SDIO_IRQn);
-    sdio_dma_disable();
-    sdio_clock_disable();
-    sd_power_off();
-    sdio_deinit();
-    dma_channel_disable(DMA1, DMA_CH3);
 }
 
 /*
@@ -224,9 +202,6 @@ static void bsp_gpio_enter_deepsleep_state(void)
     gpio_mode_set(ADC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, ADC1_PIN | ADC_VREF_PIN);
     gpio_mode_set(DAC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, DAC1_PIN);
 
-    gpio_mode_set(GPIOC, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11 | GPIO_PIN_12);
-    gpio_mode_set(GPIOD, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, GPIO_PIN_2);
-
     gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEYW_PIN);
 }
 
@@ -267,7 +242,7 @@ static void bsp_wait_keyw_low_before_standby(void)
  * 函数作用：
  *   临时屏蔽 Sleep 期间不希望唤醒 CPU 的运行态外设中断。
  * 主要流程：
- *   1. 关闭调试串口 USART0、RS485/OTA USART1 和 SDIO 的 NVIC 中断。
+ *   1. 关闭调试串口 USART0 和 RS485/OTA USART1 的 NVIC 中断。
  *   2. 清除这些中断的挂起状态，避免刚执行 WFI 就被旧事件唤醒。
  * 参数说明：
  *   无参数。
@@ -281,11 +256,9 @@ static void bsp_sleep_mask_runtime_irqs(void)
 {
     nvic_irq_disable(USART0_IRQn);
     nvic_irq_disable(USART1_IRQn);
-    nvic_irq_disable(SDIO_IRQn);
 
     NVIC_ClearPendingIRQ(USART0_IRQn);
     NVIC_ClearPendingIRQ(USART1_IRQn);
-    NVIC_ClearPendingIRQ(SDIO_IRQn);
 }
 
 /*
@@ -296,18 +269,16 @@ static void bsp_sleep_mask_runtime_irqs(void)
  * 返回值说明：
  *   无返回值。
  * 说明：
- *   这里按当前工程默认运行态恢复 USART0、USART1 和 SDIO 中断优先级。
+ *   这里按当前工程默认运行态恢复 USART0 和 USART1 中断优先级。
  *   若后续新增可在 Sleep 期间保留的唤醒源，应同步调整屏蔽和恢复列表。
  */
 static void bsp_sleep_unmask_runtime_irqs(void)
 {
     NVIC_ClearPendingIRQ(USART0_IRQn);
     NVIC_ClearPendingIRQ(USART1_IRQn);
-    NVIC_ClearPendingIRQ(SDIO_IRQn);
 
     nvic_irq_enable(USART0_IRQn, 0U, 0U);
     nvic_irq_enable(USART1_IRQn, 1U, 0U);
-    nvic_irq_enable(SDIO_IRQn, 0U, 0U);
 }
 
 /*
@@ -450,11 +421,6 @@ static void bsp_deepsleep_reinit_after_wakeup(uint32_t sleep_epoch, uint8_t slee
     bsp_gd30ad3344_init();
     bsp_rtc_init();
     /*
-     * SD/FatFs 目前只需要恢复 SDIO 中断，但后续如果加入挂载或介质检测，
-     * 不应把这些慢操作压到唤醒关键路径。这里仅标记待恢复，实际访问前再懒初始化。
-     */
-    sd_fatfs_mark_resume_required();
-    /*
      * 简化按键方案把边沿检测状态保存在 btn_app 静态变量中。
      * 深睡唤醒后 GPIO 已经重新初始化，因此这里同步重置按键模块状态，
      * 避免沿用睡前缓存导致第一次按键被误判为旧状态延续。
@@ -567,8 +533,6 @@ void bsp_enter_deepsleep(void)
          * 继续执行 DMA/SPI/GPIO/时钟收拢，避免外设异常把系统卡在入睡前。
          */
     }
-    bsp_sdio_disable_for_deepsleep();
-
     adc_disable(ADC0);
     adc_dma_mode_disable(ADC0);
     dma_channel_disable(DMA1, DMA_CH0);
@@ -604,7 +568,7 @@ void bsp_enter_deepsleep(void)
  * 函数作用：
  *   收拢板级外设后进入 Standby 待机模式。
  * 主要流程：
- *   1. 关闭串口、OLED、SPI、SDIO、ADC、DAC、TIMER 等外设。
+ *   1. 关闭串口、OLED、SPI、ADC、DAC、TIMER 等外设。
  *   2. 将 GPIO 收拢为低漏电状态，并保留 KEYW/PA0 的 WKUP 引脚条件。
  *   3. 清除 PMU 唤醒/待机标志，启用 PMU WKUP 引脚。
  *   4. 调用 `pmu_to_standbymode()` 进入 Standby。
@@ -640,8 +604,6 @@ void bsp_enter_standby(void)
          * 其他资源，避免在无法输出日志的路径里永久停住。
          */
     }
-    bsp_sdio_disable_for_deepsleep();
-
     adc_disable(ADC0);
     adc_dma_mode_disable(ADC0);
     dma_channel_disable(DMA1, DMA_CH0);

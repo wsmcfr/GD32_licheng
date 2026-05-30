@@ -76,7 +76,7 @@ Examples:
 
 - `if (!cfg) return LFS_ERR_INVAL;` in `lfs_storage_init()`
 - receive-length clamp in `USART0_IRQHandler()`
-- expected-length verification in `sd_fatfs_test()`
+- expected-length verification in SMARTFS read/write shell paths
 
 ---
 

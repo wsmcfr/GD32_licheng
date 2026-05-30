@@ -58,7 +58,7 @@ Examples:
 
 - `oled_printf()` is public because other app modules use it
 - `uart_dma_buffer` and `rx_flag` are declared in `usart_app.h` because ISR code updates them
-- `memory_compare()` stays private in `sd_app.c`
+- storage shell parsing helpers stay private in `usart_app.c`
 
 ---
 

@@ -32,11 +32,6 @@
  *   App 头就提前使用它的宏和声明，形成循环依赖。
  */
 
-/* 通用组件头文件。 */
-#include "sdio_sdcard.h"
-#include "diskio.h"
-#include "ff.h"
-
 /* Driver 层头文件。 */
 #include "bsp_led.h"
 #include "bsp_key.h"
@@ -62,7 +57,6 @@
 #include "led_app.h"
 #include "oled_app.h"
 #include "rtc_app.h"
-#include "sd_app.h"
 #include "usart_app.h"
 #include "uart_ota_app.h"
 #endif

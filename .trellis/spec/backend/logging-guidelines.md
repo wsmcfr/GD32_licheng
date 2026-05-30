@@ -24,7 +24,7 @@ Instead, the project uses message prefixes and context.
 | Style | When To Use | Example |
 |-------|-------------|---------|
 | `BOOT:` | startup sequencing and init milestones | `BOOT: adc init...` |
-| Module prefix | module-specific diagnostics or demos | `FATFS long-name PASS:` |
+| Module prefix | module-specific diagnostics or demos | `SMARTFS: self-test PASS:` |
 | `ASSERT:` | fatal assertion reporting | `ASSERT: expr, file, line` |
 | Plain echo | simple shell behavior such as `cat` file-content echo or `ls` output | `bsp_usart_send_buffer(DEBUG_USART, uart_file_buffer, len);` |
 
@@ -46,7 +46,7 @@ Examples from the existing codebase:
 
 ```c
 my_printf(DEBUG_USART, "BOOT: rtc init...\r\n");
-my_printf(DEBUG_USART, "SD Card f_mount:%d\r\n", result);
+my_printf(DEBUG_USART, "SMARTFS: self-test PASS: %s=%s\r\n", test_file, readback);
 my_printf(DEBUG_USART, "ASSERT: %s, file: %s, line: %d\r\n", ...);
 ```
 
@@ -57,15 +57,14 @@ Prefer one-line messages that make serial logs scannable.
 ## What to Log
 
 - startup stage boundaries in `system_init()`
-- hardware identification values such as flash ID or SD card type
+- hardware identification values such as flash ID
 - result codes for mount/open/read/write operations
 - PASS / FAIL outcomes for self-tests
 - assertion context for fatal failures
 
 Good examples:
 
-- `Function/sd_app.c::card_info_get()` prints card type, size, and IDs
-- `Function/sd_app.c::sd_fatfs_long_name_test()` prints exact failure points
+- `HardWare/GD25QXX/lfs_port.c` and `smartfs_port.c` print storage init, self-test, and failure points
 - `Function/scheduler.c::system_init()` prints boot progress around major peripherals
 
 ---

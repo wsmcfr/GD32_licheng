@@ -54,7 +54,6 @@ OF SUCH DAMAGE.
 #include "gd32f4xx_iref.h"
 #include "gd32f4xx_pmu.h"
 #include "gd32f4xx_rtc.h"
-#include "gd32f4xx_sdio.h"
 #include "gd32f4xx_spi.h"
 #include "gd32f4xx_timer.h"
 #include "gd32f4xx_trng.h"

@@ -27,8 +27,7 @@ Function/
 ├── uart_ota_app.c / uart_ota_app.h # RS485/USART1 streaming OTA behavior
 ├── adc_app.c / adc_app.h       # ADC-to-DAC or sampled data app logic
 ├── gd30ad3344_pt100_app.c / gd30ad3344_pt100_app.h # GD30AD3344 PT100 resistance/temperature conversion
-├── rtc_app.c / rtc_app.h       # RTC display formatting
-└── sd_app.c / sd_app.h         # SD card demo and storage smoke tests
+└── rtc_app.c / rtc_app.h       # RTC display formatting
 ```
 
 ---
@@ -47,7 +46,7 @@ Examples:
 
 - OLED formatting belongs in `oled_app`
 - button-to-action policy belongs in `btn_app`
-- storage demo behavior belongs in `sd_app`
+- storage command behavior belongs in `usart_app` while low-level SMARTFS helpers stay under `HardWare/GD25QXX/`
 
 ### Central scheduling stays in `scheduler.c`
 

@@ -310,7 +310,7 @@ OLED_Write_data_buf(zeros, OLED_TX_DATA_MAX_SIZE);
 Keep callback glue and local helpers `static` in the `.c` file.
 Examples:
 
-- `memory_compare()` in `Function/sd_app.c`
+- storage shell helpers in `Function/usart_app.c`
 - `bsp_usart_disable_for_deepsleep()` in `HardWare/POWER/bsp_power.c`
 
 ### Do not ignore valid-length tracking
@@ -454,7 +454,7 @@ Expected App relocation contract:
 - WK_UP hardware polarity must be checked against the board schematic before choosing EXTI trigger edge.
 - For the current board, WK_UP is externally pulled up and the button shorts to ground, so the wake trigger is `EXTI_TRIG_FALLING`.
 - Sleep and Deep-sleep use `EXTI0` falling edge for KEYW wakeup and return to the interrupted call path after recovery.
-- Sleep can be woken by any enabled interrupt, so the current KEYW-only Sleep contract must temporarily mask USART0, USART1, and SDIO NVIC interrupts before WFI, then restore them after wake.
+- Sleep can be woken by any enabled interrupt, so the current KEYW-only Sleep contract must temporarily mask USART0 and USART1 NVIC interrupts before WFI, then restore them after wake.
 - Standby uses the PMU WKUP function on the same PA0 pin, not the EXTI0 interrupt path. The current KEYW circuit is high when released and low while pressed, so `bsp_enter_standby()` must wait for KEYW to be held low before entering Standby; releasing KEYW then creates the high-level/rising WKUP condition that resets and restarts the chip.
 - Startup code should enable `RCU_PMU`, check `PMU_FLAG_STANDBY` after the debug UART is available, emit a short boot log such as `BOOT: wake from standby`, then clear standby/wakeup flags before normal initialization continues.
 - Clear both `exti_interrupt_flag_clear(EXTI_0)` and `NVIC_ClearPendingIRQ(EXTI0_IRQn)` before entering WFI so stale events are not consumed as the wake event.
@@ -665,11 +665,11 @@ Good existing examples:
 
 - `vsnprintf(buffer, sizeof(buffer), ...)`
 - UART copy length clamp in `USART0_IRQHandler()`
-- file readback length check in `sd_fatfs_test()`
+- file readback length checks in SMARTFS self-test and UART shell paths
 
 ### Backward-compatible wrappers when renaming public interfaces
 
-The `sd_lfs_*` wrappers in `Function/sd_app.c` show the expected compatibility style when an external name still exists in call sites or old documentation.
+Keep compatibility wrappers only when an old API name still exists in active call sites or current documentation.
 
 ---
 
@@ -691,7 +691,6 @@ Use the existing self-test paths where possible:
 
 - `smart_storage_self_test()` for normal GD25QXX SMARTFS validation
 - `test_spi_flash()` only for destructive raw GD25QXX driver validation
-- `sd_fatfs_test()`
 - boot logs in `system_init()`
 
 SMARTFS now owns the whole 2MB GD25Q16 device. Raw Flash erase/write tests must

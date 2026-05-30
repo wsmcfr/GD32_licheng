@@ -9,35 +9,13 @@
 This firmware project has **no relational database**.
 The Trellis `database` guideline maps to persistent storage:
 
-- **SDIO + FatFs** for removable file-based storage
-- **SPI Flash + SMARTFS port** for onboard GD25Q16 non-volatile storage experiments
+- **SPI Flash + SMARTFS port** for onboard GD25Q16 non-volatile storage
 
 Treat storage changes as interface changes, especially when they affect file names, flash geometry, shell output, or compatibility wrappers.
 
 ---
 
 ## Storage Patterns
-
-### FatFs Workflow
-
-The common pattern is:
-
-1. initialize the physical drive
-2. mount the file system
-3. open/create the file
-4. write or read only the valid byte count
-5. close the file
-6. verify the result when the code is a demo or self-test path
-
-Example from `Function/sd_app.c`:
-
-```c
-stat = disk_initialize(0);
-result = f_mount(0, &fs);
-result = f_open(&fdst, "0:/FATFS.TXT", FA_CREATE_ALWAYS | FA_WRITE);
-result = f_write(&fdst, filebuffer, (UINT)strlen((char *)filebuffer), &bw);
-f_close(&fdst);
-```
 
 ### SMARTFS Port Workflow
 
@@ -232,8 +210,11 @@ When a storage path is used as a demo, smoke test, or migration safety check, ve
 Example:
 
 ```c
-if ((FR_OK == result) && (br == expected_len) &&
-    (SUCCESS == memory_compare(buffer, filebuffer, (uint16_t)expected_len)))
+if ((SMART_STORAGE_ERR_OK == err) &&
+    (read_length == expected_len) &&
+    (0 == memcmp(read_buffer, expected_data, expected_len))) {
+    /* verified */
+}
 ```
 
 ---
@@ -248,33 +229,19 @@ When storage format changes are needed:
 - document flash geometry changes in the header macros
 - assume old LittleFS contents are incompatible with the current SMARTFS format unless a migration tool is explicitly implemented
 
-Existing compatibility example in `Function/sd_app.c`:
-
-```c
-void sd_lfs_init(void)
-{
-    sd_fatfs_init();
-}
-```
-
-This wrapper keeps old call sites working while the implementation has already moved to FatFs naming.
-
 ---
 
 ## Naming Conventions
 
-- FatFs paths use drive-prefixed absolute paths such as `"0:/FATFS.TXT"`
-- Long demo filenames use descriptive underscore-separated names
 - Storage geometry macros are uppercase and explicit, such as `SMARTFS_FLASH_TOTAL_SIZE`
 - App-facing SMARTFS helpers use the prefix `smart_storage_`
 - Compatibility aliases keep the old prefix only when required for transition safety
 
 Examples:
 
-- `SD_FATFS_DEMO_ENABLE`
 - `SMARTFS_FLASH_SECTOR_SIZE`
 - `smart_storage_self_test()`
-- `sd_fatfs_long_name_test()`
+- `smart_storage_write_file()`
 
 ---
 
@@ -290,19 +257,14 @@ Runtime commands should load existing metadata, but they must not implicitly for
 Good:
 
 ```c
-f_write(&fdst, filebuffer, (UINT)strlen((char *)filebuffer), &bw);
+smart_storage_write_file(path, data, valid_length);
 ```
 
 Bad:
 
 ```c
-f_write(&fdst, filebuffer, sizeof(filebuffer), &bw);
+smart_storage_write_file(path, data, sizeof(data));
 ```
-
-### Assuming long filename support is enabled
-
-`sd_fatfs_long_name_test()` explicitly checks for `FR_INVALID_NAME`.
-If long filenames matter, verify `ffconf.h` instead of assuming the configuration.
 
 ### Introducing heap allocation in low-level storage paths
 
