@@ -169,10 +169,10 @@ static void prv_btn_dispatch(uint8_t key_down_mask)
     }
     if ((key_down_mask & BTN_KEY3_MASK) != 0U)
     {
-        LED3_TOGGLE;
         /*
-         * KEY3 进入 Standby。Standby 唤醒后走复位启动流程，正常不会回到
-         * 当前函数；这里仍保留 return，覆盖调试模式下未真正进入 Standby 的情况。
+         * KEY3 进入 Standby 准备流程。最深睡眠入口会先关闭 OLED 和 LED，
+         * 再等待 KEY4 松开确认，因此这里不再翻转 LED3，避免确认等待阶段
+         * 仍有指示灯保持点亮。
          */
         bsp_enter_standby();
         return;

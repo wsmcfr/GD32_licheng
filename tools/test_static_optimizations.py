@@ -20,6 +20,23 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def require_order(text: str, before: str, after: str, message: str) -> None:
+    """断言一段源码中 before 片段必须出现在 after 片段之前。
+
+    参数说明：
+        text：需要检查的源码全文。
+        before：应当先出现的源码片段。
+        after：应当后出现的源码片段。
+        message：断言失败时输出的中文错误信息。
+    返回值说明：
+        无返回值；断言失败时抛出 AssertionError。
+    """
+    before_index = text.find(before)
+    after_index = text.find(after)
+
+    require(before_index >= 0 and after_index >= 0 and before_index < after_index, message)
+
+
 def main() -> None:
     """执行全部静态契约检查，任一契约缺失都会让脚本以非零状态退出。"""
     gd25 = read_text("HardWare/GD25QXX/gd25qxx.c")
@@ -61,12 +78,32 @@ def main() -> None:
     require("SDIO_IRQn" not in power and "RCU_SDIO" not in power, "POWER 仍保留已删除 SDIO 的低功耗处理")
     require("pmu_wakeup_pin_enable()" in power, "Standby 模式未启用 PMU WKUP 唤醒脚")
     require("pmu_to_standbymode()" in power, "Standby 模式未调用 PMU standby 入口")
-    require("bsp_wait_keyw_low_before_standby" in power, "Standby 模式进入前未等待 KEYW 拉低")
+    require("bsp_wait_keyw_low_before_standby" not in power, "Standby 模式仍要求 KEYW 参与进入流程")
+    require("bsp_wait_key4_release_before_standby" in power, "Standby 模式未等待 KEY4 松开确认")
+    require_order(
+        power,
+        "bsp_oled_preblank_for_standby();",
+        "bsp_wait_key4_release_before_standby();",
+        "Standby 等待 KEY4 确认前未先关闭 OLED 显示",
+    )
+    require_order(
+        power,
+        "bsp_standby_preblank_indicators();",
+        "bsp_wait_key4_release_before_standby();",
+        "Standby 等待 KEY4 确认前未先关闭 LED 指示",
+    )
+    require_order(
+        power,
+        "gpio_mode_set(KEYA_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY5_PIN | KEY6_PIN);",
+        "gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEY4_PIN);",
+        "Standby GPIO 收拢未保留 KEY4 为确认键输入",
+    )
     require("PMU_FLAG_STANDBY" in scheduler and "rcu_periph_clock_enable(RCU_PMU)" in scheduler, "启动流程未打开 PMU 时钟并识别 Standby 唤醒标志")
     require("PMU_FLAG_RESET_STANDBY" in scheduler and "PMU_FLAG_RESET_WAKEUP" in scheduler, "启动流程识别 Standby 后未清除 PMU 标志")
     require("bsp_enter_sleep();" in btn_app, "KEY1 未接入 Sleep 模式入口")
     require("bsp_enter_deepsleep();" in btn_app, "KEY2 未接入 Deep-sleep 模式入口")
     require("bsp_enter_standby();" in btn_app, "KEY3 未接入 Standby 模式入口")
+    require("LED3_TOGGLE;\n        /*\n         * KEY3" not in btn_app, "KEY3 进入 Standby 前仍会翻转 LED3")
 
     require("scheduler_reset_runtime" in scheduler_h, "调度器头文件未导出唤醒重基线接口")
     require("void scheduler_reset_runtime(void)" in scheduler, "调度器实现缺少唤醒重基线接口")

@@ -432,6 +432,9 @@ void bsp_wkup_key_exti_init(void);
 void bsp_enter_sleep(void);
 void bsp_enter_deepsleep(void);
 void bsp_enter_standby(void);
+static void bsp_oled_preblank_for_standby(void);
+static void bsp_standby_preblank_indicators(void);
+static void bsp_wait_key4_release_before_standby(void);
 static void bsp_deepsleep_reinit_after_wakeup(void);
 void boot_app_vector_table_init(void);
 void EXTI0_IRQHandler(void);
@@ -448,6 +451,9 @@ Expected App relocation contract:
 | `bsp_enter_sleep()` | Masks non-wakeup runtime IRQs, uses EXTI0 as the wake source, stops SysTick before `pmu_to_sleepmode(WFI_CMD)`, then restores timebase, runtime IRQs, and scheduler baselines |
 | `EXTI0_IRQHandler()` | Clears EXTI0 interrupt flag only; heavy re-init stays in the WFI return path |
 | `bsp_enter_standby()` | Uses PA0 as the PMU WKUP source, not as an EXTI wake source; wake resumes through reset/startup |
+| `bsp_oled_preblank_for_standby()` | Sends SSD1306 display-off/charge-pump-off before waiting for KEY4 confirmation; does not shut down I2C/DMA/GPIO |
+| `bsp_standby_preblank_indicators()` | Turns off all LED indicators before the KEY4 confirmation wait |
+| `bsp_wait_key4_release_before_standby()` | Waits for KEY4/PA7 to be pressed low, then released high for at least 20 ms before continuing |
 
 #### 3. Contracts
 
@@ -455,7 +461,11 @@ Expected App relocation contract:
 - For the current board, WK_UP is externally pulled up and the button shorts to ground, so the wake trigger is `EXTI_TRIG_FALLING`.
 - Sleep and Deep-sleep use `EXTI0` falling edge for KEYW wakeup and return to the interrupted call path after recovery.
 - Sleep can be woken by any enabled interrupt, so the current KEYW-only Sleep contract must temporarily mask USART0 and USART1 NVIC interrupts before WFI, then restore them after wake.
-- Standby uses the PMU WKUP function on the same PA0 pin, not the EXTI0 interrupt path. The current KEYW circuit is high when released and low while pressed, so `bsp_enter_standby()` must wait for KEYW to be held low before entering Standby; releasing KEYW then creates the high-level/rising WKUP condition that resets and restarts the chip.
+- Standby uses the PMU WKUP function on the same PA0 pin, not the EXTI0 interrupt path. `bsp_enter_standby()` must blank the OLED and LEDs before waiting for KEY4 press-release confirmation; KEYW/PA0 remains the wake source only and must not be required to enter Standby.
+- `bsp_enter_standby()` must call the standby confirmation helpers in this order: `bsp_oled_preblank_for_standby()`, `bsp_standby_preblank_indicators()`, `bsp_wait_key4_release_before_standby()`, then `__disable_irq()` and destructive peripheral shutdown. This keeps the UI dark during confirmation while preserving `delay_ms()` for KEY4 debounce.
+- KEY3 must not toggle LED3 before entering Standby prepare. LED state belongs to the Standby entry path so the indicator policy stays centralized and the confirmation wait cannot leave a visible LED on.
+- KEY4 is a confirmation input only before true Standby. It may remain normal LED4-toggle UI in runtime, but during `bsp_enter_standby()` it must be read as a GPIO input until the confirmation sequence completes.
+- KEYW/PA0 must be treated as a wake source only for Standby. Do not wait for KEYW to enter Standby; that makes the wake key part of the sleep-entry workflow and creates confusing operator behavior.
 - Startup code should enable `RCU_PMU`, check `PMU_FLAG_STANDBY` after the debug UART is available, emit a short boot log such as `BOOT: wake from standby`, then clear standby/wakeup flags before normal initialization continues.
 - Clear both `exti_interrupt_flag_clear(EXTI_0)` and `NVIC_ClearPendingIRQ(EXTI0_IRQn)` before entering WFI so stale events are not consumed as the wake event.
 - If `SystemInit()` is called after wake in a relocated App, wrap the clock/vector-table recovery in a short interrupt-disabled section.
@@ -471,7 +481,7 @@ Expected App relocation contract:
 - `delay_us()` should use a DWT cycle conversion rounded up to the next cycle boundary when the core clock is not an integer multiple of 1 MHz; microsecond delays must not underrun for the sake of nominal precision.
 - Prefer `PMU_LOWDRIVER_DISABLE` while validating wake reliability. Re-enable low-driver mode only after hardware smoke tests prove the board wakes consistently.
 - Keep `EXTI0_IRQHandler()` small: clear the flag and return. Do not rebuild clocks, storage, OLED, or serial drivers inside the ISR.
-- If adding or changing button mappings, keep the user-facing low-power mapping explicit: KEY1 = Sleep, KEY2 = Deep-sleep, KEY3 = Standby, KEYW = wake source.
+- If adding or changing button mappings, keep the user-facing low-power mapping explicit: KEY1 = Sleep, KEY2 = Deep-sleep, KEY3 = Standby prepare, KEY4 release = Standby confirmation, KEYW = wake source.
 
 #### 4. Validation & Error Matrix
 
@@ -479,7 +489,8 @@ Expected App relocation contract:
 |-------------|----------------|-------------|
 | KEY2 enters deep sleep, WK_UP press has no visible effect | EXTI0 did not wake, stale pending was consumed, wrong edge, or PMU low-driver issue | Check WK_UP polarity, EXTI trigger, and EXTI/NVIC pending clear |
 | KEY1 Sleep wakes immediately without pressing WK_UP | SysTick or another interrupt was left enabled as a wake source | Confirm `timebase_prepare_reconfiguration()` runs before `pmu_to_sleepmode(WFI_CMD)` |
-| KEY3 Standby exits immediately after entering | PA0 was high when Standby started or WKUP flag was stale | Confirm KEYW is held low before enabling WKUP and both PMU flags are cleared |
+| KEY3 Standby exits immediately after entering | PA0 was already in the PMU WKUP active state or WKUP flag was stale | Confirm PMU wake flag clearing and verify KEYW/PA0 hardware polarity |
+| KEY3 Standby waits for KEY4 but OLED or LED stays lit | Indicator blanking still happens after the KEY4 wait | Confirm `bsp_oled_preblank_for_standby()` and `bsp_standby_preblank_indicators()` run before `bsp_wait_key4_release_before_standby()` |
 | KEY3 Standby wakes but code appears to continue after `pmu_to_standbymode()` | Debug option bytes or debugger hold prevented true Standby | Treat the post-Standby path as abnormal and force `NVIC_SystemReset()` |
 | WK_UP wakes once but later interrupts or serial logs stop | VTOR may still point to BootLoader after `SystemInit()` | Check `boot_app_vector_table_init()` is called immediately after `SystemInit()` |
 | Wake returns only with debugger attached | Timing or pending interrupt race is hiding the issue | Add LED/RAM markers before WFI and after WFI return |
@@ -492,11 +503,13 @@ Expected App relocation contract:
 |------|-----------------|
 | Good | KEY2 enters deep sleep; WK_UP falling edge wakes; App restores VTOR to `0x0800D000`; UART/OLED/tasks resume |
 | Good | KEY1 enters Sleep; WK_UP falling edge wakes; App resumes without full peripheral reinitialization and scheduler baselines are reset |
-| Good | KEY3 waits for KEYW to be held low, enters Standby, then releasing KEYW restarts the App and logs `BOOT: wake from standby` |
+| Good | KEY3 blanks OLED/LED first, waits for KEY4 press-release confirmation, enters Standby, then KEYW/PA0 wakes and the App logs `BOOT: wake from standby` |
 | Base | Normal reset still prints BootLoader/App logs and App starts at `0x0800D000` |
 | Bad | Calling `SystemInit()` after wake and leaving VTOR at `0x08000000` |
 | Bad | Using both-edge wake for a pulled-up button and letting release generate an unnecessary EXTI0 interrupt |
 | Bad | Clearing only EXTI flag but not NVIC pending before WFI |
+| Bad | KEY3 toggles LED3, then waits for KEY4/KEYW, leaving an LED visibly on during Standby confirmation |
+| Bad | Standby entry waits for KEYW/PA0, making the wake key part of the sleep-entry workflow |
 
 #### 6. Tests Required
 
@@ -505,10 +518,51 @@ Expected App relocation contract:
 - Press KEY2 and confirm the board enters the intended low-power state.
 - Press WK_UP and confirm the App visibly returns: debug UART logs resume, OLED/tasks recover, and the board remains responsive.
 - Press KEY1 and confirm Sleep pauses the CPU until WK_UP is pressed, then normal tasks resume.
-- Press KEY3, hold WK_UP low until Standby is entered, release WK_UP, and confirm the App restarts with `BOOT: wake from standby`.
+- Press KEY3 and confirm the OLED and LEDs turn off before the KEY4 wait, press and release KEY4 to confirm Standby entry, then use KEYW/PA0 to wake and confirm the App restarts with `BOOT: wake from standby`.
+- Run `python tools/test_static_optimizations.py` and confirm it asserts that `bsp_wait_keyw_low_before_standby` is absent, `bsp_wait_key4_release_before_standby()` is present, OLED/LED blanking precedes KEY4 wait, and KEY3 no longer toggles LED3.
 - If wake still fails, add one-shot markers in this order: before WFI, inside `EXTI0_IRQHandler()`, immediately after WFI return, after `boot_app_vector_table_init()`, and after peripheral re-init.
 
 #### 7. Wrong vs Correct
+
+##### Wrong
+
+```c
+/* Wrong: KEYW is the wake source, so do not require it to enter Standby. */
+bsp_oled_preblank_for_standby();
+bsp_wait_keyw_low_before_standby();
+pmu_wakeup_pin_enable();
+pmu_to_standbymode();
+```
+
+##### Correct
+
+```c
+/* Correct: KEY3 prepares Standby, KEY4 confirms entry, KEYW/PA0 wakes later. */
+bsp_oled_preblank_for_standby();
+bsp_standby_preblank_indicators();
+bsp_wait_key4_release_before_standby();
+pmu_wakeup_pin_enable();
+pmu_to_standbymode();
+```
+
+##### Wrong
+
+```c
+/* Wrong: this can leave LED3 on while waiting for Standby confirmation. */
+if ((key_down_mask & BTN_KEY3_MASK) != 0U) {
+    LED3_TOGGLE;
+    bsp_enter_standby();
+}
+```
+
+##### Correct
+
+```c
+/* Correct: Standby entry owns all indicator blanking. */
+if ((key_down_mask & BTN_KEY3_MASK) != 0U) {
+    bsp_enter_standby();
+}
+```
 
 ##### Wrong
 

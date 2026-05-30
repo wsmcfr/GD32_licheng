@@ -56,6 +56,46 @@ static void bsp_oled_disable_for_deepsleep(void)
 
 /*
  * 函数作用：
+ *   在 Standby 流程等待 KEY4 松开确认之前，先让 OLED 真正息屏。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   Standby 需要用户按 KEY4 确认后才继续收拢。如果先等待 KEY4、后关 OLED，
+ *   屏幕会在等待阶段停留在最后一帧并继续发光。这里仅发送 SSD1306 关显示
+ *   和关电荷泵命令，不关闭 I2C/DMA/GPIO；后续仍由 bsp_oled_disable_for_deepsleep()
+ *   统一收拢总线和引脚，避免破坏既有深睡资源关闭顺序。
+ */
+static void bsp_oled_preblank_for_standby(void)
+{
+    OLED_Display_Off();
+}
+
+/*
+ * 函数作用：
+ *   在 Standby 确认等待前关闭所有 LED 指示。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   KEY3 进入最深睡眠后，用户看到的状态应立即进入“准备睡眠”的暗屏暗灯状态。
+ *   后续 bsp_gpio_enter_deepsleep_state() 仍会再次关闭 LED 并收拢 GPIO，
+ *   这里提前执行是为了覆盖等待 KEY4 松开确认期间的可见亮灯问题。
+ */
+static void bsp_standby_preblank_indicators(void)
+{
+    LED1_OFF;
+    LED2_OFF;
+    LED3_OFF;
+    LED4_OFF;
+    LED5_OFF;
+    LED6_OFF;
+}
+
+/*
+ * 函数作用：
  *   在进入深度睡眠前关闭 SPI Flash 和 GD30AD3344 对应的 SPI/DMA。
  * 参数说明：
  *   无参数。
@@ -159,11 +199,13 @@ static void bsp_gpio_enter_deepsleep_state(void)
 
     /*
      * 普通按键在深睡前统一切到模拟输入，减少无用数字输入泄漏。
-     * 但 KEYW 仍需保留为 PA0 上拉输入，供后续 EXTI0 唤醒链路使用。
+     * 但 KEYW 仍需保留为 PA0 上拉输入，供后续 EXTI0/PMU WKUP 唤醒链路使用；
+     * KEY4 在 Standby 流程里作为“松开确认”键，进入真正 Standby 前保持输入。
      */
     gpio_mode_set(KEYB_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY1_PIN);
     gpio_mode_set(KEYC_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY2_PIN | KEY3_PIN);
-    gpio_mode_set(KEYA_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY4_PIN | KEY5_PIN | KEY6_PIN);
+    gpio_mode_set(KEYA_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, KEY5_PIN | KEY6_PIN);
+    gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEY4_PIN);
 
     gpio_mode_set(USART0_TX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART0_TX_PIN);
     gpio_mode_set(USART0_RX_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, USART0_RX_PIN);
@@ -207,32 +249,35 @@ static void bsp_gpio_enter_deepsleep_state(void)
 
 /*
  * 函数作用：
- *   在进入 Standby 前等待 KEYW/PA0 被用户按下并保持为低电平。
+ *   在进入 Standby 前等待 KEY4 被用户释放，作为最深睡眠的确认动作。
  * 主要流程：
- *   1. 确保 PA0 仍为上拉输入。
- *   2. 轮询 KEYW 电平，直到检测到按下低电平。
- *   3. 连续保持低电平达到消抖时间后返回。
+ *   1. 确保 KEY4/PA7 仍为上拉输入。
+ *   2. 先等待 KEY4 进入按下低电平，避免直接把松开态误判为确认。
+ *   3. 再等待 KEY4 松开为高电平并稳定达到消抖时间。
  * 参数说明：
  *   无参数。
  * 返回值说明：
  *   无返回值。
  * 说明：
- *   当前原理图中 KEYW 释放态被上拉到高电平，按下接地。PMU WKUP 在
- *   Standby 中按高电平/上升沿唤醒，因此必须先让用户按住 KEYW 使 PA0
- *   处于低电平，再进入 Standby；随后松开 KEYW 产生上升沿完成唤醒复位。
+ *   KEYW/PA0 是 Standby 唤醒键，不再参与进入睡眠的确认流程。
+ *   这里用 KEY4 的“按下后松开”作为确认，避免 KEY3 误触后立即继续关断外设。
  */
-static void bsp_wait_keyw_low_before_standby(void)
+static void bsp_wait_key4_release_before_standby(void)
 {
-    uint32_t stable_low_ms = 0U;
+    uint32_t stable_release_ms = 0U;
 
     rcu_periph_clock_enable(KEYA_CLK_PORT);
-    gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEYW_PIN);
+    gpio_mode_set(KEYA_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, KEY4_PIN);
 
-    while(stable_low_ms < 20U) {
-        if(!KEYW_READ) {
-            stable_low_ms++;
+    while(KEY4_READ) {
+        delay_ms(1U);
+    }
+
+    while(stable_release_ms < 20U) {
+        if(KEY4_READ) {
+            stable_release_ms++;
         } else {
-            stable_low_ms = 0U;
+            stable_release_ms = 0U;
         }
         delay_ms(1U);
     }
@@ -578,7 +623,7 @@ void bsp_enter_deepsleep(void)
  *   无返回值；Standby 唤醒会走复位启动流程，正常情况下本函数不会返回。
  * 说明：
  *   当前 KEYW 原理图为上拉、按下接地。PMU WKUP 为高电平/上升沿唤醒，
- *   因此 Standby 下按下 KEYW 后松开时触发唤醒复位。
+ *   因此 KEYW 只作为 Standby 唤醒键使用，不再作为进入 Standby 的确认键。
  */
 void bsp_enter_standby(void)
 {
@@ -587,11 +632,13 @@ void bsp_enter_standby(void)
     rcu_periph_clock_enable(RCU_PMU);
 
     /*
-     * Standby 的 WKUP 唤醒依赖 PA0 从低电平回到高电平。
-     * 用户按 KEY3 后需要按住 KEYW，等待系统真正进入 Standby 后再松开 KEYW 唤醒。
-     * 这一步必须放在关闭串口和 SysTick 前，保证 delay_ms() 仍可用于稳定消抖。
+     * KEY3 只负责进入最深睡眠准备态，KEYW/PA0 只负责唤醒。
+     * 这里先熄灭 OLED 和 LED，再等待 KEY4 的按下后松开动作作为确认；
+     * 等待动作必须放在关闭串口和 SysTick 前，保证 delay_ms() 仍可用于稳定消抖。
      */
-    bsp_wait_keyw_low_before_standby();
+    bsp_oled_preblank_for_standby();
+    bsp_standby_preblank_indicators();
+    bsp_wait_key4_release_before_standby();
 
     __disable_irq();
 
