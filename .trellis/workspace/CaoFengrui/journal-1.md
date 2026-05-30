@@ -1291,3 +1291,71 @@ Added KEY1 Sleep, KEY2 Deep-sleep, and KEY3 Standby runtime low-power modes. Thi
 ### Next Steps
 
 - Perform board validation for KEY1 Sleep, KEY2 Deep-sleep, KEY3 Standby, and KEYW wake behavior.
+
+
+## Session 28: Remove SD/FatFs and refine Standby confirmation
+
+**Date**: 2026-05-31
+**Task**: Remove SD/FatFs and refine Standby confirmation
+**Branch**: `feature/remove-sd-fatfs`
+
+### Summary
+
+Removed the obsolete SD card/FatFs stack and refined the deepest low-power workflow. The final Standby behavior is KEY3 preparing the board, KEY4 press-release confirming entry, and KEYW/PA0 remaining wake-only. This session also captured the resulting low-power contract in Trellis specs for future maintenance.
+
+### Main Changes
+
+| Item | Summary |
+|------|---------|
+| SD/FatFs removal | Removed SD card, SDIO, FatFs sources, startup hooks, interrupt handler, power-path references, aggregate includes, Keil source entries, and related user docs/spec text. |
+| PT100 context | Continued from the commercial PT100 calibration work already committed before this session; no extra PT100 code changes in this record. |
+| Standby interaction fix | Changed KEY3 to enter Standby prepare without toggling LED3; Standby now blanks OLED/LED immediately, waits for KEY4 press-release confirmation, and keeps KEYW/PA0 as wake source only. |
+| Code-spec update | Captured the KEY3/KEY4/KEYW Standby contract in `.trellis/spec/backend/quality-guidelines.md` with signatures, ordering contracts, validation matrix, good/bad cases, and wrong/correct examples. |
+| Static regression | Extended `tools/test_static_optimizations.py` to reject KEYW-as-entry regressions, require KEY4 confirmation, verify OLED/LED blanking order, and ensure KEY3 no longer toggles LED3. |
+| Documentation | Updated `工程文档.md` to match the SD/FatFs removal and the new Standby operation flow. |
+
+**Updated Files**:
+- `.trellis/spec/backend/database-guidelines.md`
+- `.trellis/spec/backend/directory-structure.md`
+- `.trellis/spec/backend/error-handling.md`
+- `.trellis/spec/backend/index.md`
+- `.trellis/spec/backend/logging-guidelines.md`
+- `.trellis/spec/backend/quality-guidelines.md`
+- `.trellis/spec/frontend/component-guidelines.md`
+- `.trellis/spec/frontend/directory-structure.md`
+- `.trellis/spec/frontend/type-safety.md`
+- `Function/btn_app.c`
+- `Function/scheduler.c`
+- `HardWare/POWER/bsp_power.c`
+- `HeaderFiles/system_all.h`
+- `USER/gd32f4xx_it.c`
+- `USER/gd32f4xx_libopt.h`
+- `project/2026706296.uvprojx`
+- `tools/test_static_optimizations.py`
+- `工程文档.md`
+- deleted `Function/sd_app.c`, `Function/sd_app.h`, `HardWare/SDIO/*`, and `Library/Third_Party/fat_fs/*`
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `42b660d` | refactor: remove sd card and fatfs support |
+| `90ee58c` | fix: confirm standby entry with key4 release |
+
+### Testing
+
+- [OK] `python tools/test_static_optimizations.py`
+- [OK] `python -m unittest discover -s tools -p "test_*.py"` (`Ran 11 tests ... OK`; argparse negative-case message is expected)
+- [OK] `git diff --check`
+- [OK] Keil build target `2026706296`; `project/build_codex.log` reports `0 Error(s), 0 Warning(s)`.
+- [OK] Branch pushed to GitHub: `feature/remove-sd-fatfs`.
+- [!] Hardware board validation of the final KEY3 -> KEY4 confirmation -> KEYW wake sequence was not performed in this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Flash the App and verify: KEY3 blanks OLED/LED, KEY4 press-release confirms Standby entry, KEYW/PA0 wakes and boot log prints `BOOT: wake from standby`.
+- If Standby immediately wakes after KEY4 confirmation, verify PA0/KEYW PMU WKUP active-level behavior against the board hardware.
