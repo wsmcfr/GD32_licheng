@@ -1404,3 +1404,53 @@ Removed the obsolete SD card/FatFs stack and refined the deepest low-power workf
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: 方案B头部BIN OTA升级流程
+
+**Date**: 2026-05-31
+**Task**: 方案B头部BIN OTA升级流程
+**Branch**: `feature/header-bin-ota`
+
+### Summary
+
+本次会话完成并记录方案 B 的头部 BIN OTA 流程：App 分支改为生成并接收 `Project_ota.bin`，现场只需要原始/直接发送一个 bin 文件；BootLoader 继续只负责读取参数区和搬运下载区 payload。后续又把 App 与独立 BootLoader 的参数区魔术字统一改为 `0xC0DEF47A`，并明确旧 BootLoader 需要重新烧录。
+
+### Main Changes
+
+| 项目 | 本次记录 |
+|---|---|
+| OTA 方案 | 切换到方案 B：Keil 构建后生成 `Project_ota.bin = 64 字节 OTA 头 + Project.bin payload`，现场只需通过 RS485/USART1 原始/直接发送该 bin 文件。 |
+| 旧升级路径清理 | 删除旧辅助发送工具、旧 YModem/旧包发送入口和对应旧测试，避免后续误用 Python 引导、握手、C 端发送等额外手段。 |
+| App 接收链路 | App 侧解析 `Project_ota.bin` 头部，先完整接收 payload 到 RAM，CRC/向量表校验通过后写入 `0x08067000` 下载缓存区，再写 BootLoader 参数区并复位。 |
+| BootLoader 分工 | BootLoader 不解析 `Project_ota.bin` 头部，只读取 `0x0800C000` 参数区，把 `0x08067000` 的 payload 搬运到 `0x0800D000` 并做 CRC 校验。 |
+| 共享协议更新 | App 与 `D:\GD32\2026706296_bootloader` 中 BootLoader 的参数区魔术字统一改为 `0xC0DEF47A`，旧值 `0x5AA5C33C` 不再用于当前分支。 |
+| 文档同步 | 更新 `OTA头部BIN升级说明.md`、`BootLoader_APP_接入说明.md`、`工程文档.md`、BootLoader 流程说明和 `.trellis/spec/backend/embedded-ota-guidelines.md`。 |
+| 验证 | `gcc -std=c99 -Wall -Wextra -Werror tools\pack_ota_image.c -o tools\pack_ota_image.exe` 通过；`python -m unittest tools.test_header_bin_ota_static` 6 tests OK；App Keil 构建 0 Error/0 Warning；BootLoader Keil 构建 0 Error/0 Warning。 |
+| GitHub | App 仓库分支 `feature/header-bin-ota` 已推送，最新提交 `bb2dd52`；BootLoader 目录不是 Git 仓库，魔术字改动保存在本地 BootLoader 工程。 |
+
+**后续注意**：板子如果已经烧录旧 BootLoader，必须重新烧录当前本地 `D:\GD32\2026706296_bootloader` 生成的新 BootLoader；否则新 App 写入 `0xC0DEF47A` 后，旧 BootLoader 仍按 `0x5AA5C33C` 判断参数区，会放弃升级搬运。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `330d3e5` | (see git log) |
+| `bb2dd52` | (see git log) |
+
+### Testing
+
+- [OK] `gcc -std=c99 -Wall -Wextra -Werror tools\pack_ota_image.c -o tools\pack_ota_image.exe`
+- [OK] `python -m unittest tools.test_header_bin_ota_static`，6 tests OK
+- [OK] App Keil 构建，0 Error(s)，0 Warning(s)
+- [OK] BootLoader Keil 构建，0 Error(s)，0 Warning(s)
+- [OK] 旧魔术字 `0x5AA5C33C` 只剩在静态测试的反向断言里
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

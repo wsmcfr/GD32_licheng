@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
+- **Total Sessions**: 30
 - **Last Active**: 2026-05-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1406 | Active |
+| `journal-1.md` | ~1452 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 30 | 2026-05-31 | 方案B头部BIN OTA升级流程 | `330d3e5`, `bb2dd52` | `feature/header-bin-ota` |
 | 29 | 2026-05-31 | 添加 YModem OTA 升级与规则 | `b27b9e2` | `feature/ymodem-ota` |
 | 28 | 2026-05-31 | Remove SD/FatFs and refine Standby confirmation | `42b660d`, `90ee58c` | `feature/remove-sd-fatfs` |
 | 27 | 2026-05-26 | Three-level low power modes | `b132d93` | `feature/lowpower-runtime-optimizations` |
