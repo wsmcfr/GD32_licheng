@@ -19,6 +19,7 @@ __IO uint8_t uart_ota_queue_count = 0U;
  */
 #define UART_OTA_IMAGE_MAGIC          0x474F5441UL
 #define UART_OTA_TRACE_LIMIT          6U
+#define UART_OTA_TASK_DRAIN_LIMIT     UART_OTA_RX_QUEUE_DEPTH
 
 /*
  * 枚举作用：
@@ -718,10 +719,24 @@ void uart_ota_task(void)
 {
     uint8_t rx_window[UART_OTA_FRAME_BUFFER_SIZE];
     uint16_t rx_length = 0U;
+    uint8_t drained_count = 0U;
     bootloader_port_status_t status;
 
-    if(0U != prv_uart_ota_take_rx_bytes(rx_window, &rx_length)){
+    /*
+     * RS485 裸流 OTA 可能连续触发多个 DMA 满缓冲中断。单次任务调用按队列深度设上限
+     * 尽量排空已有槽位，避免 5ms 周期内只处理 1KB 时被 OLED/日志等短抖动追上；
+     * 上限仍然保留，防止异常输入让本任务长期占用合作式调度器。
+     */
+    while(drained_count < UART_OTA_TASK_DRAIN_LIMIT) {
+        if(0U == prv_uart_ota_take_rx_bytes(rx_window, &rx_length)) {
+            break;
+        }
         uart_ota_feed_rx_bytes(rx_window, rx_length);
+        drained_count++;
+
+        if(UART_OTA_STATE_READY_TO_COMMIT == g_uart_ota_session.state) {
+            break;
+        }
     }
 
     if(UART_OTA_STATE_READY_TO_COMMIT != g_uart_ota_session.state){

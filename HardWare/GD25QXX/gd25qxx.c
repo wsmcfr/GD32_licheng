@@ -418,6 +418,7 @@ uint8_t spi_flash_send_byte_dma(uint8_t byte)
     
     /* 配置 TX 通道：SPI 数据寄存器固定，内存地址按字节自增。 */
     dma_deinit(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
+    dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_FLASH);
     dma_init_struct.memory0_addr        = (uint32_t)spi1_send_array;
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
@@ -492,6 +493,7 @@ uint16_t spi_flash_send_halfword_dma(uint16_t half_word)
     
     /* 配置 TX 通道，发送缓冲区连续提供 2 字节。 */
     dma_deinit(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
+    dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_FLASH);
     dma_init_struct.memory0_addr        = (uint32_t)spi1_send_array;
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
@@ -577,6 +579,7 @@ void spi_flash_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer, uint
     
     /* 配置 TX 通道，按 size 连续发送内部缓冲区数据。 */
     dma_deinit(GD25QXX_SPI_DMA_PERIPH, GD25QXX_SPI_DMA_TX_CHANNEL);
+    dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_FLASH);
     dma_init_struct.memory0_addr        = (uint32_t)spi1_send_array;
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;

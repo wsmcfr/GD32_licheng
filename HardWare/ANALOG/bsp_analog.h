@@ -28,7 +28,7 @@ extern "C" {
 #define DAC1_PIN                        GPIO_PIN_4
 
 /* ADC 采样值和 DAC 输出缓存由驱动层统一提供。 */
-extern uint16_t adc_value[2];
+extern __IO uint16_t adc_value[2];
 extern uint16_t convertarr[CONVERT_NUM];
 
 /*

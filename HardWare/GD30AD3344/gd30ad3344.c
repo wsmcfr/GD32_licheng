@@ -125,6 +125,7 @@ uint8_t spi_gd30ad3344_send_byte_dma(uint8_t byte)
     
     /* 配置 DMA 发送通道 */
     dma_deinit(DMA1, DMA_CH4);
+    dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
     dma_init_struct.memory0_addr        = (uint32_t)spi3_send_array;
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
@@ -194,6 +195,7 @@ uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
     
     /* 配置 DMA 发送通道 */
     dma_deinit(DMA1, DMA_CH4);
+    dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
     dma_init_struct.memory0_addr        = (uint32_t)spi3_send_array;
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
@@ -272,6 +274,7 @@ void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer,
     
     /* 配置 DMA 发送通道 */
     dma_deinit(DMA1, DMA_CH4);
+    dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
     dma_init_struct.memory0_addr        = (uint32_t)spi3_send_array;
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;

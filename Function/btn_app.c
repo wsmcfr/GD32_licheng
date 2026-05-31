@@ -147,7 +147,7 @@ static void prv_btn_dispatch(uint8_t key_down_mask)
 {
     if ((key_down_mask & BTN_KEY1_MASK) != 0U)
     {
-        LED1_TOGGLE;
+        led_app_toggle(0U);
         /*
          * KEY1 进入最轻量 Sleep。该模式只暂停 CPU 和本地 SysTick，
          * KEYW 唤醒后函数会返回，因此这里结束本轮分发，避免唤醒后继续消费
@@ -158,7 +158,7 @@ static void prv_btn_dispatch(uint8_t key_down_mask)
     }
     if ((key_down_mask & BTN_KEY2_MASK) != 0U)
     {
-        LED2_TOGGLE;
+        led_app_toggle(1U);
         /*
          * KEY2 进入 Deep-sleep。先翻转 LED2 再进入深睡，保留可见反馈。
          * 该函数会在唤醒恢复后才返回，因此这里直接结束本轮分发，
@@ -179,19 +179,19 @@ static void prv_btn_dispatch(uint8_t key_down_mask)
     }
     if ((key_down_mask & BTN_KEY4_MASK) != 0U)
     {
-        LED4_TOGGLE;
+        led_app_toggle(3U);
     }
     if ((key_down_mask & BTN_KEY5_MASK) != 0U)
     {
-        LED5_TOGGLE;
+        led_app_toggle(4U);
     }
     if ((key_down_mask & BTN_KEY6_MASK) != 0U)
     {
-        LED6_TOGGLE;
+        led_app_toggle(5U);
     }
     if ((key_down_mask & BTN_KEYW_MASK) != 0U)
     {
-        LED6_TOGGLE;
+        led_app_toggle(5U);
     }
 }
 

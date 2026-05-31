@@ -237,10 +237,12 @@ extern __IO uint8_t oled_data_buf[OLED_TX_BUFFER_SIZE];
 Expected component API:
 
 ```c
-void OLED_Write_cmd(uint8_t cmd);
-void OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length);
-void OLED_Write_data(uint8_t data);
-void OLED_Write_data_buf(const uint8_t *data, uint16_t length);
+uint8_t OLED_Write_cmd(uint8_t cmd);
+uint8_t OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length);
+uint8_t OLED_Write_data(uint8_t data);
+uint8_t OLED_Write_data_buf(const uint8_t *data, uint16_t length);
+uint8_t OLED_Set_Position(uint8_t x, uint8_t y);
+uint8_t OLED_ShowStr(uint8_t x, uint8_t y, char *ch, uint8_t fontsize);
 ```
 
 #### 3. Contracts
@@ -250,13 +252,15 @@ void OLED_Write_data_buf(const uint8_t *data, uint16_t length);
 - `OLED_Write_cmd_buf()` must batch consecutive SSD1306 commands and may reuse the DMA data buffer with control byte `0x00`.
 - `OLED_Write_data()` remains a compatibility wrapper for single-byte writes and should route through `OLED_Write_data_buf()`.
 - `OLED_Write_cmd()` remains a compatibility wrapper for single-byte commands and should route through `OLED_Write_cmd_buf()`.
+- OLED write/display helpers that return `uint8_t` must return `1U` only after the full I2C/DMA transaction succeeds. They must return `0U` for invalid parameters, unavailable OLED state, bus/address/DMA/BTC/STOP timeout, or out-of-range cursor positions.
 - `OLED_Set_Position()` should send page, high-column, and low-column commands in one `OLED_Write_cmd_buf()` transaction.
 - `OLED_Clear()` and `OLED_Allfill()` should write one full 128-byte page per transaction instead of issuing 128 single-byte transactions per page.
 - `OLED_ShowStr()` should batch-render 6x8 strings into row buffers instead of calling `OLED_ShowChar()` for every character.
 - For 6x8 text, keep the legacy 8-pixel character step by writing 6 glyph columns plus 2 blank columns per character.
-- App-layer `oled_printf()` should compare its line cache and refresh only the changed character span when possible.
+- App-layer `oled_printf()` should compare its line cache and refresh only the changed character span when possible. It may update `g_oled_line_cache` only after `OLED_ShowStr()` reports success; failed OLED writes must keep the old cache so the next task cycle retries.
 - The low-level packet helper must wait for DMA FTF and I2C BTC before STOP, so the final byte is shifted out before the bus is released.
 - On bus, address, DMA, or STOP timeout, OLED transmission may set `s_oled_available = 0U`; `OLED_Init()` is responsible for re-enabling OLED attempts.
+- OLED bus-busy waits must stay short enough for the cooperative scheduler. Do not reintroduce 10000ms-class busy waits around `I2C_FLAG_I2CBSY`.
 
 #### 4. Validation & Error Matrix
 
@@ -267,6 +271,8 @@ void OLED_Write_data_buf(const uint8_t *data, uint16_t length);
 | `OLED_ShowStr()` calls `OLED_ShowChar()` in a character loop | string updates still pay per-character positioning overhead | render one row/page segment into a buffer and call `OLED_Write_data_buf()` |
 | 6x8 batch text writes only 6 bytes per character | app diff refresh positions drift from the legacy 8-pixel grid | append two blank columns for each 6x8 glyph |
 | `oled_printf()` refreshes a whole 16-character line after a one-character change | high-frequency status rows still do avoidable I2C work | compute start/end diff indexes and refresh only that span |
+| `oled_printf()` updates the line cache after a failed `OLED_ShowStr()` | display cache lies about physical screen contents | update cache only when the low-level write path returns success |
+| OLED I2C busy recovery waits seconds before returning | one bad display can starve all scheduler tasks | keep the busy wait bounded to a small recovery window and mark OLED unavailable on failure |
 | `oled_data_buf` is only 2 bytes | batch API cannot carry a page | restore `OLED_TX_BUFFER_SIZE = OLED_TX_DATA_MAX_SIZE + 1U` |
 | DMA FTF is checked but I2C BTC is not checked before STOP | last byte may still be shifting | wait for `I2C_FLAG_BTC` before `i2c_stop_on_bus()` |
 | new display path writes dynamic heap buffers | avoidable heap use in hot display path | use static buffers, stack buffers, or existing font arrays |
@@ -284,7 +290,7 @@ void OLED_Write_data_buf(const uint8_t *data, uint16_t length);
 
 - Run `python tools/test_static_optimizations.py` and confirm OLED batch-transfer assertions pass.
 - Run a Keil rebuild and confirm `project/output/Project.build_log.htm` reports `0 Error(s), 0 Warning(s)`.
-- Search for stale OLED documentation such as `oled_data_buf[2]`, OLED `10ms` task period, or `oled_printf` using a 512-byte buffer.
+- Search for stale OLED documentation such as `oled_data_buf[2]`, OLED `10ms` task period, `oled_printf` using a 512-byte buffer, or OLED write APIs documented as `void` when the implementation returns status.
 - Hardware smoke test after flashing: OLED initializes, clears, displays all four app lines, and still turns off before deep sleep.
 
 #### 7. Wrong vs Correct
@@ -463,7 +469,7 @@ Expected App relocation contract:
 | `EXTI0_IRQHandler()` | Clears EXTI0 interrupt flag only; heavy re-init stays in the WFI return path |
 | `bsp_enter_standby()` | Uses PA0 as the PMU WKUP source, not as an EXTI wake source; wake resumes through reset/startup |
 | `bsp_oled_preblank_for_standby()` | Sends SSD1306 display-off/charge-pump-off before waiting for KEY4 confirmation; does not shut down I2C/DMA/GPIO |
-| `bsp_standby_preblank_indicators()` | Turns off all LED indicators before the KEY4 confirmation wait |
+| `bsp_standby_preblank_indicators()` | Turns off all LED indicators through the LED app state source before the KEY4 confirmation wait |
 | `bsp_wait_key4_release_before_standby()` | Waits for KEY4/PA7 to be pressed low, then released high for at least 20 ms before continuing |
 
 #### 3. Contracts
@@ -475,6 +481,8 @@ Expected App relocation contract:
 - Standby uses the PMU WKUP function on the same PA0 pin, not the EXTI0 interrupt path. `bsp_enter_standby()` must blank the OLED and LEDs before waiting for KEY4 press-release confirmation; KEYW/PA0 remains the wake source only and must not be required to enter Standby.
 - `bsp_enter_standby()` must call the standby confirmation helpers in this order: `bsp_oled_preblank_for_standby()`, `bsp_standby_preblank_indicators()`, `bsp_wait_key4_release_before_standby()`, then `__disable_irq()` and destructive peripheral shutdown. This keeps the UI dark during confirmation while preserving `delay_ms()` for KEY4 debounce.
 - KEY3 must not toggle LED3 before entering Standby prepare. LED state belongs to the Standby entry path so the indicator policy stays centralized and the confirmation wait cannot leave a visible LED on.
+- Runtime button actions and power-entry LED blanking must update LED state through `led_app_set()`, `led_app_toggle()`, `led_app_all_off()`, or `led_app_blank_for_sleep()`. Do not directly use `LEDx_TOGGLE` or `LEDx_OFF` from app/power policy code, because that bypasses `ucLed[]` and the LED refresh cache.
+- After GPIO or LED hardware is reinitialized during wake recovery, call `led_app_reset_cache()` before scheduler tasks resume so the next `led_task()` force-writes all six LEDs.
 - KEY4 is a confirmation input only before true Standby. It may remain normal LED4-toggle UI in runtime, but during `bsp_enter_standby()` it must be read as a GPIO input until the confirmation sequence completes.
 - KEYW/PA0 must be treated as a wake source only for Standby. Do not wait for KEYW to enter Standby; that makes the wake key part of the sleep-entry workflow and creates confusing operator behavior.
 - Startup code should enable `RCU_PMU`, check `PMU_FLAG_STANDBY` after the debug UART is available, emit a short boot log such as `BOOT: wake from standby`, then clear standby/wakeup flags before normal initialization continues.

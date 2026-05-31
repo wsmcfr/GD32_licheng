@@ -18,9 +18,10 @@ extern "C" {
  * 参数说明：
  *   cmd：需要写入 OLED 控制器的命令字节。
  * 返回值说明：
- *   无返回值。
+ *   1：命令发送成功。
+ *   0：I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Write_cmd(uint8_t cmd);
+uint8_t OLED_Write_cmd(uint8_t cmd);
 
 /*
  * 函数作用：
@@ -29,9 +30,10 @@ void OLED_Write_cmd(uint8_t cmd);
  *   cmds：待写入的 SSD1306 命令数组指针，调用者需保证数据长度不少于 length。
  *   length：待写入的命令字节数，不包含 SSD1306 I2C 控制字；为 0 时不发送。
  * 返回值说明：
- *   无返回值。
+ *   1：全部命令发送成功，length 为 0 时也视为成功。
+ *   0：参数非法、I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length);
+uint8_t OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length);
 
 /*
  * 函数作用：
@@ -39,9 +41,10 @@ void OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length);
  * 参数说明：
  *   data：需要写入 OLED 显存的数据字节。
  * 返回值说明：
- *   无返回值。
+ *   1：数据发送成功。
+ *   0：I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Write_data(uint8_t data);
+uint8_t OLED_Write_data(uint8_t data);
 
 /*
  * 函数作用：
@@ -50,9 +53,10 @@ void OLED_Write_data(uint8_t data);
  *   data：待写入的显存数据指针，调用者需保证数据长度不少于 length。
  *   length：待写入的显存字节数，不包含 SSD1306 I2C 控制字；为 0 时不发送。
  * 返回值说明：
- *   无返回值。
+ *   1：全部显存数据发送成功，length 为 0 时也视为成功。
+ *   0：参数非法、I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Write_data_buf(const uint8_t *data, uint16_t length);
+uint8_t OLED_Write_data_buf(const uint8_t *data, uint16_t length);
 
 /*
  * 函数作用：
@@ -129,9 +133,10 @@ void OLED_ShowNum(uint8_t x, uint8_t y, uint32_t num, uint8_t length, uint8_t fo
  *   ch：待显示字符串指针，需以 '\0' 结束。
  *   fontsize：字体高度或字模尺寸选择。
  * 返回值说明：
- *   无返回值。
+ *   1：字符串刷新成功或无需写入。
+ *   0：参数非法、坐标越界或底层 I2C/DMA 写入失败。
  */
-void OLED_ShowStr(uint8_t x, uint8_t y, char *ch, uint8_t fontsize);
+uint8_t OLED_ShowStr(uint8_t x, uint8_t y, char *ch, uint8_t fontsize);
 
 /*
  * 函数作用：
@@ -163,9 +168,10 @@ void OLED_Allfill(void);
  *   x：横向像素坐标。
  *   y：页坐标。
  * 返回值说明：
- *   无返回值。
+ *   1：定位命令发送成功。
+ *   0：I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Set_Position(uint8_t x, uint8_t y);
+uint8_t OLED_Set_Position(uint8_t x, uint8_t y);
 
 /*
  * 函数作用：

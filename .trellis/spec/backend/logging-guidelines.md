@@ -75,6 +75,7 @@ Good examples:
 - verbose formatted output inside interrupt handlers
 - large raw binary buffers without length control
 - hardware values on every poll when only state transitions matter
+- fast sensor tasks printing long formatted floating-point lines every sample; throttle repeated diagnostics such as PT100 measurements to a human-readable interval
 
 Example rule:
 

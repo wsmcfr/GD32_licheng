@@ -102,6 +102,7 @@ void bsp_usart0_init(void)
     rcu_periph_clock_enable(RCU_USART0);
 
     dma_deinit(USART0_RX_DMA_PERIPH, USART0_RX_DMA_CHANNEL);
+    dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.direction = DMA_PERIPH_TO_MEMORY;
     dma_init_struct.memory0_addr = (uint32_t)usart0_rxbuffer;
     dma_init_struct.memory_inc = DMA_MEMORY_INCREASE_ENABLE;
@@ -178,6 +179,7 @@ void bsp_usart1_init(void)
     rcu_periph_clock_enable(RCU_USART1);
 
     dma_deinit(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+    dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.direction = DMA_PERIPH_TO_MEMORY;
     dma_init_struct.memory0_addr = (uint32_t)usart1_rxbuffer;
     dma_init_struct.memory_inc = DMA_MEMORY_INCREASE_ENABLE;
@@ -239,6 +241,7 @@ void bsp_usart5_init(void)
     rcu_periph_clock_enable(RCU_USART5);
 
     dma_deinit(USART5_RX_DMA_PERIPH, USART5_RX_DMA_CHANNEL);
+    dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.direction = DMA_PERIPH_TO_MEMORY;
     dma_init_struct.memory0_addr = (uint32_t)usart5_rxbuffer;
     dma_init_struct.memory_inc = DMA_MEMORY_INCREASE_ENABLE;

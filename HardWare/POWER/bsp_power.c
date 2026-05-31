@@ -3,6 +3,7 @@
 #include "scheduler.h"
 #include "oled_app.h"
 #include "uart_ota_app.h"
+#include "led_app.h"
 
 /*
  * 函数作用：
@@ -88,12 +89,7 @@ static void bsp_oled_preblank_for_standby(void)
  */
 static void bsp_standby_preblank_indicators(void)
 {
-    LED1_OFF;
-    LED2_OFF;
-    LED3_OFF;
-    LED4_OFF;
-    LED5_OFF;
-    LED6_OFF;
+    led_app_all_off();
 }
 
 /*
@@ -192,12 +188,7 @@ static void bsp_gpio_enter_deepsleep_state(void)
     rcu_periph_clock_enable(RCU_GPIOD);
     rcu_periph_clock_enable(RCU_GPIOE);
 
-    LED1_OFF;
-    LED2_OFF;
-    LED3_OFF;
-    LED4_OFF;
-    LED5_OFF;
-    LED6_OFF;
+    led_app_blank_for_sleep();
 
     /*
      * 普通按键在深睡前统一切到模拟输入，减少无用数字输入泄漏。
@@ -445,6 +436,7 @@ static void bsp_deepsleep_reinit_after_wakeup(uint32_t sleep_epoch, uint8_t slee
     __enable_irq();
 
     bsp_led_init();
+    led_app_reset_cache();
     bsp_btn_init();
     bsp_usart_init();
     /*

@@ -1,7 +1,7 @@
 #include "bsp_analog.h"
 
-/* ADC 采样结果缓冲区。 */
-uint16_t adc_value[2];
+/* ADC 采样结果缓冲区由 DMA 在后台更新，任务层读取时必须保持 volatile 语义。 */
+__IO uint16_t adc_value[2];
 
 /* DAC 输出缓冲区：
  * 当前工程只用到 1 个输出点，因此长度为 CONVERT_NUM。
@@ -66,6 +66,7 @@ void bsp_adc_init(void)
     gpio_mode_set(ADC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, ADC1_PIN | ADC_VREF_PIN);
 
     dma_deinit(DMA1, DMA_CH0);
+    dma_single_data_para_struct_init(&dma_single_data_parameter);
     dma_single_data_parameter.periph_addr = (uint32_t)(&ADC_RDATA(ADC0));
     dma_single_data_parameter.periph_inc = DMA_PERIPH_INCREASE_DISABLE;
     dma_single_data_parameter.memory0_addr = (uint32_t)adc_value;

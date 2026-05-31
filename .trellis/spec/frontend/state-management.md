@@ -37,7 +37,7 @@ Examples:
 - `uart_dma_buffer`
 - `uart_ota_rx_flag`
 - `uart_ota_dma_buffer`
-- `ucLed[6]`
+- `ucLed[6]` through `led_app_set()`, `led_app_toggle()`, `led_app_all_off()`, and `led_app_blank_for_sleep()`
 
 ### Module-Private Cached State
 
@@ -45,7 +45,7 @@ Used to suppress redundant hardware updates or hide internal implementation deta
 
 Examples:
 
-- `static uint8_t led_mask_old` and `static uint8_t led_cache_valid` inside `led_disp()` force the first LED write, then cache the previous bitmap so only changed LEDs are written
+- `static uint8_t g_led_mask_old` and `static uint8_t g_led_cache_valid` inside `led_app.c` force the first LED write, then cache the previous bitmap so only changed LEDs are written
 - `static task_t scheduler_task[]` and `static uint8_t task_num` in `scheduler.c`
 
 ---
@@ -78,7 +78,7 @@ Derived user-facing state should usually be recomputed inside the task that rend
 Examples:
 
 - `oled_task()` derives voltage text from `adc_value[]`
-- `led_disp()` derives a bitmask from `ucLed[]`
+- `led_disp()` derives a bitmask from `ucLed[]`; button and power policy code must change LEDs through the public `led_app_*` APIs so the app state and hardware cache stay aligned
 - `rtc_task()` derives display text from `rtc_initpara`
 - `gd30ad3344_pt100_task()` derives voltage, resistance, temperature, `sample_ready`, and `range_valid` from a successful `GD30AD3344_AD_Read(..., &out_voltage_v)` call
 
@@ -118,8 +118,10 @@ After consuming an ISR-produced frame, clear the app flag and reset temporary bu
 
 ### Updating hardware every cycle without change detection
 
-`led_disp()` keeps `led_mask_old` plus a first-run valid flag and compares the cached bitmap with the current bitmap to avoid redundant writes.
+`led_disp()` keeps `g_led_mask_old` plus a first-run valid flag and compares the cached bitmap with the current bitmap to avoid redundant writes.
 Follow that idea when output hardware changes are expensive or noisy.
+
+When another layer resets GPIO output state, turns LEDs off for sleep, or reruns `bsp_led_init()`, call `led_app_reset_cache()` before normal scheduling resumes. Otherwise the app task may believe the old bitmap is still present on the pins and skip a required refresh.
 
 ### Treating failed sensor reads as valid data
 

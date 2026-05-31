@@ -29,7 +29,7 @@ This is a cross-layer contract. The Keil post-build packer, App-side raw receive
 | Operator file | `project/output/Project_ota.bin` | This is the only file sent through RS485/USART1 for this branch's OTA flow |
 | UART receiver | `uart_ota_feed_rx_bytes(const uint8_t *data, uint16_t length)` | Consumes raw bytes from the task layer, first parsing the header, then collecting payload bytes |
 | ISR handoff | `USART1_IRQHandler(void)` and `DMA0_Channel5_IRQHandler(void)` | Copy DMA bytes into `uart_ota_dma_buffer`, set `uart_ota_rx_flag`, and re-arm DMA; no CRC, logging, or Flash writes in ISR |
-| Task polling | `uart_ota_task(void)` | Takes DMA chunks, feeds raw bytes to the OTA parser, and commits payload to Flash only after full payload CRC passes |
+| Task polling | `uart_ota_task(void)` | Drains up to `UART_OTA_TASK_DRAIN_LIMIT` queued DMA chunks per scheduler call, feeds raw bytes to the OTA parser, and commits payload to Flash only after full payload CRC passes |
 | Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA485: ready, send Project_ota.bin raw` only after startup self-tests and `scheduler_init()` have completed, so the task loop can consume the DMA queue immediately |
 
 ### 3. Protocol Contract
@@ -61,7 +61,7 @@ All multi-byte fields are little-endian `uint32_t`.
 | App area | `0x0800D000`, `0x5A000` | BootLoader writes final App | Must match Keil IROM and header `load_addr` |
 | Download buffer | `0x08067000`, `100KB` | App writes received payload | BootLoader copies from here after reset |
 | USART1 DMA window | `BSP_USART1_RX_BUFFER_SIZE = 1024U` | ISR handoff | Raw stream chunk size, not a full image buffer |
-| ISR-to-task queue | `UART_OTA_RX_QUEUE_DEPTH = 4U` | ISR writes, task reads | Absorbs short scheduler delays during continuous raw file send |
+| ISR-to-task queue | `UART_OTA_RX_QUEUE_DEPTH = 4U` | ISR writes, task reads | Absorbs short scheduler delays during continuous raw file send; the task should drain the queued slots up to a bounded per-call limit |
 | OTA RAM payload buffer | `UART_OTA_PAYLOAD_BUFFER_SIZE = 100KB` | App OTA task | Receives the full payload before Flash erase/write |
 
 The full-payload RAM buffer is intentional. It avoids erasing/writing internal Flash while the PC is still sending bytes, which would risk losing UART data because internal Flash operations can stall code execution.
@@ -136,6 +136,7 @@ Required assertions:
 | Header-bin static contract | `tools.test_header_bin_ota_static` exits with status 0 |
 | Ready probe ordering | Static test proves `uart_ota_emit_startup_probe()` is after `scheduler_init()` |
 | Error resync | Static test proves error state keeps a magic-prefix buffer and preloads the first 4 header bytes before retrying |
+| Queue drain | Static test proves `uart_ota_task()` has a bounded drain loop instead of consuming only one DMA slot every 5 ms |
 | Keil build | Build log reports `0 Error(s)` |
 | Raw App output | `project/output/Project.bin` exists and is non-empty |
 | OTA image output | `project/output/Project_ota.bin` exists and is exactly 64 bytes larger than `Project.bin` |

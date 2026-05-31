@@ -8,7 +8,7 @@ this library is a 0.91'OLED(ssd1306) driver
 
 #define OLED_I2C_WAIT_TIMEOUT 100000U
 #define OLED_I2C_ADDR_WRITE 0x78U
-#define OLED_I2C_BUSY_WAIT_MS 10000U
+#define OLED_I2C_BUSY_WAIT_MS 20U
 #define OLED_CMD_CONTROL_BYTE 0x00U
 #define OLED_DATA_CONTROL_BYTE 0x40U
 
@@ -312,11 +312,12 @@ static const uint8_t initcmd1[] = {
  * 参数说明：
  *   cmd：需要写入 SSD1306 的命令字节。
  * 返回值说明：
- *   无返回值。
+ *   1：命令发送成功。
+ *   0：I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Write_cmd(uint8_t cmd)
+uint8_t OLED_Write_cmd(uint8_t cmd)
 {
-    OLED_Write_cmd_buf(&cmd, 1U);
+    return OLED_Write_cmd_buf(&cmd, 1U);
 }
 
 /*
@@ -330,16 +331,20 @@ void OLED_Write_cmd(uint8_t cmd)
  *   cmds：待写入 SSD1306 的命令数组指针。
  *   length：命令字节数，不包含控制字；为 0 时直接返回。
  * 返回值说明：
- *   无返回值。
+ *   1：全部命令发送成功，length 为 0 时也视为成功。
+ *   0：参数非法、I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length)
+uint8_t OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length)
 {
     uint16_t offset = 0U;
     uint16_t chunk_len;
     uint16_t i;
 
-    if((NULL == cmds) || (0U == length) || (0U == s_oled_available)) {
-        return;
+    if(0U == length) {
+        return 1U;
+    }
+    if((NULL == cmds) || (0U == s_oled_available)) {
+        return 0U;
     }
 
     while(offset < length) {
@@ -358,11 +363,13 @@ void OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length)
         }
 
         if(0U == oled_write_packet_checked(oled_data_buf, (uint16_t)(chunk_len + 1U))) {
-            return;
+            return 0U;
         }
 
         offset = (uint16_t)(offset + chunk_len);
     }
+
+    return 1U;
 }
 
 /*
@@ -371,11 +378,12 @@ void OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length)
  * 参数说明：
  *   data：需要写入当前 GDDRAM 地址的数据字节。
  * 返回值说明：
- *   无返回值。
+ *   1：数据发送成功。
+ *   0：I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Write_data(uint8_t data)
+uint8_t OLED_Write_data(uint8_t data)
 {
-    OLED_Write_data_buf(&data, 1U);
+    return OLED_Write_data_buf(&data, 1U);
 }
 
 /*
@@ -389,16 +397,20 @@ void OLED_Write_data(uint8_t data)
  *   data：待写入的显存数据指针，调用者需保证数据在本函数返回前有效。
  *   length：显存数据字节数，不包含控制字；为 0 时直接返回。
  * 返回值说明：
- *   无返回值。
+ *   1：全部显存数据发送成功，length 为 0 时也视为成功。
+ *   0：参数非法、I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Write_data_buf(const uint8_t *data, uint16_t length)
+uint8_t OLED_Write_data_buf(const uint8_t *data, uint16_t length)
 {
     uint16_t offset = 0U;
     uint16_t chunk_len;
     uint16_t i;
 
-    if((NULL == data) || (0U == length) || (0U == s_oled_available)) {
-        return;
+    if(0U == length) {
+        return 1U;
+    }
+    if((NULL == data) || (0U == s_oled_available)) {
+        return 0U;
     }
 
     while(offset < length) {
@@ -413,11 +425,13 @@ void OLED_Write_data_buf(const uint8_t *data, uint16_t length)
         }
 
         if(0U == oled_write_packet_checked(oled_data_buf, (uint16_t)(chunk_len + 1U))) {
-            return;
+            return 0U;
         }
 
         offset = (uint16_t)(offset + chunk_len);
     }
+
+    return 1U;
 }
 
 /*
@@ -427,16 +441,21 @@ void OLED_Write_data_buf(const uint8_t *data, uint16_t length)
  *   x：横向像素坐标，范围建议为 0~127。
  *   y：页坐标，128x32 屏范围建议为 0~3。
  * 返回值说明：
- *   无返回值。
+ *   1：定位命令发送成功。
+ *   0：坐标越界、I2C/DMA 事务失败或 OLED 当前不可用。
  */
-static void oled_set_position_buf(uint8_t x, uint8_t y)
+static uint8_t oled_set_position_buf(uint8_t x, uint8_t y)
 {
     uint8_t pos_cmds[3];
+
+    if((x >= OLED_WIDTH) || (y >= (OLED_HEIGHT / 8U))) {
+        return 0U;
+    }
 
     pos_cmds[0] = (uint8_t)(0xB0U + y);
     pos_cmds[1] = (uint8_t)(((x & 0xF0U) >> 4U) | 0x10U);
     pos_cmds[2] = (uint8_t)(x & 0x0FU);
-    OLED_Write_cmd_buf(pos_cmds, sizeof(pos_cmds));
+    return OLED_Write_cmd_buf(pos_cmds, sizeof(pos_cmds));
 }
 
 /*
@@ -624,15 +643,20 @@ void OLED_ShowNum(uint8_t x, uint8_t y, uint32_t num, uint8_t length, uint8_t fo
  *   y：显示起始页坐标。
  *   ch：待显示字符串指针，需以 '\0' 结束。
  * 返回值说明：
- *   无返回值。
+ *   1：字符串刷新成功或无需写入。
+ *   0：参数非法、坐标越界或底层 I2C/DMA 写入失败。
  */
-static void oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
+static uint8_t oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
 {
     uint8_t row_buf[OLED_TX_DATA_MAX_SIZE];
     uint8_t row_len = 0U;
     uint8_t current_x = x;
     uint8_t c;
     uint8_t i;
+
+    if((NULL == ch) || (x >= OLED_WIDTH) || (y >= (OLED_HEIGHT / 8U))) {
+        return 0U;
+    }
 
     /*
      * 6x8 字符实际字模宽度为 6 列，但旧接口按 8 像素步进排版。
@@ -661,8 +685,9 @@ static void oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
         }
 
         if(row_len > 0U) {
-            OLED_Set_Position(x, y);
-            OLED_Write_data_buf(row_buf, row_len);
+            if((0U == OLED_Set_Position(x, y)) || (0U == OLED_Write_data_buf(row_buf, row_len))) {
+                return 0U;
+            }
         }
 
         if(*ch != '\0') {
@@ -670,6 +695,8 @@ static void oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
             y = (uint8_t)(y + 2U);
         }
     }
+
+    return 1U;
 }
 
 /*
@@ -680,9 +707,10 @@ static void oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
  *   y：显示起始页坐标。
  *   ch：待显示字符串指针，需以 '\0' 结束。
  * 返回值说明：
- *   无返回值。
+ *   1：字符串刷新成功或无需写入。
+ *   0：参数非法、坐标越界或底层 I2C/DMA 写入失败。
  */
-static void oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
+static uint8_t oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
 {
     uint8_t upper_buf[OLED_TX_DATA_MAX_SIZE];
     uint8_t lower_buf[OLED_TX_DATA_MAX_SIZE];
@@ -690,6 +718,10 @@ static void oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
     uint8_t current_x = x;
     uint8_t c;
     uint8_t i;
+
+    if((NULL == ch) || (x >= OLED_WIDTH) || ((uint8_t)(y + 1U) >= (OLED_HEIGHT / 8U))) {
+        return 0U;
+    }
 
     while((*ch != '\0') && ((uint8_t)(y + 1U) < (OLED_HEIGHT / 8U))) {
         row_len = 0U;
@@ -712,10 +744,13 @@ static void oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
         }
 
         if(row_len > 0U) {
-            OLED_Set_Position(x, y);
-            OLED_Write_data_buf(upper_buf, row_len);
-            OLED_Set_Position(x, (uint8_t)(y + 1U));
-            OLED_Write_data_buf(lower_buf, row_len);
+            if((0U == OLED_Set_Position(x, y)) || (0U == OLED_Write_data_buf(upper_buf, row_len))) {
+                return 0U;
+            }
+            if((0U == OLED_Set_Position(x, (uint8_t)(y + 1U))) ||
+               (0U == OLED_Write_data_buf(lower_buf, row_len))) {
+                return 0U;
+            }
         }
 
         if(*ch != '\0') {
@@ -723,6 +758,8 @@ static void oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
             y = (uint8_t)(y + 2U);
         }
     }
+
+    return 1U;
 }
 
 
@@ -735,19 +772,20 @@ static void oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
  *   ch：待显示字符串指针，需以 '\0' 结束。
  *   fontsize：字体高度，支持 8 或 16。
  * 返回值说明：
- *   无返回值。
+ *   1：字符串刷新成功或无需写入。
+ *   0：参数非法、坐标越界或底层 I2C/DMA 写入失败。
  */
-void OLED_ShowStr(uint8_t x, uint8_t y, char *ch, uint8_t fontsize)
+uint8_t OLED_ShowStr(uint8_t x, uint8_t y, char *ch, uint8_t fontsize)
 {
     if(NULL == ch) {
-        return;
+        return 0U;
     }
 
     if(fontsize == 16U) {
-        oled_show_str_16x8(x, y, ch);
-    } else {
-        oled_show_str_8x6(x, y, ch);
+        return oled_show_str_16x8(x, y, ch);
     }
+
+    return oled_show_str_8x6(x, y, ch);
 }
 
 /*
@@ -832,11 +870,12 @@ void OLED_Allfill(void)
  *   x：横向像素坐标，范围建议为 0~127。
  *   y：页坐标，128x32 屏范围建议为 0~3。
  * 返回值说明：
- *   无返回值。
+ *   1：定位命令发送成功。
+ *   0：I2C/DMA 事务失败或 OLED 当前不可用。
  */
-void OLED_Set_Position(uint8_t x, uint8_t y)
+uint8_t OLED_Set_Position(uint8_t x, uint8_t y)
 {
-    oled_set_position_buf(x, y);
+    return oled_set_position_buf(x, y);
 }
 
 /*

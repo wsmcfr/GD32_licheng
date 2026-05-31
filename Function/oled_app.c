@@ -142,14 +142,15 @@ int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
         memcpy(diff_buffer, &buffer[diff_start], diff_len);
         diff_buffer[diff_len] = '\0';
         segment_x = (uint8_t)(x + (diff_start * 8U));
-        OLED_ShowStr(segment_x, y, diff_buffer, 8);
-
         /*
-         * 屏幕刷新成功路径没有返回值可确认，因此按现有驱动契约在调用后更新缓存。
-         * 后续相同文本不会重复触发 I2C/DMA 写入。
+         * 屏幕刷新成功后才更新缓存。若 OLED 离线、I2C 忙死或 DMA 超时，底层会返回
+         * 失败并保持旧缓存，下一轮调度仍会尝试刷新同一差异段，避免“缓存显示成功、
+         * 物理屏幕没写入”的假成功状态。
          */
-        memcpy(&g_oled_line_cache[y][diff_start], &buffer[diff_start], diff_len);
-        g_oled_line_cache[y][OLED_APP_VISIBLE_CHARS] = '\0';
+        if(0U != OLED_ShowStr(segment_x, y, diff_buffer, 8)) {
+            memcpy(&g_oled_line_cache[y][diff_start], &buffer[diff_start], diff_len);
+            g_oled_line_cache[y][OLED_APP_VISIBLE_CHARS] = '\0';
+        }
     }
 
     return len;
