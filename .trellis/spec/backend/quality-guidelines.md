@@ -636,8 +636,10 @@ Expected resources and behavior:
 #define BKP_VALUE 0x32F0U
 
 int bsp_rtc_init(void);
+int bsp_rtc_get_status(bsp_rtc_status_t *status);
 static uint8_t bsp_rtc_has_valid_backup(void);
 static int bsp_rtc_restore_from_backup(void);
+static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup);
 ```
 
 Backup-domain contract:
@@ -647,6 +649,7 @@ Backup-domain contract:
 | `RTC_BKP0` | Stores a project-owned marker proving the RTC backup domain was initialized before |
 | Valid backup marker | Reuse current RTC time/date; do not rewrite defaults |
 | Missing backup marker | Write project default time/date and then store the marker |
+| `RTCSRC=IRC32K` with LXTAL now stable | Preserve a time snapshot, reset the backup domain, select LXTAL, and write the snapshot back |
 | `VBAT` battery present | RTC should continue counting when main 3V3 is removed |
 
 #### 3. Contracts
@@ -654,6 +657,9 @@ Backup-domain contract:
 - Read the backup marker before deciding whether this boot is a restore path or a cold RTC initialization.
 - If backup state is valid, do not call `rtc_init()` with default date/time values.
 - If backup state is valid, do not blindly rewrite `RCU_BDCTL_RTCSRC`; preserve the running RTC clock source unless the backup domain is intentionally reset.
+- If `RCU_BDCTL.RTCSRC` is `IRC32K`, first try to start LXTAL. If LXTAL stabilizes, read the current RTC time, reset the backup domain with `rcu_bkp_reset_enable()` / `rcu_bkp_reset_disable()`, select `RCU_RTCSRC_LXTAL`, restore the saved time, and rewrite `RTC_BKP0`.
+- If LXTAL does not stabilize, do not reset the backup domain just to force a source change. Continue on IRC32K so the VBAT-backed time is not lost.
+- Expose a read-only diagnosis path such as `bsp_rtc_get_status()` / `rtcstat` so operators can see `RTCSRC`, prescalers, backup marker state, and calibration registers.
 - On restore path, call `rtc_register_sync_wait()` and then `rtc_current_time_get()` so shared runtime structures reflect the persisted RTC registers.
 - Only write default date/time on first initialization or after the backup domain is known to be invalid.
 
@@ -663,6 +669,9 @@ Backup-domain contract:
 |-------------|----------------|-----------------|
 | RTC resets to default after every wake or reboot | Startup path is rewriting RTC unconditionally | Split cold-init and backup-restore paths |
 | RTC survives reset but not full power loss with battery installed | Backup marker or RTC source may be reconfigured incorrectly | Check `RTC_BKP0`, `VBAT` wiring, and `RTCSRC` rewrite behavior |
+| RTC continues but is minutes fast over weeks | RTC may be running from `IRC32K`, or LXTAL load/trim is wrong | Run `rtcstat`; if `src=IRC32K`, check LXTAL startup and let firmware migrate back when stable |
+| `rtcstat` shows `src=IRC32K` after a fresh boot | External 32.768kHz crystal did not stabilize, or old fallback state is still preserved | Check crystal/loads/drive first; do not mask it by silently rewriting time |
+| `rtcstat` shows `recovered=1` | Firmware migrated an old IRC32K backup-domain state back to LXTAL on this boot | Run `settime` once against a trusted clock to remove accumulated RC drift |
 | RTC time reads garbage after restore | Shadow registers were not resynced | Call `rtc_register_sync_wait()` before `rtc_current_time_get()` |
 | No battery installed, RTC falls back to default time | Expected cold-start behavior | Document this as normal |
 
@@ -671,14 +680,19 @@ Backup-domain contract:
 | Case | Expected Result |
 |------|-----------------|
 | Good | `VBAT` battery installed, main power removed then restored, RTC continues from previous time |
+| Good | Old backup domain was using `IRC32K`, LXTAL is now stable, boot migrates to `LXTAL` and keeps the latest readable time |
 | Base | No `VBAT` battery installed, RTC reverts to default startup time after full power loss |
+| Base | LXTAL still fails to stabilize, firmware preserves the old `IRC32K` RTC instead of clearing backup state |
 | Bad | `bsp_rtc_init()` always calls `rtc_init()` and rewrites time even when backup domain is valid |
+| Bad | Firmware silently keeps `IRC32K` forever even after LXTAL is stable, causing large long-term drift with a coin-cell battery installed |
 
 #### 6. Tests Required
 
 - Power the board from main `3V3`, set/observe a non-default RTC time, then remove only main power while keeping `VBAT` present; after restore, confirm the time advanced instead of resetting.
 - Repeat with no `VBAT` battery installed; confirm the board falls back to the documented default startup time.
 - Confirm deep-sleep wake still keeps RTC readable after `bsp_rtc_init()` is re-entered.
+- Run `rtcstat` after boot and confirm normal boards report `src=LXTAL`, `psc_a=127`, and `psc_s=255`.
+- For a board that previously fell back to IRC32K, confirm the first successful LXTAL boot reports `recovered=1`, then recalibrate wall time with `settime`.
 
 #### 7. Wrong vs Correct
 

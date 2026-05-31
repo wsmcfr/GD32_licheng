@@ -61,6 +61,7 @@ def main() -> None:
     bsp_oled_h = read_text("HardWare/OLED/bsp_oled.h")
     rtc = read_text("HardWare/RTC/bsp_rtc.c")
     rtc_h = read_text("HardWare/RTC/bsp_rtc.h")
+    usart_app = read_text("Function/usart_app.c")
     doc = read_text("工程文档.md")
 
     require("SPI_FLASH_WAIT_TIMEOUT" in gd25, "GD25QXX 缺少 Flash/DMA 超时常量")
@@ -132,6 +133,12 @@ def main() -> None:
     require("bsp_rtc_wait_osci_stable" in rtc, "RTC 缺少晶振稳定超时 helper")
     require("RTC_CLOCK_FALLBACK_IRC32K_ENABLE" in rtc_h, "RTC 缺少 IRC32K fallback 开关")
     require("RCU_RTCSRC_IRC32K" in rtc, "RTC 未实现 IRC32K fallback 路径")
+    require("bsp_rtc_try_restore_lxtal_from_irc32k" in rtc, "RTC 缺少从 IRC32K 自动迁回 LXTAL 的恢复 helper")
+    require("rcu_bkp_reset_enable()" in rtc and "rcu_bkp_reset_disable()" in rtc, "RTC 迁回 LXTAL 时未复位备份域清除旧 RTCSRC")
+    require("RTC_STATUS_SOURCE_LXTAL" in rtc_h and "RTC_STATUS_SOURCE_IRC32K" in rtc_h, "RTC 头文件缺少可诊断的时钟源枚举")
+    require("bsp_rtc_get_status" in rtc_h and "bsp_rtc_get_status" in rtc, "RTC 缺少状态诊断接口")
+    require("rtcstat" in usart_app and "prv_uart_handle_rtcstat" in usart_app, "USART0 缺少 rtcstat RTC 状态诊断命令")
+    require("RTC: STAT" in usart_app and "src=%s" in usart_app and "psc_a" in usart_app and "psc_s" in usart_app, "rtcstat 输出缺少时钟源或分频诊断字段")
 
     require("GD30AD3344_PGA_0V256" in gd30 and "0.256" in gd30, "GD30AD3344 PGA 0.256V 映射缺失")
     require("GD30AD3344_PGA_0V064" in gd30 and "0.064" in gd30, "GD30AD3344 PGA 0.064V 映射缺失")
@@ -155,6 +162,7 @@ def main() -> None:
 
     require("调度器唤醒重基线" in doc, "工程文档未同步调度器唤醒优化说明")
     require("RTC 补偿" in doc, "工程文档未同步 RTC 补偿说明")
+    require("rtcstat" in doc and "RTCSRC" in doc and "IRC32K" in doc, "工程文档未同步 RTC 时钟源诊断和 IRC32K 恢复说明")
     require("KEY1" in doc and "Sleep" in doc and "KEY2" in doc and "Deep-sleep" in doc and "KEY3" in doc and "Standby" in doc, "工程文档未同步三档低功耗按键映射")
     require("PMU WKUP" in doc and "KEYW" in doc, "工程文档未说明 Standby 使用 KEYW/PMU WKUP 唤醒")
     require("OLED 底层批量写入优化" in doc, "工程文档未同步 OLED 底层批量写入说明")

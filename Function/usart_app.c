@@ -40,6 +40,7 @@ static const char g_uart_help_text[] =
     "SMARTFS SHELL:\r\n"
     "help\r\n"
     "gettime\r\n"
+    "rtcstat\r\n"
     "settime <yyyy-mm-dd> <hh:mm:ss>\r\n"
     "pwd\r\n"
     "ls [path]\r\n"
@@ -812,6 +813,68 @@ static void prv_uart_handle_gettime(void)
 
 /*
  * 函数作用：
+ *   将 RTC 驱动层时钟源枚举转换成串口诊断中更容易阅读的短文本。
+ * 参数说明：
+ *   source：RTC 驱动层读取到的当前时钟源枚举。
+ * 返回值说明：
+ *   返回常量字符串，分别表示 NONE、LXTAL、IRC32K、HXTAL_DIV 或 UNKNOWN。
+ */
+static const char *prv_uart_rtc_source_name(bsp_rtc_clock_source_t source)
+{
+    switch(source) {
+    case RTC_STATUS_SOURCE_NONE:
+        return "NONE";
+
+    case RTC_STATUS_SOURCE_LXTAL:
+        return "LXTAL";
+
+    case RTC_STATUS_SOURCE_IRC32K:
+        return "IRC32K";
+
+    case RTC_STATUS_SOURCE_HXTAL_DIV:
+        return "HXTAL_DIV";
+
+    default:
+        return "UNKNOWN";
+    }
+}
+
+/*
+ * 函数作用：
+ *   读取并输出 RTC 备份域、时钟源、分频和校准寄存器状态，辅助排查长期走时偏差。
+ * 主要流程：
+ *   1. 调用驱动层 `bsp_rtc_get_status()` 获取当前寄存器快照。
+ *   2. 把时钟源枚举转成文本，避免操作者直接解码 RTCSRC 位。
+ *   3. 输出 `BDCTL/HRFC/COSC` 原始值，便于后续对照数据手册或现场记录。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_handle_rtcstat(void)
+{
+    bsp_rtc_status_t status;
+
+    if(0 != bsp_rtc_get_status(&status)) {
+        my_printf(DEBUG_USART, "RTC: stat failed\r\n");
+        return;
+    }
+
+    my_printf(DEBUG_USART,
+              "RTC: STAT src=%s ready=%u bkp=%u recovered=%u psc_a=%u psc_s=%u bdctl=0x%08lX hrfc=0x%08lX cosc=0x%08lX\r\n",
+              prv_uart_rtc_source_name(status.clock_source),
+              (unsigned int)status.clock_ready,
+              (unsigned int)status.backup_valid,
+              (unsigned int)status.lxtal_recovered,
+              (unsigned int)status.prescaler_a,
+              (unsigned int)status.prescaler_s,
+              (unsigned long)status.bdctl,
+              (unsigned long)status.hrfc,
+              (unsigned long)status.cosc);
+}
+
+/*
+ * 函数作用：
  *   解析并设置 RTC 的完整年月日时分秒，成功后立即读回确认最终生效值。
  * 主要流程：
  *   1. 在串口命令层解析 `yyyy-mm-dd hh:mm:ss` 文本，并区分缺参、格式错、范围错。
@@ -1354,7 +1417,7 @@ static void prv_uart_handle_rm(char *args)
  *   对一帧 USART0 文本命令做解析，并分发到对应的 SMARTFS 或 RTC 操作。
  * 主要流程：
  *   1. 去掉命令尾部回车换行，得到纯命令字符串。
- *   2. 识别 `help/gettime/settime/pwd/ls/cd/cat/write/mkdir/touch/rm/stat/df` 等命令。
+ *   2. 识别 `help/gettime/rtcstat/settime/pwd/ls/cd/cat/write/mkdir/touch/rm/stat/df` 等命令。
  *   3. 对未知命令返回错误提示并附带帮助文本。
  * 参数说明：
  *   command_buffer：待解析命令缓冲区，必须非空。
@@ -1389,6 +1452,11 @@ static void prv_uart_process_command(uint8_t *command_buffer, uint16_t command_l
 
     if(0 == strcmp(parsed.command, "gettime")){
         prv_uart_handle_gettime();
+        return;
+    }
+
+    if(0 == strcmp(parsed.command, "rtcstat")){
+        prv_uart_handle_rtcstat();
         return;
     }
 

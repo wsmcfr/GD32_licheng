@@ -9,6 +9,20 @@ static __IO uint32_t prescaler_a = 0U;
 static __IO uint32_t prescaler_s = 0U;
 static uint32_t rtcsrc_flag = 0U;
 static int rtc_clock_ready = 0;
+static uint8_t rtc_lxtal_recovered = 0U;
+
+/*
+ * 函数作用：
+ *   从 RCU_BDCTL 的 RTCSRC 位解码 RTC 当前时钟源。
+ * 参数说明：
+ *   bdctl：RCU_BDCTL 备份域控制寄存器快照。
+ * 返回值说明：
+ *   返回 `bsp_rtc_clock_source_t` 枚举，表示当前硬件选择的 RTC 时钟源。
+ */
+static bsp_rtc_clock_source_t bsp_rtc_decode_clock_source(uint32_t bdctl)
+{
+    return (bsp_rtc_clock_source_t)GET_BITS(bdctl, 8U, 9U);
+}
 
 /*
  * 函数作用：
@@ -258,9 +272,102 @@ static int bsp_rtc_restore_from_backup(void)
 
 /*
  * 函数作用：
+ *   在备份域曾经 fallback 到 IRC32K 时，尝试自动迁回外部 LXTAL。
+ * 主要流程：
+ *   1. 仅当当前 RTCSRC 为 IRC32K 时进入恢复流程。
+ *   2. 先启动并确认 LXTAL 已稳定，避免在外部晶振不可用时破坏现有 RTC。
+ *   3. 如果备份域有效，则先通过当前 IRC32K RTC 读出日期时间快照。
+ *   4. 复位备份域以清除旧 RTCSRC，再重新选择 LXTAL 并写回快照或默认时间。
+ * 参数说明：
+ *   has_valid_backup：输入输出参数，指向当前备份域有效标记；恢复过程中会根据是否成功保留时间更新该值。
+ * 返回值说明：
+ *   0：表示无需恢复、恢复成功，或 LXTAL 不可用但仍可继续沿用 IRC32K。
+ *  -1：表示 LXTAL 已被确认可用但复位后重新建表失败，RTC 初始化应整体失败。
+ * 说明：
+ *   这个流程是为带 VBAT 纽扣电池的现场板设计的：如果某次冷启动因 LXTAL 暂时未稳而回退
+ *   到 IRC32K，备份域会把该选择长期保存下来，导致断电期间持续按内部 RC 计时并产生较大漂移。
+ */
+static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
+{
+    rtc_parameter_struct saved_time;
+    uint8_t saved_time_valid = 0U;
+
+    if(NULL == has_valid_backup) {
+        return -1;
+    }
+
+    if(2U != rtcsrc_flag) {
+        return 0;
+    }
+
+    rcu_osci_on(RCU_LXTAL);
+    if(0 != bsp_rtc_wait_osci_stable(RCU_LXTAL)) {
+        /*
+         * 外部晶振当前仍不可用，保守地继续走旧 IRC32K 路径，不复位备份域。
+         * 这样至少不会丢掉纽扣电池保存的现有时间。
+         */
+        return 0;
+    }
+
+    if(0U != *has_valid_backup) {
+        rcu_osci_on(RCU_IRC32K);
+        if(0 == bsp_rtc_wait_osci_stable(RCU_IRC32K)) {
+            rcu_periph_clock_enable(RCU_RTC);
+            if(ERROR != rtc_register_sync_wait()) {
+                rtc_current_time_get(&saved_time);
+                saved_time_valid = 1U;
+            }
+        }
+    }
+
+    /*
+     * RTCSRC 位属于备份域。要从 IRC32K 切回 LXTAL，必须复位备份域清掉旧选择；
+     * 只有在 LXTAL 已经稳定后才执行这一步，避免外部晶振异常时无意义丢失 RTC。
+     */
+    rcu_bkp_reset_enable();
+    rcu_bkp_reset_disable();
+
+    rcu_osci_on(RCU_LXTAL);
+    if(0 != bsp_rtc_wait_osci_stable(RCU_LXTAL)) {
+        rtc_clock_ready = 0;
+        *has_valid_backup = 0U;
+        return -1;
+    }
+
+    rcu_rtc_clock_config(RCU_RTCSRC_LXTAL);
+    prescaler_s = 0xFFU;
+    prescaler_a = 0x7FU;
+    rcu_periph_clock_enable(RCU_RTC);
+
+    if(0U != saved_time_valid) {
+        /*
+         * 复位备份域会清掉 RTC_PSC，因此写回快照前必须把分频改成 LXTAL 对应参数。
+         * 日期时间字段保持从旧 RTC 读出的 BCD 值，尽量保留现场已经走到的时间。
+         */
+        saved_time.factor_asyn = prescaler_a;
+        saved_time.factor_syn = prescaler_s;
+        if(ERROR == rtc_init(&saved_time)) {
+            *has_valid_backup = 0U;
+            return -1;
+        }
+
+        RTC_BKP0 = BKP_VALUE;
+        rtc_current_time_get(&rtc_initpara);
+        *has_valid_backup = 1U;
+    } else {
+        *has_valid_backup = 0U;
+    }
+
+    rtcsrc_flag = GET_BITS(RCU_BDCTL, 8U, 9U);
+    rtc_lxtal_recovered = 1U;
+    return 0;
+}
+
+/*
+ * 函数作用：
  *   预配置 RTC 时钟源和同步分频参数。
  * 参数说明：
- *   无参数。
+ *   has_valid_backup：输入输出参数，表示当前备份域标记是否有效；若迁回 LXTAL 时复位了备份域，本函数会同步更新该标记。
  * 返回值说明：
  *   0：表示 RTC 时钟源已经稳定并完成必要配置。
  *  -1：表示所选 RTC 时钟源启动失败，RTC 不应继续初始化或读取。
@@ -268,9 +375,13 @@ static int bsp_rtc_restore_from_backup(void)
  *   若备份域已选择过 RTC 时钟源，本函数只等待对应振荡器稳定，不强制改写 RTCSRC。
  *   若冷启动首选 LXTAL 失败，且允许 fallback，则切到 IRC32K 并使用对应分频参数。
  */
-static int bsp_rtc_pre_cfg(void)
+static int bsp_rtc_pre_cfg(uint8_t *has_valid_backup)
 {
     int ret = -1;
+
+    if(NULL == has_valid_backup) {
+        return -1;
+    }
 
     /*
      * 若备份域中已经保留了 RTC 时钟源选择，就不要再次改写 RTCSRC。
@@ -294,6 +405,11 @@ static int bsp_rtc_pre_cfg(void)
     prescaler_s = 0x13FU;
     prescaler_a = 0x63U;
 #elif defined(RTC_CLOCK_SOURCE_LXTAL)
+    if(0 != bsp_rtc_try_restore_lxtal_from_irc32k(has_valid_backup)) {
+        rtc_clock_ready = 0;
+        return -1;
+    }
+
     if(2U == rtcsrc_flag) {
         /*
          * 备份域显示 RTC 当前使用 IRC32K，说明之前可能已经从 LXTAL fallback。
@@ -382,7 +498,9 @@ int bsp_rtc_init(void)
      */
     has_valid_backup = bsp_rtc_has_valid_backup();
 
-    if(0 != bsp_rtc_pre_cfg()) {
+    rtc_lxtal_recovered = 0U;
+
+    if(0 != bsp_rtc_pre_cfg(&has_valid_backup)) {
         rcu_all_reset_flag_clear();
         return -1;
     }
@@ -486,6 +604,39 @@ int bsp_rtc_get_epoch_seconds(uint32_t *epoch_seconds)
                      ((uint32_t)datetime.hour * 3600UL) +
                      ((uint32_t)datetime.minute * 60UL) +
                      (uint32_t)datetime.second;
+    return 0;
+}
+
+/*
+ * 函数作用：
+ *   读取 RTC 当前诊断状态，包含时钟源、备份域标记、分频和校准寄存器。
+ * 参数说明：
+ *   status：输出状态结构体指针，必须非空；成功时写入当前硬件寄存器快照。
+ * 返回值说明：
+ *   0：表示读取成功。
+ *  -1：表示参数为空。
+ */
+int bsp_rtc_get_status(bsp_rtc_status_t *status)
+{
+    uint32_t bdctl;
+    uint32_t psc;
+
+    if(NULL == status) {
+        return -1;
+    }
+
+    bdctl = RCU_BDCTL;
+    psc = RTC_PSC;
+
+    status->clock_ready = (0 != rtc_clock_ready) ? 1U : 0U;
+    status->backup_valid = bsp_rtc_has_valid_backup();
+    status->lxtal_recovered = rtc_lxtal_recovered;
+    status->clock_source = bsp_rtc_decode_clock_source(bdctl);
+    status->prescaler_a = (uint16_t)GET_BITS(psc, 16U, 22U);
+    status->prescaler_s = (uint16_t)GET_BITS(psc, 0U, 14U);
+    status->bdctl = bdctl;
+    status->hrfc = RTC_HRFC;
+    status->cosc = RTC_COSC;
     return 0;
 }
 
