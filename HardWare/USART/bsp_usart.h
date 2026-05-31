@@ -47,11 +47,11 @@ extern "C" {
  */
 #define BSP_USART0_RX_BUFFER_SIZE      1024U
 /*
- * USART1/RS485 当前同时承载旧 START/DATA/END OTA 和 YModem OTA。
- * YModem 1K 数据块完整帧为 1B 头 + 1B 序号 + 1B 反码 + 1024B 数据 + 2B CRC，
- * 因此缓冲区必须大于 1029B；这里取 1152B，给 IDLE 截帧和工具差异保留余量。
+ * USART1/RS485 当前接收 Project_ota.bin 裸字节流。
+ * 缓冲区只是 DMA 分段窗口，满缓冲和 IDLE 中断都会把字节喂给 OTA 状态机；
+ * 取 1024B 是为了在中断开销和 RAM 占用之间保持稳定折中。
  */
-#define BSP_USART1_RX_BUFFER_SIZE      1152U
+#define BSP_USART1_RX_BUFFER_SIZE      1024U
 #define BSP_USART5_RX_BUFFER_SIZE      256U
 
 /* USART0 引脚与 DMA 映射。 */

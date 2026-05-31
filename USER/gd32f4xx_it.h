@@ -129,13 +129,23 @@ void USART0_IRQHandler(void);
 
 /*
  * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，并移交 DMA 接收帧给 OTA 应用层。
+ *   处理 USART1/RS485 IDLE 中断，并移交 DMA 接收字节给 OTA 应用层。
  * 参数说明：
  *   无参数。
  * 返回值说明：
  *   无返回值。
  */
 void USART1_IRQHandler(void);
+
+/*
+ * 函数作用：
+ *   处理 USART1 RX DMA 满缓冲中断，保证裸发大文件时能连续分段移交。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void DMA0_Channel5_IRQHandler(void);
 
 /*
  * 函数作用：

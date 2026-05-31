@@ -24,7 +24,9 @@ static void bsp_usart_disable_for_deepsleep(void)
 
     usart_interrupt_disable(USART1, USART_INT_IDLE);
     nvic_irq_disable(USART1_IRQn);
+    nvic_irq_disable(DMA0_Channel5_IRQn);
     usart_dma_receive_config(USART1, USART_RECEIVE_DMA_DISABLE);
+    dma_interrupt_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FTF);
     dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
     usart_disable(USART1);
 
@@ -301,9 +303,11 @@ static void bsp_sleep_mask_runtime_irqs(void)
 {
     nvic_irq_disable(USART0_IRQn);
     nvic_irq_disable(USART1_IRQn);
+    nvic_irq_disable(DMA0_Channel5_IRQn);
 
     NVIC_ClearPendingIRQ(USART0_IRQn);
     NVIC_ClearPendingIRQ(USART1_IRQn);
+    NVIC_ClearPendingIRQ(DMA0_Channel5_IRQn);
 }
 
 /*
@@ -321,9 +325,11 @@ static void bsp_sleep_unmask_runtime_irqs(void)
 {
     NVIC_ClearPendingIRQ(USART0_IRQn);
     NVIC_ClearPendingIRQ(USART1_IRQn);
+    NVIC_ClearPendingIRQ(DMA0_Channel5_IRQn);
 
     nvic_irq_enable(USART0_IRQn, 0U, 0U);
     nvic_irq_enable(USART1_IRQn, 1U, 0U);
+    nvic_irq_enable(DMA0_Channel5_IRQn, 1U, 1U);
 }
 
 /*

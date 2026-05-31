@@ -165,7 +165,7 @@
 | 好处 | 代价 |
 |---|---|
 | 旧 App 在升级过程中不会先被破坏 | 在线升级大小被下载缓存区卡死在 `100KB` |
-| App 可以边收边写缓存区，不需要大 RAM | 当前方案不能直接支持更大的在线升级固件 |
+| App 先收完整 payload 再写缓存区 | 会占用约 `100KB` RAM，但避免内部 Flash 擦写期间丢串口字节 |
 | BootLoader 逻辑清晰：只负责搬运与切换 | 如果 App 继续增长，就必须重做缓存规划 |
 
 ---
@@ -177,7 +177,7 @@
 | 限制点 | 当前值 | 影响 |
 |---|---:|---|
 | 下载缓存区大小 | `100KB` | 新固件必须完整放得下 |
-| START 阶段固件大小检查 | `firmwareSize <= 100KB` | 超过后 App 会直接拒绝升级 |
+| OTA 头部 `image_size` 检查 | `image_size <= 100KB` | 超过后 App 会拒绝升级 |
 | BootLoader 搬运上限检查 | `appSize <= 100KB` | 即使参数写进去了，BootLoader 也不会搬运超限镜像 |
 
 所以当前工程会出现下面这种情况：
@@ -197,12 +197,12 @@
 
 ## 8. 如果以后 App 超过 100KB，会发生什么
 
-如果未来 `Project.bin` 超过 `100KB`，当前内部 Flash OTA 会在 App 端 START 检查阶段直接失败。
+如果未来 `Project.bin` 超过 `100KB`，当前内部 Flash OTA 会在 App 解析 `Project_ota.bin` 头部时直接失败。
 
 | 超限后会怎样 | 结果 |
 |---|---|
-| 上位机发送 START 帧 | App 读取 `firmwareSize` |
-| App 发现 `firmwareSize > 100KB` | 直接返回错误 ACK |
+| 上位机原始发送 `Project_ota.bin` | App 先读取 64 字节 OTA 头部 |
+| App 发现 `image_size > 100KB` | 进入错误状态，不擦写下载区和参数区 |
 | 下载缓存区不会开始写入 | 旧 App 不受影响 |
 | BootLoader 不会收到有效升级条件 | 下次复位也不会去搬运 |
 

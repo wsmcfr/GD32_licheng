@@ -81,9 +81,9 @@
           </BeforeMake>
           <AfterMake>
             <RunUserProg1>1</RunUserProg1>
-            <RunUserProg2>0</RunUserProg2>
+            <RunUserProg2>1</RunUserProg2>
             <UserProg1Name>E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\output\Project.axf</UserProg1Name>
-            <UserProg2Name></UserProg2Name>
+            <UserProg2Name>..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x0800D000</UserProg2Name>
             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
             <UserProg2Dos16Mode>0</UserProg2Dos16Mode>
             <nStopA1X>0</nStopA1X>
@@ -663,11 +663,6 @@
               <FileName>uart_ota_app.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Function\uart_ota_app.c</FilePath>
-            </File>
-            <File>
-              <FileName>uart_ota_ymodem.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Function\uart_ota_ymodem.c</FilePath>
             </File>
           </Files>
         </Group>

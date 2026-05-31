@@ -212,7 +212,7 @@ DOWNLOAD_ADDR = 0x08070000
 
 随后把升级包头后面的真正 App 镜像写入 `0x08070000`。
 
-注意：官方原始 App 接收数组只有 `10 * 1024` 字节，而根目录 readme 写“升级数据内存最大 12KB”，早期地址规划又写下载缓存区 52KB。当前仓库副本已经改为 USART2 ACK 分包 OTA，下载缓存区为 64KB，不再依赖一次性 10KB RAM 缓冲接收完整固件。
+注意：官方原始 App 接收数组只有 `10 * 1024` 字节，而根目录 readme 写“升级数据内存最大 12KB”，早期地址规划又写下载缓存区 52KB。当前仓库已经改为 RS485/USART1 头部 BIN 裸流 OTA，下载缓存区为 `0x08067000 ~ 0x0807FFFF` 共 `100KB`，现场文件为 `Project_ota.bin`。
 
 ### 8.4 App 写参数区并复位
 
@@ -275,29 +275,25 @@ BootLoader 成功搬运后清除升级标志并复位。下一次启动时：
 | 项目 | 官方原始例程 | 当前仓库副本 |
 |---|---|---|
 | 升级串口默认波特率 | `115200` | `460800` |
-| App 接收方式 | 单次接收整包，依赖 `usart0_tmp_buf[10 * 1024]` | 使用 START/DATA/END 三类帧和 ACK 节流，默认 `chunk_size=512`，每收到一个 DATA 帧就立即写下载缓存区 |
-| 上位机发送方式 | 直接发送官方示例 `.bin` 文件 | 使用 `python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512` |
-| 上位机可见反馈 | 基本没有发送进度 | 会打印 `send stream ...`、`START acked ...`、`DATA acked ...`、`END acked ...` |
+| App 接收方式 | 单次接收整包，依赖 `usart0_tmp_buf[10 * 1024]` | RS485/USART1 接收 `Project_ota.bin` 裸字节流，先解析 64 字节头部，再完整接收 payload 到 RAM，最后统一写下载缓存区 |
+| 上位机发送方式 | 直接发送官方示例 `.bin` 文件 | 串口工具原始/直接发送 `project/output/Project_ota.bin` |
+| 上位机可见反馈 | 基本没有发送进度 | 主要通过 `USART0` 日志观察 `OTA: header ok`、`OTA: payload ok`、`OTA: ready, reset to BootLoader` |
 | BootLoader 擦除策略 | 固定擦除 App 开头 `3 * 4KB` | 按 `appSize` 计算实际擦除页数 |
 | BootLoader 搬运策略 | 受原始整包缓存思路约束 | 按 `1024B` 分块从下载缓存区搬运到 App 区，并重新做 CRC32 校验 |
 
-当前仓库副本发送升级包时，可按下面步骤操作：
+当前仓库发送升级包时，可按下面步骤操作：
 
 ```powershell
 cd D:\GD32\2026706296
-python tools\make_uart_ota_packet.py --mode stream-info --version 0x00000006 --chunk-size 512
-python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800 --version 0x00000006 --chunk-size 512
+tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.bin 0x00000001 0x0800D000
 ```
 
-典型输出如下：
+典型 App 侧日志如下：
 
 ```text
-send stream project\output\Project.bin: firmware=33536 bytes, crc=0xC0B85342, version=0x00000006, chunk_size=512, chunks=66, port=COM29, baudrate=460800
-START acked: chunk=0/66, frames=1/68, bytes=0/33536 (0%)
-DATA acked: chunk=1/66, frames=2/68, bytes=512/33536 (1%)
-...
-END acked: chunk=66/66, frames=68/68, bytes=33536/33536 (100%)
-sent stream frames=68, port=COM29, baudrate=460800
+OTA: header ok size=... version=0x00000001 crc=0x...
+OTA: payload ok size=... crc=0x...
+OTA: ready, reset to BootLoader size=... version=0x00000001
 ```
 
 ## 9. CRC32 算法

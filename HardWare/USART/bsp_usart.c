@@ -163,7 +163,7 @@ void bsp_usart_init(void)
  *   2. 配置 PD5/PD6 为 USART1 的 TX/RX 复用功能。
  *   3. 配置 PE8 为 RS485 收发器方向控制输出，并默认进入接收态。
  *   4. 配置 USART1 为 OTA 默认 460800-8N1 收发模式。
- *   5. 打开 USART1 IDLE 中断，用于 RS485 接收帧完成判定。
+ *   5. 同时打开 USART1 IDLE 中断和 DMA 满缓冲中断，用于接收裸流文件。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -192,6 +192,11 @@ void bsp_usart1_init(void)
     dma_channel_subperipheral_select(USART1_RX_DMA_PERIPH,
                                      USART1_RX_DMA_CHANNEL,
                                      USART1_RX_DMA_SUBPERI);
+    /*
+     * 裸发 Project_ota.bin 时，串口工具可能连续输出整个文件，中间没有足够长的
+     * IDLE 间隔。必须启用 DMA 满缓冲中断，在 1024B 窗口满时立即移交数据并重装 DMA。
+     */
+    dma_interrupt_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FTF);
     dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
     gpio_af_set(USART1_TX_PORT, USART1_AF, USART1_TX_PIN | USART1_RX_PIN);
@@ -211,8 +216,9 @@ void bsp_usart1_init(void)
     usart_dma_receive_config(USART1, USART_RECEIVE_DMA_ENABLE);
     usart_enable(USART1);
 
-    /* USART1/RS485 同样使用 IDLE 中断移交整帧，避免在中断里解析业务协议。 */
+    /* USART1/RS485 同时使用 IDLE 和 DMA 满缓冲中断，保证裸流大文件不会卡在 DMA 满。 */
     nvic_irq_enable(USART1_IRQn, 1U, 0U);
+    nvic_irq_enable(DMA0_Channel5_IRQn, 1U, 1U);
     usart_interrupt_enable(USART1, USART_INT_IDLE);
 }
 

@@ -209,12 +209,63 @@ void USART0_IRQHandler(void)
 
 /*
  * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，并将 DMA 接收到的一帧数据移交给 OTA 应用层。
+ *   将 USART1 DMA 当前缓冲中的有效字节移交给 OTA 裸流接收器，并重新装载 DMA。
+ * 参数说明：
+ *   rx_len：本次 DMA 缓冲中已经接收到的有效字节数。
+ * 返回值说明：
+ *   无返回值。
+ * 说明：
+ *   该函数同时服务 USART1 IDLE 中断和 DMA 满缓冲中断。裸发 Project_ota.bin 时，
+ *   大文件可能连续发送没有 IDLE 间隔，因此必须在 DMA 满时也移交数据。
+ */
+static void prv_usart1_ota_flush_dma_bytes(uint32_t rx_len)
+{
+    uint32_t copy_len;
+    uint8_t write_index;
+
+    dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+
+    if((rx_len > 0U) && (rx_len <= sizeof(usart1_rxbuffer))){
+        copy_len = rx_len;
+        if(copy_len > UART_OTA_FRAME_BUFFER_SIZE){
+            copy_len = UART_OTA_FRAME_BUFFER_SIZE;
+        }
+
+        if(copy_len > 0U){
+            /*
+             * 中断层只做有界复制和队列推进，协议解析、CRC 和日志全部留给任务层。
+             * 环形队列能吸收任务调度抖动；队列满时只记录丢段计数，避免覆盖
+             * 任务层尚未消费的数据。
+             */
+            uart_ota_irq_count++;
+            uart_ota_last_irq_length = (uint16_t)copy_len;
+            if(uart_ota_queue_count >= UART_OTA_RX_QUEUE_DEPTH){
+                uart_ota_overwrite_count++;
+            }else{
+                write_index = uart_ota_queue_write_index;
+                memcpy(uart_ota_dma_buffer[write_index], usart1_rxbuffer, copy_len);
+                uart_ota_dma_length[write_index] = (uint16_t)copy_len;
+                uart_ota_queue_write_index = (uint8_t)((write_index + 1U) % UART_OTA_RX_QUEUE_DEPTH);
+                uart_ota_queue_count++;
+                uart_ota_rx_flag = 1U;
+            }
+        }
+    }
+
+    /* 清满传输标志并重装 DMA，保证下一段裸流数据能继续进入同一缓冲区。 */
+    dma_interrupt_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FLAG_FTF);
+    dma_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_FLAG_FTF);
+    dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, sizeof(usart1_rxbuffer));
+    dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+}
+
+/*
+ * 函数作用：
+ *   处理 USART1/RS485 IDLE 中断，将文件尾部或发送间隙前的 DMA 数据移交给 OTA。
  * 主要流程：
  *   1. 判断并清除 USART1 IDLE 中断标志。
- *   2. 暂停 DMA，按剩余传输计数计算本帧有效长度。
- *   3. 做长度边界检查后复制到 uart_ota_dma_buffer，并置位 uart_ota_rx_flag。
- *   4. 重新装载 DMA 计数，准备下一帧 RS485 接收。
+ *   2. 根据 DMA 剩余计数计算当前缓冲区已接收字节数。
+ *   3. 调用统一 DMA flush 函数喂给头部 bin OTA 接收器。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -223,41 +274,30 @@ void USART0_IRQHandler(void)
 void USART1_IRQHandler(void)
 {
     uint32_t rx_len;
-    uint32_t copy_len;
 
     if(RESET != usart_interrupt_flag_get(USART1, USART_INT_FLAG_IDLE)){
         /* 清除 IDLE 标志：读数据寄存器用于结束本次空闲中断状态。 */
         usart_data_receive(USART1);
-        dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+        rx_len = sizeof(usart1_rxbuffer) -
+                 dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+        prv_usart1_ota_flush_dma_bytes(rx_len);
+    }
+}
 
-        rx_len = sizeof(usart1_rxbuffer) - dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-        if((rx_len > 0U) && (rx_len <= sizeof(usart1_rxbuffer))){
-            /*
-             * USART1/RS485 现在是 OTA 专用接收入口。
-             * 中断层只记录诊断计数和复制原始帧，协议解析、Flash 写入与 ACK
-             * 全部留给 uart_ota_task()，避免在 ISR 中执行耗时操作。
-             */
-            uart_ota_irq_count++;
-            uart_ota_last_irq_length = (uint16_t)rx_len;
-            if(0U != uart_ota_rx_flag){
-                uart_ota_overwrite_count++;
-            }
-
-            copy_len = rx_len;
-            if(copy_len > sizeof(uart_ota_dma_buffer)){
-                copy_len = sizeof(uart_ota_dma_buffer);
-            }
-            if(copy_len > 0U){
-                memcpy(uart_ota_dma_buffer, usart1_rxbuffer, copy_len);
-                uart_ota_dma_length = (uint16_t)copy_len;
-                uart_ota_rx_flag = 1U;
-            }
-        }
-
-        /* 重新装载 DMA 计数并打开通道，准备接收下一帧 RS485 数据。 */
-        dma_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_FLAG_FTF);
-        dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, sizeof(usart1_rxbuffer));
-        dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+/*
+ * 函数作用：
+ *   处理 USART1 RX DMA 满缓冲中断，用于连续裸发 Project_ota.bin 的中间分段。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void DMA0_Channel5_IRQHandler(void)
+{
+    if(RESET != dma_interrupt_flag_get(USART1_RX_DMA_PERIPH,
+                                       USART1_RX_DMA_CHANNEL,
+                                       DMA_INT_FLAG_FTF)){
+        prv_usart1_ota_flush_dma_bytes((uint32_t)sizeof(usart1_rxbuffer));
     }
 }
 

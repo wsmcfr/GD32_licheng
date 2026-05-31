@@ -60,8 +60,8 @@ It maps to hardware-near firmware code:
 - `HeaderFiles/system_all.h`: shared include aggregation and layer ordering
 - `HardWare/USART/bsp_usart.c`: typical peripheral/DMA/IRQ initialization style
 - `User/gd32f4xx_it.c`: ISR structure and fail-stop handlers
-- `Function/uart_ota_app.c`: RS485/USART1 OTA packet parsing and BootLoader parameter handoff
-- `tools/make_uart_ota_packet.py`: PC-side `.uota` packet generator
+- `Function/uart_ota_app.c`: RS485/USART1 header-bin raw OTA parsing and BootLoader parameter handoff
+- `tools/pack_ota_image.c`: PC-side `Project.bin` to `Project_ota.bin` packer
 
 ---
 
