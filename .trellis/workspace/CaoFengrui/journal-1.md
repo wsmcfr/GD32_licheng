@@ -632,7 +632,7 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 
 ### Summary
 
-(Add summary)
+Completed and pushed OTA/storage hardening for the header-bin OTA branch. The session focused on making user-visible OTA retries safer, propagating low-level Flash and ADC failures through firmware layers, and syncing the resulting contracts into repository docs and Trellis specs.
 
 ### Main Changes
 
@@ -661,7 +661,12 @@ Raised UART OTA to 460800, added ACK progress output, and synced repository docs
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python -m unittest tools.test_header_bin_ota_static`
+- [OK] `python tools/test_static_optimizations.py`
+- [OK] `gcc -std=c99 -Wall -Wextra -Werror tools/pack_ota_image.c ...`
+- [OK] `git diff --check`
+- [OK] Keil build: `0 Error(s), 0 Warning(s)`
+- [OK] OTA artifact check: `Project_ota.bin` is 64 bytes larger than `Project.bin`
 
 ### Status
 
@@ -1446,6 +1451,49 @@ Removed the obsolete SD card/FatFs stack and refined the deepest low-power workf
 - [OK] App Keil 构建，0 Error(s)，0 Warning(s)
 - [OK] BootLoader Keil 构建，0 Error(s)，0 Warning(s)
 - [OK] 旧魔术字 `0x5AA5C33C` 只剩在静态测试的反向断言里
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 31: OTA and storage error hardening
+
+**Date**: 2026-05-31
+**Task**: OTA and storage error hardening
+**Branch**: `feature/header-bin-ota`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 类别 | 记录 |
+|---|---|
+| OTA ready 时序 | 将 `uart_ota_emit_startup_probe()` 后移到 `scheduler_init()` 后，ready 表示启动自检和调度器已就绪。 |
+| OTA 错误重试 | 增加错误态 magic 前缀缓存，支持误发文件后不复位直接重发合法 `Project_ota.bin`，包括 magic 被 DMA 分块拆开的情况。 |
+| GD25QXX 写擦错误 | `spi_flash_write_enable/sector_erase/bulk_erase/page_write/buffer_write` 改为状态返回，WREN、命令字节、页写和 WIP 超时都会上抛。 |
+| SMARTFS/LittleFS | 检查底层 Flash 写擦返回码，将失败映射为 `SMART_STORAGE_ERR_IO` / `LFS_ERR_IO`，避免错误元数据提交。 |
+| GD30AD3344/PT100 | `GD30AD3344_AD_Read()` 改为 `0/-1` + 输出参数，PT100 采样失败时清 `sample_ready/range_valid` 并打印错误。 |
+| 文档规范 | 同步 `工程文档.md`、BootLoader/OTA 说明和 `.trellis/spec` 中 OTA、存储、错误处理、状态管理合同。 |
+| 验证 | `python -m unittest tools.test_header_bin_ota_static`、`python tools/test_static_optimizations.py`、`gcc -std=c99 -Wall -Wextra -Werror tools/pack_ota_image.c ...`、`git diff --check` 均通过；Keil 构建 `0 Error(s), 0 Warning(s)`；`Project_ota.bin` 比 `Project.bin` 大 64 字节。 |
+| GitHub | 已推送到 `origin/feature/header-bin-ota`，提交 `27c1725 fix: harden ota and storage error handling`。 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `27c1725` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
 
 ### Status
 
