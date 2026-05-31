@@ -94,7 +94,7 @@ Keil 实际链接配置如下：
 
 | 字段 | 典型值 | 当前用途 |
 |---|---:|---|
-| `magicWord` | `0x5AA5C33C` | 参数有效性标识。BootLoader 发现不匹配时，不执行升级，直接尝试跳 App |
+| `magicWord` | `0xC0DEF47A` | 参数有效性标识。BootLoader 发现不匹配时，不执行升级，直接尝试跳 App |
 | `updateFlag` | `0x5A` | App 写入，表示请求升级 |
 | `updateStatus` | `0x01` | App 写入，表示正在升级 |
 | `appSize` | 新 App 镜像字节数 | BootLoader 搬运时按这个长度读取缓存区和写 App 区 |
@@ -194,7 +194,7 @@ App 代码收到数据后，先对前 8 字节做手工字节交换。交换完�
 
 | 字段 | 判断或保存 |
 |---|---|
-| 魔术值 | 必须等于 `0x5AA5C33C`，否则打印错误并放弃升级 |
+| 魔术值 | 必须等于 `0xC0DEF47A`，否则打印错误并放弃升级 |
 | 版本号 | 保存到 `my_param_sum.BootParam.appVersion` |
 | 镜像长度 | 原始接收长度减 8，保存到 `appSize` |
 | 镜像 CRC | 对偏移 8 后的镜像计算 CRC32，保存到 `appCRC32` |
@@ -220,7 +220,7 @@ App 从 `0x0800C000` 读取原参数区，修改关键字段：
 
 | 字段 | 写入值 |
 |---|---|
-| `magicWord` | `0x5AA5C33C` |
+| `magicWord` | `0xC0DEF47A` |
 | `appStartAddr` | `0x0800D000` |
 | `appEntryAddr` | 从 `0x0800D004` 读取 |
 | `appStackAddr` | 从 `0x0800D000` 读取 |
@@ -237,7 +237,7 @@ App 从 `0x0800C000` 读取原参数区，修改关键字段：
 复位后 MCU 又从 BootLoader 启动。BootLoader 读取参数区后，判断：
 
 ```text
-magicWord == 0x5AA5C33C
+magicWord == 0xC0DEF47A
 updateStatus == 0x01
 updateFlag == 0x5A
 ```

@@ -17,6 +17,7 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
     """
 
     repo_root = Path(__file__).resolve().parents[1]
+    expected_boot_magic = "0xC0DEF47A"
 
     def read_text(self, relative_path: str) -> str:
         """
@@ -202,6 +203,39 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         self.assertFalse((self.repo_root / "tools" / old_static_test).exists())
         self.assertFalse((self.repo_root / "Function" / (old_receiver_base + ".c")).exists())
         self.assertFalse((self.repo_root / "Function" / (old_receiver_base + ".h")).exists())
+
+    def test_boot_parameter_magic_matches_app_bootloader_and_docs(self):
+        """
+        函数作用：
+          验证 App、独立 BootLoader 和 OTA 规格文档使用同一个参数区魔术字。
+          这个魔术字是 App 写参数区、BootLoader 判断参数区有效性的共享协议值，
+          两边只要有一处不同，在线升级就会表现为 BootLoader 放弃搬运并直接尝试跳 App。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时说明跨工程共享协议常量不同步。
+        """
+        bootloader_root = self.repo_root.parent / "2026706296_bootloader"
+        if not bootloader_root.exists():
+            self.skipTest("独立 BootLoader 工程不在当前工作区旁边，跳过跨工程魔术字一致性检查。")
+
+        app_header = self.read_text("HardWare/BOOTLOADER/bootloader_port.h")
+        ota_spec = self.read_text(".trellis/spec/backend/embedded-ota-guidelines.md")
+        bootloader_function = (bootloader_root / "Function" / "Function.c").read_text(encoding="utf-8")
+        bootloader_config_c = (bootloader_root / "HardWare" / "BootLoader" / "BootConfig.c").read_text(encoding="utf-8")
+        bootloader_config_h = (bootloader_root / "HardWare" / "BootLoader" / "BootConfig.h").read_text(encoding="utf-8")
+
+        self.assertIn("BOOTLOADER_PORT_MAGIC_WORD         " + self.expected_boot_magic + "UL", app_header)
+        self.assertIn("BOOT_PARAM_MAGIC            (" + self.expected_boot_magic + "UL)", bootloader_function)
+        self.assertIn("tmp_param.magicWord = " + self.expected_boot_magic + ";", bootloader_config_c)
+        self.assertIn("魔术字:", bootloader_config_h)
+        self.assertIn(self.expected_boot_magic, bootloader_config_h)
+        self.assertIn("| `magicWord` | `" + self.expected_boot_magic + "` |", ota_spec)
+        self.assertNotIn("0x5AA5C33C", app_header)
+        self.assertNotIn("0x5AA5C33C", bootloader_function)
+        self.assertNotIn("0x5AA5C33C", bootloader_config_c)
+        self.assertNotIn("0x5AA5C33C", bootloader_config_h)
+        self.assertNotIn("0x5AA5C33C", ota_spec)
 
 
 if __name__ == "__main__":

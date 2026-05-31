@@ -72,7 +72,7 @@ When OTA succeeds, App must write these fields in the BootLoader-compatible para
 
 | Field | Required Value |
 |-------|----------------|
-| `magicWord` | `0x5AA5C33C` |
+| `magicWord` | `0xC0DEF47A` |
 | `updateFlag` | `0x5A` |
 | `updateStatus` | `0x01` |
 | `appSize` | Header `image_size` |

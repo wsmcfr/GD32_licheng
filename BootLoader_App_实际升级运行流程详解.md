@@ -130,7 +130,7 @@ BootLoader 不关心 `Project_ota.bin` 的 64 字节头部，也不接收串口�
 
 | 参数区字段 | App 成功提交时写入 |
 |---|---|
-| `magicWord` | `0x5AA5C33C` |
+| `magicWord` | `0xC0DEF47A` |
 | `updateFlag` | `0x5A` |
 | `updateStatus` | `0x01` |
 | `appSize` | 头部中的 `image_size` |
