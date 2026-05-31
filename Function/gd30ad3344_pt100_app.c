@@ -143,7 +143,18 @@ void gd30ad3344_pt100_task(void)
     float temperature_c;
     uint8_t range_valid = 0U;
 
-    adc_voltage_v = GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA);
+    if(0 != GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_voltage_v)) {
+        /*
+         * SPI/DMA 异常时不能把 0xFFFF 等失败哨兵值换算成满量程温度。
+         * 这里保留上一帧数值，但显式清除可用标志，提示显示/上报层本轮采样无效。
+         */
+        s_pt100_latest.sample_ready = 0U;
+        s_pt100_latest.range_valid = 0U;
+        my_printf(DEBUG_USART,
+                  "PT100: sample failed err=%u\r\n",
+                  (unsigned int)GD30AD3344_GetLastError());
+        return;
+    }
 
     if(0U != s_pt100_discard_next_sample) {
         /*

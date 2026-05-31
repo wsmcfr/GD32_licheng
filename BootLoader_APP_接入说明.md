@@ -63,12 +63,14 @@ E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\ou
 |---|---|---|
 | 1 | 在 Keil 中重新编译当前 App 工程 | 构建后生成 `Project.bin` 和 `Project_ota.bin` |
 | 2 | 打开 RS485/USART1 对应串口 | 波特率 `460800`，8N1 |
-| 3 | 复位或重新上电板子 | RS485 口看到一次 `OTA485: ready, send Project_ota.bin raw` |
+| 3 | 复位或重新上电板子 | RS485 口在启动自检和调度器初始化完成后看到一次 `OTA485: ready, send Project_ota.bin raw` |
 | 4 | 在串口工具中选择原始/直接发送文件 | 选择 `project/output/Project_ota.bin` |
 | 5 | 观察 `USART0` 日志 | 出现 `OTA: header ok`、`OTA: payload ok`、`OTA: ready, reset to BootLoader` |
 | 6 | 观察 BootLoader 日志 | 出现 `app crc32 check pass` 和 `app update success` |
 
 串口工具必须使用原始/直接发送文件模式；现场只选择 `Project_ota.bin`，不要选择 `Project.bin` 或 `Project.hex`。
+
+如果误发了 `Project.bin`、旧格式流或损坏文件，App 会打印 `OTA: bad header status=...` 或 `OTA: payload failed status=...` 并进入错误态。修正文件后可以不复位，直接从文件开头重新原始发送合法 `Project_ota.bin`；`USART0` 出现 `OTA: resync after error code=...` 后会重新解析新文件头。
 
 ## 6. OTA 文件头部格式
 

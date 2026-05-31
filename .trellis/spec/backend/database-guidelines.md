@@ -72,6 +72,94 @@ Runtime SMARTFS shell helpers should keep behavior explicit:
 - if parent directories do not exist, `write`, `touch`, and `mkdir` should fail clearly instead of silently creating multi-level parents
 - directory listing helpers should not synthesize `.` or `..`
 
+### GD25QXX Write/Erase Error Propagation
+
+#### 1. Scope / Trigger
+
+- Trigger: editing `HardWare/GD25QXX/gd25qxx.c`, `HardWare/GD25QXX/gd25qxx.h`, `HardWare/GD25QXX/smartfs_port.c`, or any storage backend that writes or erases GD25QXX Flash.
+- Trigger: changing SPI DMA timeout behavior, write-enable flow, page-program splitting, metadata commits, file append/write paths, or full-format behavior.
+
+#### 2. Signatures
+
+Low-level GD25QXX write/erase APIs must expose status:
+
+```c
+int spi_flash_write_enable(void);
+int spi_flash_sector_erase(uint32_t sector_addr);
+int spi_flash_bulk_erase(void);
+int spi_flash_page_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write);
+int spi_flash_buffer_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write);
+int spi_flash_wait_for_write_end(void);
+```
+
+SMARTFS callers must convert low-level failures to the storage error enum:
+
+```c
+if (0 != spi_flash_sector_erase(addr)) {
+    return SMART_STORAGE_ERR_IO;
+}
+if (0 != spi_flash_buffer_write(data, addr, len)) {
+    return SMART_STORAGE_ERR_IO;
+}
+```
+
+#### 3. Contracts
+
+- `spi_flash_write_enable()` returns `0` only when the `WREN` command byte was sent by DMA; it returns `-1` on DMA timeout.
+- `spi_flash_sector_erase()`, `spi_flash_bulk_erase()`, and `spi_flash_page_write()` must check `WREN`, every command/address/data byte sent by DMA, and the final `spi_flash_wait_for_write_end()` result.
+- `spi_flash_page_write()` returns `0` for a zero-length write without sending a Flash command.
+- `spi_flash_buffer_write()` must stop on the first failed page program and return `-1`; it must not continue writing later pages after an earlier page failed.
+- SMARTFS metadata copy writes, data-chain writes, append-chain rewrites, chain release erases, and `smart_storage_format()` must map any GD25QXX write/erase failure to `SMART_STORAGE_ERR_IO`.
+- If SMARTFS allocates a new block chain and a write/erase fails partway through, release the newly allocated chain before returning the IO error whenever the current metadata state still permits that cleanup.
+- Do not treat a synchronous return byte such as `0xFF` or `0xFFFF` as the only failure signal; the driver-level DMA error flag and status return are the authority.
+
+#### 4. Validation & Error Matrix
+
+| Observation | Meaning | Required Action |
+|-------------|---------|-----------------|
+| `spi_flash_wait_for_write_end()` times out | Flash stayed busy or the status-read DMA path failed | Return `-1`; SMARTFS returns `SMART_STORAGE_ERR_IO` |
+| `WREN` DMA send fails | Flash may not set WEL, so later program/erase is unsafe | Abort the write/erase before sending the operation command |
+| Page N write fails in `spi_flash_buffer_write()` | The contiguous write is only partially programmed | Return `-1`; caller must not commit metadata that points at the partial data |
+| SMARTFS metadata copy erase/write fails | At least one metadata copy may be stale or incomplete | Return `SMART_STORAGE_ERR_IO` and clear loaded state where applicable |
+| `test_spi_flash()` erase/write fails | Raw driver smoke test cannot prove hardware health | Log the failure and return before readback comparisons |
+
+#### 5. Good/Base/Bad Cases
+
+| Case | Expected Result |
+|------|-----------------|
+| Good | Sector erase command bytes and WIP wait all succeed | `spi_flash_sector_erase()` returns `0` |
+| Good | SMARTFS data-chain write sees a page-program failure | Function releases the newly allocated chain when possible and returns `SMART_STORAGE_ERR_IO` |
+| Base | Zero-length page write request | `spi_flash_page_write()` returns `0` without emitting a program command |
+| Bad | `spi_flash_sector_erase()` ignores failed `WREN` and returns success after a later status read | Caller may commit metadata for data that was never erased |
+| Bad | `smart_storage_format()` ignores an erase failure and initializes an empty image anyway | Filesystem may mount over stale/corrupt Flash contents |
+
+#### 6. Tests Required
+
+- Run `python tools/test_static_optimizations.py` and assert the GD25QXX return-status checks pass.
+- Build with AC6 and confirm there are no implicit prototype or incompatible return-type errors after changing GD25QXX public signatures.
+- On hardware when available, boot with `SPI_FLASH_RAW_TEST_ENABLE=0` and confirm `smart_storage_self_test()` still passes.
+- For destructive driver bring-up only, temporarily enable `SPI_FLASH_RAW_TEST_ENABLE=1` and confirm erase/write failures stop the raw test before readback verification.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```c
+/* Wrong: erase failure is hidden from SMARTFS. */
+spi_flash_sector_erase(addr);
+g_smartfs_image.block_next[sector] = SMARTFS_BLOCK_MAP_FREE;
+```
+
+##### Correct
+
+```c
+/* Correct: storage metadata changes only after the low-level erase succeeds. */
+if (0 != spi_flash_sector_erase(addr)) {
+    return SMART_STORAGE_ERR_IO;
+}
+g_smartfs_image.block_next[sector] = SMARTFS_BLOCK_MAP_FREE;
+```
+
 ### Scenario: SMARTFS UART Shell Directory Size Semantics And Safe Recursion
 
 #### 1. Scope / Trigger

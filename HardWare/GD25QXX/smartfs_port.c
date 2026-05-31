@@ -670,7 +670,9 @@ static int prv_smartfs_release_chain(uint16_t first_sector)
             return SMART_STORAGE_ERR_CORRUPT;
         }
 
-        spi_flash_sector_erase((uint32_t)sector * SMARTFS_FLASH_SECTOR_SIZE);
+        if(0 != spi_flash_sector_erase((uint32_t)sector * SMARTFS_FLASH_SECTOR_SIZE)) {
+            return SMART_STORAGE_ERR_IO;
+        }
         g_smartfs_image.block_next[sector] = SMARTFS_BLOCK_MAP_FREE;
         sector = next_sector;
 
@@ -877,10 +879,16 @@ static int prv_smartfs_write_chain(const uint8_t *data, uint32_t length, uint16_
             chunk_len = SMARTFS_FLASH_SECTOR_SIZE;
         }
 
-        spi_flash_sector_erase((uint32_t)current_sector * SMARTFS_FLASH_SECTOR_SIZE);
-        spi_flash_buffer_write((uint8_t *)&data[offset],
-                               (uint32_t)current_sector * SMARTFS_FLASH_SECTOR_SIZE,
-                               (uint16_t)chunk_len);
+        if(0 != spi_flash_sector_erase((uint32_t)current_sector * SMARTFS_FLASH_SECTOR_SIZE)) {
+            (void)prv_smartfs_release_chain(first_sector);
+            return SMART_STORAGE_ERR_IO;
+        }
+        if(0 != spi_flash_buffer_write((uint8_t *)&data[offset],
+                                       (uint32_t)current_sector * SMARTFS_FLASH_SECTOR_SIZE,
+                                       (uint16_t)chunk_len)) {
+            (void)prv_smartfs_release_chain(first_sector);
+            return SMART_STORAGE_ERR_IO;
+        }
 
         previous_sector = current_sector;
         offset += chunk_len;
@@ -983,10 +991,16 @@ static int prv_smartfs_append_chain(uint16_t old_first_sector,
             append_offset += append_copy_len;
         }
 
-        spi_flash_sector_erase((uint32_t)current_sector * SMARTFS_FLASH_SECTOR_SIZE);
-        spi_flash_buffer_write(g_smartfs_sector_buffer,
-                               (uint32_t)current_sector * SMARTFS_FLASH_SECTOR_SIZE,
-                               (uint16_t)chunk_len);
+        if(0 != spi_flash_sector_erase((uint32_t)current_sector * SMARTFS_FLASH_SECTOR_SIZE)) {
+            (void)prv_smartfs_release_chain(first_sector);
+            return SMART_STORAGE_ERR_IO;
+        }
+        if(0 != spi_flash_buffer_write(g_smartfs_sector_buffer,
+                                       (uint32_t)current_sector * SMARTFS_FLASH_SECTOR_SIZE,
+                                       (uint16_t)chunk_len)) {
+            (void)prv_smartfs_release_chain(first_sector);
+            return SMART_STORAGE_ERR_IO;
+        }
 
         previous_sector = current_sector;
         new_offset += chunk_len;
@@ -1134,7 +1148,9 @@ static int prv_smartfs_write_meta_copy(uint8_t copy_index, const smartfs_image_t
 
     copy_addr = (uint32_t)copy_index * SMARTFS_META_COPY_SECTOR_COUNT * SMARTFS_FLASH_SECTOR_SIZE;
     for (sector_offset = 0U; sector_offset < SMARTFS_META_COPY_SECTOR_COUNT; sector_offset++) {
-        spi_flash_sector_erase(copy_addr + ((uint32_t)sector_offset * SMARTFS_FLASH_SECTOR_SIZE));
+        if(0 != spi_flash_sector_erase(copy_addr + ((uint32_t)sector_offset * SMARTFS_FLASH_SECTOR_SIZE))) {
+            return SMART_STORAGE_ERR_IO;
+        }
     }
 
     copy_bytes = (uint32_t)sizeof(*image);
@@ -1144,9 +1160,11 @@ static int prv_smartfs_write_meta_copy(uint8_t copy_index, const smartfs_image_t
             chunk_len = SMARTFS_FLASH_SECTOR_SIZE;
         }
 
-        spi_flash_buffer_write((uint8_t *)(((const uint8_t *)image) + offset),
-                               copy_addr + offset,
-                               (uint16_t)chunk_len);
+        if(0 != spi_flash_buffer_write((uint8_t *)(((const uint8_t *)image) + offset),
+                                       copy_addr + offset,
+                                       (uint16_t)chunk_len)) {
+            return SMART_STORAGE_ERR_IO;
+        }
         offset += chunk_len;
     }
 
@@ -1582,7 +1600,9 @@ int smart_storage_format(void)
 
     g_smartfs_loaded = 0U;
     for (sector = 0U; sector < SMARTFS_BLOCK_COUNT; sector++) {
-        spi_flash_sector_erase((uint32_t)sector * SMARTFS_FLASH_SECTOR_SIZE);
+        if(0 != spi_flash_sector_erase((uint32_t)sector * SMARTFS_FLASH_SECTOR_SIZE)) {
+            return SMART_STORAGE_ERR_IO;
+        }
     }
 
     prv_smartfs_init_empty_image(0U);

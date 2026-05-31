@@ -58,14 +58,66 @@
  */
 void test_spi_flash(void);
 void spi_flash_init(void);
-void spi_flash_sector_erase(uint32_t sector_addr);
-void spi_flash_bulk_erase(void);
-void spi_flash_page_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write);
-void spi_flash_buffer_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write);
+/*
+ * 函数作用：
+ *   擦除指定 4KB 扇区，并等待 Flash 内部忙状态结束。
+ * 参数说明：
+ *   sector_addr：目标扇区内任意地址，驱动会按 GD25QXX 扇区擦除命令发送 24 位地址。
+ * 返回值说明：
+ *   0：表示擦除命令发送完成且 WIP 在超时前清零。
+ *  -1：表示 SPI DMA 或 Flash WIP 等待失败。
+ */
+int spi_flash_sector_erase(uint32_t sector_addr);
+
+/*
+ * 函数作用：
+ *   擦除整片 GD25QXX Flash，并等待 Flash 内部忙状态结束。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   0：表示整片擦除命令完成。
+ *  -1：表示 SPI DMA 或 Flash WIP 等待失败。
+ */
+int spi_flash_bulk_erase(void);
+
+/*
+ * 函数作用：
+ *   向 Flash 的同一页内写入最多 256 字节数据。
+ * 参数说明：
+ *   pbuffer：待写入数据缓冲区，写入长度大于 0 时必须非空。
+ *   write_addr：页内写入起始地址。
+ *   num_byte_to_write：待写入字节数，调用者应保证不跨越 256B 页边界。
+ * 返回值说明：
+ *   0：表示页写命令完成。
+ *  -1：表示参数非法、SPI DMA 或 Flash WIP 等待失败。
+ */
+int spi_flash_page_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write);
+
+/*
+ * 函数作用：
+ *   按 256B 页边界自动拆分，把一段连续数据写入 Flash。
+ * 参数说明：
+ *   pbuffer：待写入数据缓冲区，写入长度大于 0 时必须非空。
+ *   write_addr：写入起始地址。
+ *   num_byte_to_write：待写入总字节数。
+ * 返回值说明：
+ *   0：表示全部页写命令完成。
+ *  -1：表示任意一页写入失败或参数非法。
+ */
+int spi_flash_buffer_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write);
 void spi_flash_buffer_read(uint8_t *pbuffer, uint32_t read_addr, uint16_t num_byte_to_read);
 uint32_t spi_flash_read_id(void);
 void spi_flash_start_read_sequence(uint32_t read_addr);
-void spi_flash_write_enable(void);
+/*
+ * 函数作用：
+ *   发送 GD25QXX 写使能命令，为后续页编程、扇区擦除或整片擦除打开 WEL。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   0：表示 WREN 命令字节已经通过 DMA 发送完成。
+ *  -1：表示 SPI DMA 传输超时，调用者不能继续执行写擦命令。
+ */
+int spi_flash_write_enable(void);
 /*
  * 函数作用：
  *   等待 SPI Flash 内部写入或擦除忙状态结束，并带超时保护。

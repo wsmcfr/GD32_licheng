@@ -435,16 +435,50 @@ float ADS118_PGA_SET(GD30AD3344_PGA_TypeDef PGA)
 
 }
 
-float GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH, GD30AD3344_PGA_TypeDef Ref)
+/*
+ * 函数作用：
+ *   查询最近一次 GD30AD3344 底层 SPI/DMA 操作是否失败。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   0：表示最近一次操作没有记录 DMA 超时。
+ *   非 0：表示最近一次操作发生 DMA 超时或参数错误。
+ */
+uint8_t GD30AD3344_GetLastError(void)
+{
+    return s_gd30ad3344_dma_error;
+}
+
+/*
+ * 函数作用：
+ *   读取指定 GD30AD3344 通道并换算为电压，同时把 SPI/DMA 错误显式返回给调用者。
+ * 参数说明：
+ *   CH：待采样的输入通道选择。
+ *   Ref：待使用的 PGA 量程配置。
+ *   out_voltage_v：输出电压值，单位 V；必须为有效指针。
+ * 返回值说明：
+ *   0：表示采样成功，out_voltage_v 已更新。
+ *  -1：表示参数无效或 SPI DMA 传输失败，调用者不能使用本次电压值。
+ */
+int GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH, GD30AD3344_PGA_TypeDef Ref, float *out_voltage_v)
 {
     uint16_t raw_data;
     float result = 0.0;
+
+    if(NULL == out_voltage_v) {
+        s_gd30ad3344_dma_error = 1U;
+        return -1;
+    }
 
     GD30AD3344_InitStruct.MUX = CH;
     GD30AD3344_InitStruct.PGA = Ref;
 
     raw_data = spi_gd30ad3344_send_halfword_dma(GD30AD3344_InitStruct_Value);
+    if(0U != s_gd30ad3344_dma_error) {
+        return -1;
+    }
     
     result = (float)raw_data * ADS118_PGA_SET(Ref) / 32768;
-    return (float)result;
+    *out_voltage_v = result;
+    return 0;
 }

@@ -119,14 +119,29 @@ int GD30AD3344_Exit_LowPower(void);
 
 /*
  * 函数作用：
- *   读取指定通道和量程下的电压值。
+ *   读取指定通道和量程下的电压值，并显式返回采样状态。
  * 参数说明：
  *   CH：待采样的输入通道选择。
  *   Ref：待使用的 PGA 量程配置。
+ *   out_voltage_v：输出电压值，单位 V；成功时写入，失败时不保证内容有效。
  * 返回值说明：
- *   返回按照当前 PGA 量程换算后的电压值，单位为伏特。
+ *   0：表示采样和换算成功。
+ *  -1：表示输出指针为空或 SPI DMA 传输失败。
  */
-float GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH,GD30AD3344_PGA_TypeDef Ref);
+int GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH,
+                       GD30AD3344_PGA_TypeDef Ref,
+                       float *out_voltage_v);
+
+/*
+ * 函数作用：
+ *   查询最近一次 GD30AD3344 SPI/DMA 采样或配置操作是否失败。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   0：表示最近一次操作未记录错误。
+ *   非 0：表示最近一次操作发生过 SPI DMA 超时或参数错误。
+ */
+uint8_t GD30AD3344_GetLastError(void);
 
 #ifdef __cplusplus
 }

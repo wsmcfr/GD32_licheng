@@ -30,7 +30,7 @@ This is a cross-layer contract. The Keil post-build packer, App-side raw receive
 | UART receiver | `uart_ota_feed_rx_bytes(const uint8_t *data, uint16_t length)` | Consumes raw bytes from the task layer, first parsing the header, then collecting payload bytes |
 | ISR handoff | `USART1_IRQHandler(void)` and `DMA0_Channel5_IRQHandler(void)` | Copy DMA bytes into `uart_ota_dma_buffer`, set `uart_ota_rx_flag`, and re-arm DMA; no CRC, logging, or Flash writes in ISR |
 | Task polling | `uart_ota_task(void)` | Takes DMA chunks, feeds raw bytes to the OTA parser, and commits payload to Flash only after full payload CRC passes |
-| Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA485: ready, send Project_ota.bin raw` after boot so operators can confirm the RS485 port |
+| Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA485: ready, send Project_ota.bin raw` only after startup self-tests and `scheduler_init()` have completed, so the task loop can consume the DMA queue immediately |
 
 ### 3. Protocol Contract
 
@@ -87,6 +87,7 @@ BootLoader copies `appSize` bytes from `0x08067000` to `0x0800D000`, then recalc
 | Check | Valid Condition | Failure Result | Required Behavior |
 |-------|-----------------|----------------|-------------------|
 | Header magic | `magic == 0x474F5441` | Not a valid OTA image | Enter error state; do not erase Flash |
+| Error-state resync | Next raw stream begins with the little-endian magic bytes `41 54 4F 47` | User is retrying after a bad file or bad payload | Reset the OTA session, prefill the 4-byte magic in the header buffer, and continue parsing the new header |
 | Header size | `header_size == 64` | Unsupported image format | Enter error state; do not erase Flash |
 | Payload size | `1 <= image_size <= 100KB` | Exceeds internal download buffer/RAM buffer | Enter error state; do not erase Flash |
 | Load address | `load_addr == 0x0800D000` | Would write wrong App region | Enter error state; do not erase Flash |
@@ -104,6 +105,7 @@ BootLoader copies `appSize` bytes from `0x08067000` to `0x0800D000`, then recalc
 | Case | Input | Expected Result |
 |------|-------|-----------------|
 | Good | Raw send `project/output/Project_ota.bin`, payload `<= 100KB`, valid header and vector table | App prints `OTA: header ok`, `OTA: payload ok`, `OTA: ready, reset to BootLoader`; BootLoader prints `app crc32 check pass` and `app update success` |
+| Good | User first sends `Project.bin`, sees `OTA: bad header status=...`, then immediately raw-sends `Project_ota.bin` from byte 0 | App prints `OTA: resync after error code=...`, then parses the new header without requiring a reset |
 | Base | Normal USART0 debug command | Handled by `uart_task()` and does not affect RS485 OTA state |
 | Base | RS485 receives bytes that do not start with the OTA magic | App enters OTA error state and does not erase Flash |
 | Bad | Raw send `Project.bin` instead of `Project_ota.bin` | Header magic fails; no Flash erase/write |
@@ -132,6 +134,8 @@ Required assertions:
 |-----------|-------------------|
 | Packer builds | `gcc` exits with status 0 |
 | Header-bin static contract | `tools.test_header_bin_ota_static` exits with status 0 |
+| Ready probe ordering | Static test proves `uart_ota_emit_startup_probe()` is after `scheduler_init()` |
+| Error resync | Static test proves error state keeps a magic-prefix buffer and preloads the first 4 header bytes before retrying |
 | Keil build | Build log reports `0 Error(s)` |
 | Raw App output | `project/output/Project.bin` exists and is non-empty |
 | OTA image output | `project/output/Project_ota.bin` exists and is exactly 64 bytes larger than `Project.bin` |
@@ -146,7 +150,7 @@ Use this procedure whenever sending a new App image through RS485/USART1 OTA.
 |------|------------------|-------------------|
 | 1 | Build the Keil target | Build log reports `0 Error(s)` |
 | 2 | Confirm generated files | `project/output/Project.bin` and `project/output/Project_ota.bin` both exist |
-| 3 | Open a serial tool on the RS485/USART1 COM port at `460800 8N1` | Fresh boot shows `OTA485: ready, send Project_ota.bin raw` |
+| 3 | Open a serial tool on the RS485/USART1 COM port at `460800 8N1` | Fresh boot shows `OTA485: ready, send Project_ota.bin raw` after storage self-test and scheduler initialization |
 | 4 | Use the serial tool's raw/direct file-send mode | Select `project/output/Project_ota.bin`; do not select YModem/XModem |
 | 5 | Watch USART0 debug logs | App prints `OTA: header ok`, `OTA: payload ok`, and `OTA: ready, reset to BootLoader` |
 | 6 | Watch BootLoader UART logs after reset | BootLoader prints `app crc32 check pass` and `app update success` |
@@ -192,12 +196,34 @@ usart_interrupt_enable(USART1, USART_INT_IDLE);
 dma_interrupt_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FTF);
 ```
 
+#### Wrong
+
+```c
+/* Wrong: ready is emitted before storage self-test and scheduler task polling are ready. */
+uart_ota_reset_runtime();
+uart_ota_emit_startup_probe();
+smart_storage_self_test();
+scheduler_init();
+```
+
+#### Correct
+
+```c
+/* Correct: ready means startup checks finished and uart_ota_task can consume queued DMA data. */
+uart_ota_reset_runtime();
+smart_storage_self_test();
+scheduler_init();
+uart_ota_emit_startup_probe();
+```
+
 ---
 
 ## Common Mistakes
 
 - Do not send `Project.bin`; send `Project_ota.bin`.
 - Do not use terminal-managed file-transfer modes for this branch's OTA flow; use raw/direct file send.
+- Do not emit the RS485 `ready` probe before `scheduler_init()`; operators may start raw-send immediately after seeing it.
+- Do not make an OTA error state permanent for ordinary bad-file retries; a fresh stream beginning at the OTA magic must resync without requiring a board reset.
 - Do not reintroduce helper senders or legacy frame wrapping as an operator requirement.
 - Do not reduce `BSP_USART1_RX_BUFFER_SIZE` or `UART_OTA_RX_QUEUE_DEPTH` without validating DMA full-transfer cadence.
 - Do not remove the 100KB RAM payload buffer unless you redesign reception around a real ring buffer or external storage.

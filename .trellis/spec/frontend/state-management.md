@@ -80,8 +80,28 @@ Examples:
 - `oled_task()` derives voltage text from `adc_value[]`
 - `led_disp()` derives a bitmask from `ucLed[]`
 - `rtc_task()` derives display text from `rtc_initpara`
+- `gd30ad3344_pt100_task()` derives voltage, resistance, temperature, `sample_ready`, and `range_valid` from a successful `GD30AD3344_AD_Read(..., &out_voltage_v)` call
 
 This keeps the source of truth close to the render/output path.
+
+### Error-Derived Validity Flags
+
+App-facing state that depends on a hardware sample must carry validity separately from the last numeric value.
+For GD30AD3344/PT100:
+
+```c
+if (0 != GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_voltage_v)) {
+    s_pt100_latest.sample_ready = 0U;
+    s_pt100_latest.range_valid = 0U;
+    return;
+}
+```
+
+Contracts:
+
+- `sample_ready == 1` means the cached PT100 numbers came from a successful current sample.
+- `range_valid == 0` can mean either the hardware sample failed or the converted temperature was clamped outside the supported range; logs should distinguish these cases.
+- Do not overwrite voltage/resistance/temperature with data converted from a failed SPI/DMA read. Keeping the previous numeric values plus clearing validity is safer for display and diagnostics.
 
 ---
 
@@ -100,3 +120,8 @@ After consuming an ISR-produced frame, clear the app flag and reset temporary bu
 
 `led_disp()` keeps `led_mask_old` plus a first-run valid flag and compares the cached bitmap with the current bitmap to avoid redundant writes.
 Follow that idea when output hardware changes are expensive or noisy.
+
+### Treating failed sensor reads as valid data
+
+Do not convert GD30AD3344 DMA timeout sentinels such as `0xFFFF` into voltage or temperature.
+Check `GD30AD3344_AD_Read()` first, clear the app-visible validity flags on failure, and return before publishing derived state.

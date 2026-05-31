@@ -23,6 +23,8 @@ Error handling is done with a small set of concrete mechanisms:
 | CPU fault handlers | `User/gd32f4xx_it.c` | Infinite loop for fail-stop debugging |
 | Assertion backend | `User/main.c` retarget/assert support | UART log + infinite loop |
 | Storage status enums | `SMART_STORAGE_ERR_*`, `ErrStatus` | Check immediately and branch |
+| GD25QXX write/erase helpers | `int` status from `spi_flash_*write*`, `spi_flash_*erase*`, `spi_flash_write_enable()` | Abort the higher-level storage operation and return/log IO failure |
+| GD30AD3344 sampling | `GD30AD3344_AD_Read(..., &out_voltage_v)` returns `0/-1`; `GD30AD3344_GetLastError()` exposes the last DMA/parameter error | Do not use the output value when the read failed |
 | Soft runtime flags | `rx_flag` in UART flow | Set/clear flag and return early |
 
 Example fatal handler from `User/gd32f4xx_it.c`:
@@ -58,6 +60,18 @@ Example:
 err = smart_storage_write_file(path, data, length);
 if (SMART_STORAGE_ERR_OK != err) {
     my_printf(DEBUG_USART, "SMARTFS: write failed (%d)\r\n", err);
+    return;
+}
+```
+
+Example GD30AD3344 sampling behavior:
+
+```c
+if (0 != GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_voltage_v)) {
+    s_pt100_latest.sample_ready = 0U;
+    s_pt100_latest.range_valid = 0U;
+    my_printf(DEBUG_USART, "PT100: sample failed err=%u\r\n",
+              (unsigned int)GD30AD3344_GetLastError());
     return;
 }
 ```
@@ -102,6 +116,8 @@ Interrupt handlers should:
 | Function Family | Failure Signal | Expected Caller Behavior |
 |-----------------|----------------|--------------------------|
 | SMARTFS metadata init | `SMART_STORAGE_ERR_*` | Reject invalid metadata or bad pointers, do not continue with a corrupt image |
+| GD25QXX write/erase | `-1` from `spi_flash_write_enable()`, `spi_flash_sector_erase()`, `spi_flash_page_write()`, or `spi_flash_buffer_write()` | Return `SMART_STORAGE_ERR_IO` or stop the destructive raw test before readback verification |
+| GD30AD3344 ADC read | `-1` from `GD30AD3344_AD_Read()` | Clear app-visible sample validity and do not convert the failed raw value into voltage, resistance, or temperature |
 | Timebase setup | implicit fatal loop | Treat as unrecoverable startup failure |
 | UART receive handoff | `rx_flag` stays `0` | Task returns immediately without processing |
 

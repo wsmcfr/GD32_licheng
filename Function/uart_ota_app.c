@@ -94,6 +94,12 @@ typedef struct
 /* OTA 接收头部临时缓存，只保存固定 64 字节头，不保存整包头外数据。 */
 static uint8_t g_uart_ota_header_buffer[UART_OTA_IMAGE_HEADER_SIZE] = {0};
 
+/* OTA 错误态重同步时缓存 magic 前缀，允许 4 字节 magic 被 DMA 拆成多块。 */
+static uint8_t g_uart_ota_resync_magic_buffer[4] = {0};
+
+/* OTA 错误态重同步 magic 当前已经匹配的字节数。 */
+static uint8_t g_uart_ota_resync_magic_bytes = 0U;
+
 /* OTA payload RAM 缓冲，先完整接收和校验，再统一写下载区，避免 Flash 擦写期间丢串口。 */
 static uint8_t g_uart_ota_payload_buffer[UART_OTA_PAYLOAD_BUFFER_SIZE] = {0};
 
@@ -247,6 +253,20 @@ static void prv_uart_ota_reset_session(uint8_t keep_trace)
 
 /*
  * 函数作用：
+ *   清空错误态下用于重新同步 OTA magic 的临时缓存。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+static void prv_uart_ota_clear_resync_magic(void)
+{
+    g_uart_ota_resync_magic_bytes = 0U;
+    memset(g_uart_ota_resync_magic_buffer, 0, sizeof(g_uart_ota_resync_magic_buffer));
+}
+
+/*
+ * 函数作用：
  *   记录 OTA 错误并进入错误态，防止错误文件继续写入升级缓存。
  * 参数说明：
  *   error_code：错误来源编码，通常使用 bootloader_port_status_t 或自定义数值。
@@ -257,6 +277,75 @@ static void prv_uart_ota_enter_error(uint32_t error_code)
 {
     g_uart_ota_session.error_code = error_code;
     g_uart_ota_session.state = UART_OTA_STATE_ERROR;
+    prv_uart_ota_clear_resync_magic();
+}
+
+/*
+ * 函数作用：
+ *   在 OTA 错误态中尝试用下一包数据重新同步到合法头部。
+ * 主要流程：
+ *   1. 只在当前状态为 UART_OTA_STATE_ERROR 时工作。
+ *   2. 逐字节匹配 OTA 头部 magic，允许 magic 被 DMA 拆成多个小块。
+ *   3. 命中 magic 后预填头部缓存前 4 字节，重置会话并让调用者继续解析后续头部。
+ * 参数说明：
+ *   data：本次任务层取出的连续字节缓冲区。
+ *   length：本次缓冲区有效字节数。
+ *   consumed_prefix：输出本次为了补齐 magic 已经消耗的字节数。
+ * 返回值说明：
+ *   1：表示已经重新同步到等待头部状态，调用者可以继续解析本包。
+ *   0：表示当前仍不能重新同步，本包应被忽略。
+ */
+static uint8_t prv_uart_ota_try_resync_from_error(const uint8_t *data,
+                                                  uint16_t length,
+                                                  uint32_t *consumed_prefix)
+{
+    static const uint8_t magic_bytes[4] = {0x41U, 0x54U, 0x4FU, 0x47U};
+    uint32_t offset = 0U;
+
+    if(NULL != consumed_prefix){
+        *consumed_prefix = 0U;
+    }
+
+    if(UART_OTA_STATE_ERROR == g_uart_ota_session.state){
+        /* 当前处于错误态，继续尝试用新 OTA 文件头重新同步。 */
+    }else{
+        return 1U;
+    }
+
+    if((NULL == data) || (0U == length) || (NULL == consumed_prefix)){
+        return 0U;
+    }
+
+    /*
+     * 错误态下只接受一份新 OTA 文件从头开始发送。
+     * 这里按 magic 前缀逐字节推进，不在数据块中间扫描 magic，避免在损坏
+     * payload 的中间字节里误判成新的 OTA 文件。
+     */
+    while((offset < (uint32_t)length) && (g_uart_ota_resync_magic_bytes < 4U)){
+        if(data[offset] != magic_bytes[g_uart_ota_resync_magic_bytes]){
+            prv_uart_ota_clear_resync_magic();
+            return 0U;
+        }
+
+        g_uart_ota_resync_magic_buffer[g_uart_ota_resync_magic_bytes] = data[offset];
+        g_uart_ota_resync_magic_bytes++;
+        offset++;
+    }
+
+    if(g_uart_ota_resync_magic_bytes < 4U){
+        return 0U;
+    }
+
+    my_printf(DEBUG_USART,
+              "OTA: resync after error code=%lu\r\n",
+              (unsigned long)g_uart_ota_session.error_code);
+    prv_uart_ota_reset_session(1U);
+    memset(g_uart_ota_header_buffer, 0, sizeof(g_uart_ota_header_buffer));
+    memcpy(g_uart_ota_header_buffer, g_uart_ota_resync_magic_buffer, sizeof(g_uart_ota_resync_magic_buffer));
+    g_uart_ota_session.header_bytes = 4U;
+    *consumed_prefix = offset;
+    prv_uart_ota_clear_resync_magic();
+    return 1U;
 }
 
 /*
@@ -442,6 +531,7 @@ void uart_ota_reset_runtime(void)
 
     memset(uart_ota_dma_buffer, 0, sizeof(uart_ota_dma_buffer));
     memset(g_uart_ota_header_buffer, 0, sizeof(g_uart_ota_header_buffer));
+    prv_uart_ota_clear_resync_magic();
 }
 
 /*
@@ -507,6 +597,10 @@ void uart_ota_feed_rx_bytes(const uint8_t *data, uint16_t length)
     bootloader_port_status_t status;
 
     if((NULL == data) || (0U == length)){
+        return;
+    }
+
+    if(0U == prv_uart_ota_try_resync_from_error(data, length, &offset)){
         return;
     }
 

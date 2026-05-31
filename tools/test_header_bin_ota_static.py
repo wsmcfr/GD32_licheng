@@ -168,6 +168,44 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         self.assertIn("uart_ota_feed_rx_bytes", self.read_text("Function/uart_ota_app.c"))
         self.assertIn("void DMA0_Channel5_IRQHandler(void);", irq_h)
 
+    def test_ota_ready_probe_is_emitted_after_scheduler_is_ready(self):
+        """
+        函数作用：
+          验证 RS485 OTA ready 探测串只会在调度器初始化之后发出。
+          这样上位机看到 ready 后立即发送 Project_ota.bin 时，uart_ota_task()
+          已经具备在主循环中消费 DMA 队列的条件，避免启动自检期间队列溢出。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时说明 ready 提示仍早于任务消费能力。
+        """
+        scheduler_c = self.read_text("Function/scheduler.c")
+        scheduler_ready_index = scheduler_c.find("scheduler_init();")
+        probe_index = scheduler_c.find("uart_ota_emit_startup_probe();")
+
+        self.assertGreaterEqual(scheduler_ready_index, 0)
+        self.assertGreaterEqual(probe_index, 0)
+        self.assertLess(scheduler_ready_index, probe_index)
+
+    def test_ota_error_state_can_resync_on_next_header_magic(self):
+        """
+        函数作用：
+          验证 OTA 错误态不会永久吞掉后续数据，而是能在下一次合法头部 magic
+          出现时重置会话并重新接收。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时说明用户发错文件后仍必须复位才能重试。
+        """
+        uart_ota_c = self.read_text("Function/uart_ota_app.c")
+
+        self.assertIn("prv_uart_ota_try_resync_from_error", uart_ota_c)
+        self.assertIn("UART_OTA_STATE_ERROR == g_uart_ota_session.state", uart_ota_c)
+        self.assertIn("prv_uart_ota_reset_session(1U)", uart_ota_c)
+        self.assertIn("g_uart_ota_resync_magic_buffer", uart_ota_c)
+        self.assertIn("g_uart_ota_resync_magic_bytes", uart_ota_c)
+        self.assertIn("g_uart_ota_session.header_bytes = 4U", uart_ota_c)
+
     def test_keil_after_build_generates_project_ota_bin(self):
         """
         函数作用：

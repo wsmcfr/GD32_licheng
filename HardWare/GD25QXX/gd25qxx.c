@@ -41,6 +41,21 @@ static uint8_t s_spi_flash_dma_error;
 
 /*
  * 函数作用：
+ *   发送 1 个 GD25QXX 命令或地址/数据字节，并把底层 DMA 失败转换为状态码。
+ * 参数说明：
+ *   byte：需要经 SPI 发送到 Flash 的命令、地址或数据字节。
+ * 返回值说明：
+ *   0：表示该字节 DMA 收发完成。
+ *  -1：表示 DMA 等待超时，调用者必须终止本次 Flash 事务。
+ */
+static int prv_spi_flash_send_command_byte(uint8_t byte)
+{
+    (void)spi_flash_send_byte_dma(byte);
+    return (0U == s_spi_flash_dma_error) ? 0 : -1;
+}
+
+/*
+ * 函数作用：
  *   初始化 GD25QXX 片选状态并使能绑定的 SPI 外设。
  * 参数说明：
  *   无参数。
@@ -58,54 +73,106 @@ void spi_flash_init(void)
     spi_enable(SPI_FLASH);
 }
 
-void spi_flash_sector_erase(uint32_t sector_addr)
+int spi_flash_sector_erase(uint32_t sector_addr)
 {
-    spi_flash_write_enable();
+    if(0 != spi_flash_write_enable()) {
+        return -1;
+    }
 
     SPI_FLASH_CS_LOW();
-    spi_flash_send_byte_dma(SE);
-    spi_flash_send_byte_dma((sector_addr & 0xFF0000) >> 16);
-    spi_flash_send_byte_dma((sector_addr & 0xFF00) >> 8);
-    spi_flash_send_byte_dma(sector_addr & 0xFF);
+    if(0 != prv_spi_flash_send_command_byte(SE)) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
+    if(0 != prv_spi_flash_send_command_byte((uint8_t)((sector_addr & 0xFF0000UL) >> 16))) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
+    if(0 != prv_spi_flash_send_command_byte((uint8_t)((sector_addr & 0xFF00UL) >> 8))) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
+    if(0 != prv_spi_flash_send_command_byte((uint8_t)(sector_addr & 0xFFUL))) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
     SPI_FLASH_CS_HIGH();
 
-    (void)spi_flash_wait_for_write_end();
+    return spi_flash_wait_for_write_end();
 }
 
-void spi_flash_bulk_erase(void)
+int spi_flash_bulk_erase(void)
 {
-    spi_flash_write_enable();
+    if(0 != spi_flash_write_enable()) {
+        return -1;
+    }
 
     SPI_FLASH_CS_LOW();
-    spi_flash_send_byte_dma(BE);
+    if(0 != prv_spi_flash_send_command_byte(BE)) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
     SPI_FLASH_CS_HIGH();
 
-    (void)spi_flash_wait_for_write_end();
+    return spi_flash_wait_for_write_end();
 }
 
-void spi_flash_page_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write)
+int spi_flash_page_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write)
 {
-    spi_flash_write_enable();
+    if(0U == num_byte_to_write) {
+        return 0;
+    }
+
+    if((NULL == pbuffer) && (num_byte_to_write > 0U)) {
+        return -1;
+    }
+
+    if(0 != spi_flash_write_enable()) {
+        return -1;
+    }
 
     SPI_FLASH_CS_LOW();
-    spi_flash_send_byte_dma(WRITE);
-    spi_flash_send_byte_dma((write_addr & 0xFF0000) >> 16);
-    spi_flash_send_byte_dma((write_addr & 0xFF00) >> 8);
-    spi_flash_send_byte_dma(write_addr & 0xFF);
+    if(0 != prv_spi_flash_send_command_byte(WRITE)) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
+    if(0 != prv_spi_flash_send_command_byte((uint8_t)((write_addr & 0xFF0000UL) >> 16))) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
+    if(0 != prv_spi_flash_send_command_byte((uint8_t)((write_addr & 0xFF00UL) >> 8))) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
+    if(0 != prv_spi_flash_send_command_byte((uint8_t)(write_addr & 0xFFUL))) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
 
     while (num_byte_to_write--)
     {
-        spi_flash_send_byte_dma(*pbuffer);
+        if(0 != prv_spi_flash_send_command_byte(*pbuffer)) {
+            SPI_FLASH_CS_HIGH();
+            return -1;
+        }
         pbuffer++;
     }
 
     SPI_FLASH_CS_HIGH();
-    (void)spi_flash_wait_for_write_end();
+    return spi_flash_wait_for_write_end();
 }
 
-void spi_flash_buffer_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write)
+int spi_flash_buffer_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_byte_to_write)
 {
     uint8_t num_of_page = 0, num_of_single = 0, addr = 0, count = 0, temp = 0;
+
+    if(0U == num_byte_to_write) {
+        return 0;
+    }
+
+    if(NULL == pbuffer) {
+        return -1;
+    }
 
     addr = write_addr % SPI_FLASH_PAGE_SIZE;
     count = SPI_FLASH_PAGE_SIZE - addr;
@@ -116,17 +183,25 @@ void spi_flash_buffer_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_
     {
         if (0 == num_of_page)
         {
-            spi_flash_page_write(pbuffer, write_addr, num_byte_to_write);
+            if(0 != spi_flash_page_write(pbuffer, write_addr, num_byte_to_write)) {
+                return -1;
+            }
         }
         else
         {
             while (num_of_page--)
             {
-                spi_flash_page_write(pbuffer, write_addr, SPI_FLASH_PAGE_SIZE);
+                if(0 != spi_flash_page_write(pbuffer, write_addr, SPI_FLASH_PAGE_SIZE)) {
+                    return -1;
+                }
                 write_addr += SPI_FLASH_PAGE_SIZE;
                 pbuffer += SPI_FLASH_PAGE_SIZE;
             }
-            spi_flash_page_write(pbuffer, write_addr, num_of_single);
+            if(0 != num_of_single) {
+                if(0 != spi_flash_page_write(pbuffer, write_addr, num_of_single)) {
+                    return -1;
+                }
+            }
         }
     }
     else
@@ -136,14 +211,20 @@ void spi_flash_buffer_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_
             if (num_of_single > count)
             {
                 temp = num_of_single - count;
-                spi_flash_page_write(pbuffer, write_addr, count);
+                if(0 != spi_flash_page_write(pbuffer, write_addr, count)) {
+                    return -1;
+                }
                 write_addr += count;
                 pbuffer += count;
-                spi_flash_page_write(pbuffer, write_addr, temp);
+                if(0 != spi_flash_page_write(pbuffer, write_addr, temp)) {
+                    return -1;
+                }
             }
             else
             {
-                spi_flash_page_write(pbuffer, write_addr, num_byte_to_write);
+                if(0 != spi_flash_page_write(pbuffer, write_addr, num_byte_to_write)) {
+                    return -1;
+                }
             }
         }
         else
@@ -152,23 +233,31 @@ void spi_flash_buffer_write(uint8_t *pbuffer, uint32_t write_addr, uint16_t num_
             num_of_page = num_byte_to_write / SPI_FLASH_PAGE_SIZE;
             num_of_single = num_byte_to_write % SPI_FLASH_PAGE_SIZE;
 
-            spi_flash_page_write(pbuffer, write_addr, count);
+            if(0 != spi_flash_page_write(pbuffer, write_addr, count)) {
+                return -1;
+            }
             write_addr += count;
             pbuffer += count;
 
             while (num_of_page--)
             {
-                spi_flash_page_write(pbuffer, write_addr, SPI_FLASH_PAGE_SIZE);
+                if(0 != spi_flash_page_write(pbuffer, write_addr, SPI_FLASH_PAGE_SIZE)) {
+                    return -1;
+                }
                 write_addr += SPI_FLASH_PAGE_SIZE;
                 pbuffer += SPI_FLASH_PAGE_SIZE;
             }
 
             if (0 != num_of_single)
             {
-                spi_flash_page_write(pbuffer, write_addr, num_of_single);
+                if(0 != spi_flash_page_write(pbuffer, write_addr, num_of_single)) {
+                    return -1;
+                }
             }
         }
     }
+
+    return 0;
 }
 
 void spi_flash_buffer_read(uint8_t *pbuffer, uint32_t read_addr, uint16_t num_byte_to_read)
@@ -212,11 +301,15 @@ void spi_flash_start_read_sequence(uint32_t read_addr)
     spi_flash_send_byte_dma(read_addr & 0xFF);
 }
 
-void spi_flash_write_enable(void)
+int spi_flash_write_enable(void)
 {
     SPI_FLASH_CS_LOW();
-    spi_flash_send_byte_dma(WREN);
+    if(0 != prv_spi_flash_send_command_byte(WREN)) {
+        SPI_FLASH_CS_HIGH();
+        return -1;
+    }
     SPI_FLASH_CS_HIGH();
+    return 0;
 }
 
 int spi_flash_wait_for_write_end(void)
@@ -616,7 +709,10 @@ void test_spi_flash(void)
     my_printf(DEBUG_USART,
               "Erasing SMARTFS-owned sector at address 0x%lX...\r\n",
               test_addr);
-    spi_flash_sector_erase(test_addr);
+    if(0 != spi_flash_sector_erase(test_addr)) {
+        my_printf(DEBUG_USART, "Sector erase failed.\r\n");
+        return;
+    }
     my_printf(DEBUG_USART, "Sector erased.\r\n");
 
     /* 擦除后先读回一页确认全为 0xFF，避免在擦除失败的扇区上继续写入。 */
@@ -652,7 +748,10 @@ void test_spi_flash(void)
 
     my_printf(DEBUG_USART, "Writing data to address 0x%lX: \"%s\"\r\n", test_addr, write_buffer);
     /* 写入完整一页，尾部填 0，便于读回后做定长 memcmp。 */
-    spi_flash_buffer_write(write_buffer, test_addr, SPI_FLASH_PAGE_SIZE);
+    if(0 != spi_flash_buffer_write(write_buffer, test_addr, SPI_FLASH_PAGE_SIZE)) {
+        my_printf(DEBUG_USART, "Data write failed.\r\n");
+        return;
+    }
     my_printf(DEBUG_USART, "Data written.\r\n");
 
     /* 第五步：重新从 Flash 读回，验证数据确实落到外部存储芯片。 */

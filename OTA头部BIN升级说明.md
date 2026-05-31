@@ -47,12 +47,14 @@ tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.b
 | 步骤 | 操作 | 预期现象 |
 |------|------|----------|
 | 1 | 编译 Keil 工程 | `Project.bin` 和 `Project_ota.bin` 都生成 |
-| 2 | 打开 RS485/USART1 串口，`460800 8N1` | 上电后看到 `OTA485: ready, send Project_ota.bin raw` |
+| 2 | 打开 RS485/USART1 串口，`460800 8N1` | 启动自检和调度器初始化完成后看到 `OTA485: ready, send Project_ota.bin raw` |
 | 3 | 使用串口工具的原始/直接发送文件功能 | 选择 `project/output/Project_ota.bin` |
 | 4 | 等待发送完成 | USART0 日志出现 `OTA: header ok`、`OTA: payload ok` |
 | 5 | 等待 App 自动复位 | BootLoader 日志出现 `app crc32 check pass` 和 `app update success` |
 
 串口工具必须使用原始/直接发送文件模式；现场只选择 `Project_ota.bin`。
+
+若误发 `Project.bin`、旧格式流或损坏文件，`USART0` 会出现 `OTA: bad header status=...` 或 `OTA: payload failed status=...`。修正后可直接从文件开头重新发送合法 `Project_ota.bin`；看到 `OTA: resync after error code=...` 表示 App 已从错误态重新同步，不必为了普通发错文件而复位。
 
 ## 限制
 

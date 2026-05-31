@@ -552,7 +552,9 @@ static int lfs_deskio_prog(const struct lfs_config *c, lfs_block_t block, lfs_of
         return LFS_ERR_INVAL;
     }
 
-    spi_flash_buffer_write((uint8_t *)buffer, (block * LFS_FLASH_SECTOR_SIZE) + off, size);
+    if(0 != spi_flash_buffer_write((uint8_t *)buffer, (block * LFS_FLASH_SECTOR_SIZE) + off, size)) {
+        return LFS_ERR_IO;
+    }
     return LFS_ERR_OK;
 }
 
@@ -577,7 +579,9 @@ static int lfs_deskio_erase(const struct lfs_config *c, lfs_block_t block)
         return LFS_ERR_INVAL;
     }
 
-    spi_flash_sector_erase(block * LFS_FLASH_SECTOR_SIZE);
+    if(0 != spi_flash_sector_erase(block * LFS_FLASH_SECTOR_SIZE)) {
+        return LFS_ERR_IO;
+    }
     return LFS_ERR_OK;
 }
 
