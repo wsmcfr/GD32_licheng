@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 31
+- **Total Sessions**: 32
 - **Last Active**: 2026-05-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1499 | Active |
+| `journal-1.md` | ~1549 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-05-31 | 优化 OLED 串口 ADC LED 路径 | `e705b9a` | `feature/header-bin-ota` |
 | 31 | 2026-05-31 | OTA and storage error hardening | `27c1725` | `feature/header-bin-ota` |
 | 30 | 2026-05-31 | 方案B头部BIN OTA升级流程 | `330d3e5`, `bb2dd52` | `feature/header-bin-ota` |
 | 29 | 2026-05-31 | 添加 YModem OTA 升级与规则 | `b27b9e2` | `feature/ymodem-ota` |

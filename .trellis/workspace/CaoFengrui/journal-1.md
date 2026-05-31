@@ -685,7 +685,7 @@ Completed and pushed OTA/storage hardening for the header-bin OTA branch. The se
 
 ### Summary
 
-(Add summary)
+Completed the firmware optimization pass requested for OLED, RS485/USART1 OTA receive flow, ADC/DMA setup, LED state ownership, low-power LED blanking, and PT100 debug logging. DAC behavior was intentionally left unchanged per user request.
 
 ### Main Changes
 
@@ -716,7 +716,11 @@ Completed and pushed OTA/storage hardening for the header-bin OTA branch. The se
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python tools\test_static_optimizations.py`
+- [OK] `python -m unittest tools.test_header_bin_ota_static` - 8 tests OK
+- [OK] `git diff --check` - no whitespace errors, only CRLF conversion warnings
+- [OK] Keil batch build for `project\2026706296.uvprojx` - `0 Error(s), 0 Warning(s)`
+- [OK] Legacy-pattern scan found no old OLED void signatures, 10000ms OLED wait, or app/power direct LED toggle/off usage
 
 ### Status
 
@@ -1490,6 +1494,51 @@ Removed the obsolete SD card/FatFs stack and refined the deepest low-power workf
 | Hash | Message |
 |------|---------|
 | `27c1725` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 32: 优化 OLED 串口 ADC LED 路径
+
+**Date**: 2026-05-31
+**Task**: 优化 OLED 串口 ADC LED 路径
+**Branch**: `feature/header-bin-ota`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|------|------|
+| 优化范围 | OLED、RS485/USART1 OTA、ADC/DMA、LED/按键/低功耗、PT100 日志节流 |
+| OLED | 将 I2C 忙等待从 10000ms 收敛到 20ms；底层写命令/数据/字符串接口返回成功状态；`oled_printf()` 仅在实际写屏成功后更新行缓存 |
+| LED | 新增 `led_app_set/toggle/all_off/blank_for_sleep/reset_cache` 统一状态源；按键和低功耗流程不再直接操作 LED 宏；睡前强制关断 6 路 LED 并复位缓存 |
+| USART/OTA | `uart_ota_task()` 增加单次调度排空上限，按队列深度尽量处理连续 DMA 槽位，降低大包传输时队列积压风险 |
+| ADC/DMA | `adc_value` 改为 `__IO uint16_t`；多个 DMA 配置结构体补初始化，避免局部结构体残留字段影响外设行为 |
+| PT100 | 保持 200ms 采样节拍，将串口浮点调试日志节流到约 1s 一次，减小调试串口占用 |
+| 文档同步 | 更新 `工程文档.md` 与 `.trellis/spec/` 中 OTA、日志、质量、状态管理约束 |
+| 验证 | `python tools\\test_static_optimizations.py` 通过；`python -m unittest tools.test_header_bin_ota_static` 8 tests OK；`git diff --check` 通过，仅行尾 warning；Keil 构建 `0 Error(s), 0 Warning(s)`；旧模式扫描无命中 |
+
+**提交**：`e705b9a perf: optimize oled uart adc led paths`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e705b9a` | (see git log) |
 
 ### Testing
 
