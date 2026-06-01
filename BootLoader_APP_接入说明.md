@@ -62,7 +62,7 @@ E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\ou
 | 步骤 | 操作 | 预期现象 |
 |---|---|---|
 | 1 | 在 Keil 中重新编译当前 App 工程 | 构建后生成 `Project.bin` 和 `Project_ota.bin` |
-| 2 | 打开 RS485/USART1 对应串口 | 波特率 `460800`，8N1 |
+| 2 | 打开 RS485/USART1 对应串口 | 波特率 `115200`，8N1 |
 | 3 | 复位或重新上电板子 | RS485 口在启动自检和调度器初始化完成后看到一次 `OTA485: ready, send Project_ota.bin raw` |
 | 4 | 在串口工具中选择原始/直接发送文件 | 选择 `project/output/Project_ota.bin` |
 | 5 | 观察 `USART0` 日志 | 出现 `OTA: header ok`、`OTA: payload ok`、`OTA: ready, reset to BootLoader` |

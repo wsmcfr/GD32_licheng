@@ -23,19 +23,19 @@ extern "C" {
  *   定义当前工程默认调试串口波特率。
  * 说明：
  *   USART0 现在只承担启动日志和 SMARTFS 调试命令，不再接收 OTA 帧；
- *   为保持现有终端脚本和日志观察习惯，继续沿用 460800。
+ *   默认使用 115200，便于与 BootLoader、USART1/RS485 OTA 和常用串口工具保持一致。
  */
-#define DEBUG_USART_BAUDRATE           460800U
+#define DEBUG_USART_BAUDRATE           115200U
 
 /*
  * 宏作用：
  *   定义 OTA 专用串口和默认波特率。
  * 说明：
- *   OTA 现在通过 RS485/USART1 收发；PC 工具、App 和未来如需调整的 BootLoader
- *   配置，应统一围绕这一组常量更新。USART0 仍只负责日志和调试命令。
+ *   OTA 现在通过 RS485/USART1 收发；PC 工具、App 和 BootLoader 日志终端
+ *   均统一使用 115200。USART0 仍只负责日志和调试命令。
  */
 #define UART_OTA_USART                 RS485_USART
-#define UART_OTA_USART_BAUDRATE        460800U
+#define UART_OTA_USART_BAUDRATE        115200U
 
 /* 接收缓冲区长度定义。 */
 /*

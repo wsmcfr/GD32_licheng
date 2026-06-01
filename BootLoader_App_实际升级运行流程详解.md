@@ -157,7 +157,7 @@ BootLoader 搬运时必须满足：
 |---:|---|---|
 | 1 | 打开 `project/2026706296.uvprojx`，重新编译 App | 构建日志为 `0 Error(s)` |
 | 2 | 检查输出目录 | `project/output/Project.bin` 和 `project/output/Project_ota.bin` 都存在 |
-| 3 | 打开 RS485/USART1 对应串口 | 波特率 `460800`，8N1 |
+| 3 | 打开 RS485/USART1 对应串口 | 波特率 `115200`，8N1 |
 | 4 | 复位或重新上电板子 | RS485 口看到一次 `OTA485: ready, send Project_ota.bin raw` |
 | 5 | 在串口工具中选择原始/直接发送文件 | 选择 `project/output/Project_ota.bin` |
 | 6 | 等待发送完成 | USART0 日志出现 `OTA: header ok` 和 `OTA: payload ok` |

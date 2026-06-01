@@ -151,7 +151,7 @@ Use this procedure whenever sending a new App image through RS485/USART1 OTA.
 |------|------------------|-------------------|
 | 1 | Build the Keil target | Build log reports `0 Error(s)` |
 | 2 | Confirm generated files | `project/output/Project.bin` and `project/output/Project_ota.bin` both exist |
-| 3 | Open a serial tool on the RS485/USART1 COM port at `460800 8N1` | Fresh boot shows `OTA485: ready, send Project_ota.bin raw` after storage self-test and scheduler initialization |
+| 3 | Open a serial tool on the RS485/USART1 COM port at `115200 8N1` | Fresh boot shows `OTA485: ready, send Project_ota.bin raw` after storage self-test and scheduler initialization |
 | 4 | Use the serial tool's raw/direct file-send mode | Select `project/output/Project_ota.bin`; do not select YModem/XModem |
 | 5 | Watch USART0 debug logs | App prints `OTA: header ok`, `OTA: payload ok`, and `OTA: ready, reset to BootLoader` |
 | 6 | Watch BootLoader UART logs after reset | BootLoader prints `app crc32 check pass` and `app update success` |
@@ -173,7 +173,7 @@ Raw/direct file send -> project/output/Project_ota.bin
 #### Wrong
 
 ```powershell
-python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 460800
+python tools\make_uart_ota_packet.py --mode send --port COM29 --baudrate 115200
 ```
 
 #### Correct

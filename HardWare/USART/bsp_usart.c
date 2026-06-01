@@ -163,7 +163,7 @@ void bsp_usart_init(void)
  *   1. 打开 DMA、GPIOD、PE8 方向控制脚和 USART1 外设时钟。
  *   2. 配置 PD5/PD6 为 USART1 的 TX/RX 复用功能。
  *   3. 配置 PE8 为 RS485 收发器方向控制输出，并默认进入接收态。
- *   4. 配置 USART1 为 OTA 默认 460800-8N1 收发模式。
+ *   4. 配置 USART1 为 OTA 默认 115200-8N1 收发模式。
  *   5. 同时打开 USART1 IDLE 中断和 DMA 满缓冲中断，用于接收裸流文件。
  * 参数说明：
  *   无参数。

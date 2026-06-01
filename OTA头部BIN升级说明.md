@@ -47,7 +47,7 @@ tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.b
 | 步骤 | 操作 | 预期现象 |
 |------|------|----------|
 | 1 | 编译 Keil 工程 | `Project.bin` 和 `Project_ota.bin` 都生成 |
-| 2 | 打开 RS485/USART1 串口，`460800 8N1` | 启动自检和调度器初始化完成后看到 `OTA485: ready, send Project_ota.bin raw` |
+| 2 | 打开 RS485/USART1 串口，`115200 8N1` | 启动自检和调度器初始化完成后看到 `OTA485: ready, send Project_ota.bin raw` |
 | 3 | 使用串口工具的原始/直接发送文件功能 | 选择 `project/output/Project_ota.bin` |
 | 4 | 等待发送完成 | USART0 日志出现 `OTA: header ok`、`OTA: payload ok` |
 | 5 | 等待 App 自动复位 | BootLoader 日志出现 `app crc32 check pass` 和 `app update success` |
@@ -64,6 +64,6 @@ tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.b
 | App 起始地址 | `0x0800D000` |
 | 下载缓存区 | `0x08067000 ~ 0x0807FFFF` |
 | 参数区 | `0x0800C000 ~ 0x0800CFFF` |
-| 串口波特率 | `460800` |
+| 串口波特率 | `115200` |
 
 当前 App 会先把 payload 收到 RAM，再统一写入下载缓存区。这样可以避免一边接收串口、一边擦写内部 Flash 导致丢字节。
