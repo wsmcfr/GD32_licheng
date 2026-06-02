@@ -1551,3 +1551,50 @@ Removed the obsolete SD card/FatFs stack and refined the deepest low-power workf
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: OTA 三分区和 144KB 测试包
+
+**Date**: 2026-06-02
+**Task**: OTA 三分区和 144KB 测试包
+**Branch**: `feature/header-bin-ota`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|---|---|
+| OTA 分区 | 将当前 App OTA 契约改为 App 运行区、App 备份区、App 缓存区各 152KB，最后 4KB 预留页。 |
+| 地址 | 运行区 `0x0800D000~0x08032FFF`，备份区 `0x08033000~0x08058FFF`，缓存区 `0x08059000~0x0807EFFF`。 |
+| 协议 | 上位机发送格式不变，仍然一次性原始/直接发送 `Project_ota.bin`，文件格式是 64 字节 OTA 头部 + 原始 App payload。 |
+| App 侧 | 更新 `bootloader_port.h`、`boot_app_config.h`、Keil IROM 和 `pack_ota_image.c`，payload/App 上限统一为 `152KB`。 |
+| BootLoader 侧 | `D:\GD32\2026706296_bootloader\Function\Function.c` 增加运行区备份和失败恢复逻辑：先备份旧 App，再搬运缓存区新 App，搬运失败时尽量恢复旧 App。 |
+| 文档/spec | 更新 `.trellis/spec/backend/embedded-ota-guidelines.md`、工程文档、OTA 头部 BIN 说明、Flash 分区说明、BootLoader 接入/流程文档和官方例程差异说明。 |
+| 测试 | `python -m unittest tools.test_header_bin_ota_static` 通过 9 项；`gcc -std=c99 -Wall -Wextra -Werror tools\pack_ota_image.c -o tools\pack_ota_image.exe` 通过。 |
+| 构建 | App Keil Rebuild：`0 Error(s), 0 Warning(s)`；BootLoader Keil Rebuild：`0 Error(s), 0 Warning(s)`。 |
+| 资源风险 | App map 显示 `RW_IRAM1 = 0x2FC68 / 0x30000`，主 SRAM 剩余约 920 字节，152KB RAM payload 缓冲已经接近上限。 |
+| 144KB 测试包 | 生成 ignored 产物 `project/output/Project_144KB.bin` 和 `project/output/Project_ota_144KB.bin`；OTA 文件大小 `147520` 字节，payload `147456` 字节，头部 64 字节。 |
+| GitHub | 主仓库提交并推送到 `origin/feature/header-bin-ota`：`8a4dacb feat: repartition ota app regions`。 |
+| 注意 | `D:\GD32\2026706296_bootloader` 不是 Git 仓库，BootLoader 目录内的源码/文档改动已在本机完成并通过构建，但不随主仓库 push 到 GitHub。 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a4dacb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
