@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 33
-- **Last Active**: 2026-06-02
+- **Total Sessions**: 34
+- **Last Active**: 2026-06-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1600 | Active |
+| `journal-1.md` | ~1644 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 34 | 2026-06-03 | OTA raw stream circular DMA | `1b02724` | `feature/streaming-raw-ota` |
 | 33 | 2026-06-02 | OTA 三分区和 144KB 测试包 | `8a4dacb` | `feature/header-bin-ota` |
 | 32 | 2026-05-31 | 优化 OLED 串口 ADC LED 路径 | `e705b9a` | `feature/header-bin-ota` |
 | 31 | 2026-05-31 | OTA and storage error hardening | `27c1725` | `feature/header-bin-ota` |

@@ -1598,3 +1598,47 @@ Removed the obsolete SD card/FatFs stack and refined the deepest low-power workf
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: OTA raw stream circular DMA
+
+**Date**: 2026-06-03
+**Task**: OTA raw stream circular DMA
+**Branch**: `feature/streaming-raw-ota`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 本次记录 |
+|---|---|
+| 分支 | `feature/streaming-raw-ota` |
+| 提交 | `1b02724 feat(ota): stream raw image through circular dma` |
+| 远端 | 已推送到 `origin/feature/streaming-raw-ota` |
+| 核心改动 | 将 RS485/USART1 OTA 从整包 RAM 接收改为 ready 前预擦下载区、USART1 circular DMA 环形缓冲、任务层 512B 窗口流式写 Flash |
+| 缓冲配置 | `BSP_USART1_RX_BUFFER_SIZE` 加倍到 `32KB`，`115200 8N1` 下约 `2.8s` 输入余量 |
+| DMA 策略 | USART1 RX 使用 circular DMA，IDLE/HTF/FTF 中断只清标志并提示任务消费，不停 DMA、不重装 DMA、不在 ISR 复制数据 |
+| 文档同步 | 更新 OTA 规格、接入说明、实际升级流程和工程文档；同步 `.trellis/spec/` 中 ISR-to-task / circular DMA 约束 |
+| 验证 | `python -m unittest tools.test_header_bin_ota_static` 通过 10 项；`gcc -std=c99 -Wall -Wextra -Werror tools\pack_ota_image.c` 通过；`git diff --check` 无错误；Keil 构建 `0 Error(s), 0 Warning(s)`，`Project_ota.bin` 比 `Project.bin` 大 64 字节 |
+| 注意 | 本地仍有未提交 `tools/pack_ota_image.exe`，是验证时重新编译出的构建产物，未纳入业务提交 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1b02724` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
