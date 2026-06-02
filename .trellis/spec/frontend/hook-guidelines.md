@@ -55,7 +55,7 @@ This is the preferred pattern for lightweight debounced key handling when no ric
 
 When data originates from an interrupt:
 
-1. ISR validates and copies minimal data
+1. ISR validates and copies minimal data, or for high-rate circular DMA only clears flags and records a wakeup hint
 2. ISR sets a completion flag
 3. app task consumes and clears the flag later
 
@@ -82,7 +82,7 @@ Examples:
 - `adc_task()` consumes `adc_value[]`
 - `rtc_task()` reads current RTC data and formats it for display
 - `uart_task()` consumes `uart_dma_buffer` after ISR handoff
-- `uart_ota_task()` consumes `uart_ota_dma_buffer` after RS485/USART1 ISR handoff and sends OTA ACK later
+- `uart_ota_task()` consumes `usart1_rxbuffer[]` through the USART1 DMA circular-ring read cursor after RS485/USART1 ISR wakeup hints
 
 ---
 

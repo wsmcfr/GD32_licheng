@@ -47,11 +47,14 @@ extern "C" {
  */
 #define BSP_USART0_RX_BUFFER_SIZE      1024U
 /*
- * USART1/RS485 当前接收 Project_ota.bin 裸字节流。
- * 缓冲区只是 DMA 分段窗口，满缓冲和 IDLE 中断都会把字节喂给 OTA 状态机；
- * 取 1024B 是为了在中断开销和 RAM 占用之间保持稳定折中。
+ * 宏作用：
+ *   定义 USART1/RS485 OTA circular DMA 环形缓冲区长度。
+ * 说明：
+ *   上位机只能无停顿裸发 Project_ota.bin，接收端不能在 Flash 编程期间停 DMA
+ *   或重装 DMA。32KB 在 115200 8N1 下约提供 2.8 秒输入余量，用来覆盖
+ *   Flash 编程和调度抖动；下载区整区擦除必须在 ready 前完成。
  */
-#define BSP_USART1_RX_BUFFER_SIZE      1024U
+#define BSP_USART1_RX_BUFFER_SIZE      (32U * 1024U)
 #define BSP_USART5_RX_BUFFER_SIZE      256U
 
 /* USART0 引脚与 DMA 映射。 */

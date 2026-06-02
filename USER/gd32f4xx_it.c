@@ -209,63 +209,10 @@ void USART0_IRQHandler(void)
 
 /*
  * 函数作用：
- *   将 USART1 DMA 当前缓冲中的有效字节移交给 OTA 裸流接收器，并重新装载 DMA。
- * 参数说明：
- *   rx_len：本次 DMA 缓冲中已经接收到的有效字节数。
- * 返回值说明：
- *   无返回值。
- * 说明：
- *   该函数同时服务 USART1 IDLE 中断和 DMA 满缓冲中断。裸发 Project_ota.bin 时，
- *   大文件可能连续发送没有 IDLE 间隔，因此必须在 DMA 满时也移交数据。
- */
-static void prv_usart1_ota_flush_dma_bytes(uint32_t rx_len)
-{
-    uint32_t copy_len;
-    uint8_t write_index;
-
-    dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-
-    if((rx_len > 0U) && (rx_len <= sizeof(usart1_rxbuffer))){
-        copy_len = rx_len;
-        if(copy_len > UART_OTA_FRAME_BUFFER_SIZE){
-            copy_len = UART_OTA_FRAME_BUFFER_SIZE;
-        }
-
-        if(copy_len > 0U){
-            /*
-             * 中断层只做有界复制和队列推进，协议解析、CRC 和日志全部留给任务层。
-             * 环形队列能吸收任务调度抖动；队列满时只记录丢段计数，避免覆盖
-             * 任务层尚未消费的数据。
-             */
-            uart_ota_irq_count++;
-            uart_ota_last_irq_length = (uint16_t)copy_len;
-            if(uart_ota_queue_count >= UART_OTA_RX_QUEUE_DEPTH){
-                uart_ota_overwrite_count++;
-            }else{
-                write_index = uart_ota_queue_write_index;
-                memcpy(uart_ota_dma_buffer[write_index], usart1_rxbuffer, copy_len);
-                uart_ota_dma_length[write_index] = (uint16_t)copy_len;
-                uart_ota_queue_write_index = (uint8_t)((write_index + 1U) % UART_OTA_RX_QUEUE_DEPTH);
-                uart_ota_queue_count++;
-                uart_ota_rx_flag = 1U;
-            }
-        }
-    }
-
-    /* 清满传输标志并重装 DMA，保证下一段裸流数据能继续进入同一缓冲区。 */
-    dma_interrupt_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FLAG_FTF);
-    dma_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_FLAG_FTF);
-    dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, sizeof(usart1_rxbuffer));
-    dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-}
-
-/*
- * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，将文件尾部或发送间隙前的 DMA 数据移交给 OTA。
+ *   处理 USART1/RS485 IDLE 中断，提示 OTA 任务从 circular DMA 环形缓冲取数。
  * 主要流程：
  *   1. 判断并清除 USART1 IDLE 中断标志。
- *   2. 根据 DMA 剩余计数计算当前缓冲区已接收字节数。
- *   3. 调用统一 DMA flush 函数喂给头部 bin OTA 接收器。
+ *   2. 记录一次接收提示，任务层随后根据 DMA 剩余计数计算硬件写指针。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -278,15 +225,17 @@ void USART1_IRQHandler(void)
     if(RESET != usart_interrupt_flag_get(USART1, USART_INT_FLAG_IDLE)){
         /* 清除 IDLE 标志：读数据寄存器用于结束本次空闲中断状态。 */
         usart_data_receive(USART1);
-        rx_len = sizeof(usart1_rxbuffer) -
+        rx_len = UART_OTA_RING_BUFFER_SIZE -
                  dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-        prv_usart1_ota_flush_dma_bytes(rx_len);
+        uart_ota_irq_count++;
+        uart_ota_last_irq_length = (uint16_t)rx_len;
+        uart_ota_rx_flag = 1U;
     }
 }
 
 /*
  * 函数作用：
- *   处理 USART1 RX DMA 满缓冲中断，用于连续裸发 Project_ota.bin 的中间分段。
+ *   处理 USART1 RX DMA 半满/满中断，提示 OTA 任务消费 circular DMA 环形缓冲。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -294,10 +243,38 @@ void USART1_IRQHandler(void)
  */
 void DMA0_Channel5_IRQHandler(void)
 {
+    uint32_t write_index;
+
+    write_index = UART_OTA_RING_BUFFER_SIZE -
+                  dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+    if(write_index >= UART_OTA_RING_BUFFER_SIZE){
+        write_index = 0U;
+    }
+
+    if(RESET != dma_interrupt_flag_get(USART1_RX_DMA_PERIPH,
+                                       USART1_RX_DMA_CHANNEL,
+                                       DMA_INT_FLAG_HTF)){
+        /*
+         * circular DMA 模式下半满中断只说明写指针越过前半区。
+         * 不能停 DMA 或重装计数，否则无停顿裸流会被硬件接收路径截断。
+         */
+        dma_interrupt_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FLAG_HTF);
+        uart_ota_irq_count++;
+        uart_ota_last_irq_length = (uint16_t)write_index;
+        uart_ota_rx_flag = 1U;
+    }
+
     if(RESET != dma_interrupt_flag_get(USART1_RX_DMA_PERIPH,
                                        USART1_RX_DMA_CHANNEL,
                                        DMA_INT_FLAG_FTF)){
-        prv_usart1_ota_flush_dma_bytes((uint32_t)sizeof(usart1_rxbuffer));
+        /*
+         * 满传输中断在 circular 模式下表示 DMA 即将从环尾回到环头。
+         * 这里只清标志并唤醒任务层，实际字节范围由读/写指针差值决定。
+         */
+        dma_interrupt_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FLAG_FTF);
+        uart_ota_irq_count++;
+        uart_ota_last_irq_length = (uint16_t)write_index;
+        uart_ota_rx_flag = 1U;
     }
 }
 

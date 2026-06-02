@@ -27,10 +27,11 @@ This is a cross-layer contract. The Keil post-build packer, App-side raw receive
 | Keil raw App bin | `E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\output\Project.axf` | Generates the plain App payload whose first word is MSP and second word is Reset_Handler |
 | OTA packer | `tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x0800D000` | Prepends a 64-byte header with magic, size, load address, version, payload CRC32, header CRC32, MSP, and Reset_Handler |
 | Operator file | `project/output/Project_ota.bin` | This is the only file sent through RS485/USART1 for this branch's OTA flow |
-| UART receiver | `uart_ota_feed_rx_bytes(const uint8_t *data, uint16_t length)` | Consumes raw bytes from the task layer, first parsing the header, then collecting payload bytes |
-| ISR handoff | `USART1_IRQHandler(void)` and `DMA0_Channel5_IRQHandler(void)` | Copy DMA bytes into `uart_ota_dma_buffer`, set `uart_ota_rx_flag`, and re-arm DMA; no CRC, logging, or Flash writes in ISR |
-| Task polling | `uart_ota_task(void)` | Drains up to `UART_OTA_TASK_DRAIN_LIMIT` queued DMA chunks per scheduler call, feeds raw bytes to the OTA parser, and commits payload to Flash only after full payload CRC passes |
-| Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA485: ready, send Project_ota.bin raw` only after startup self-tests and `scheduler_init()` have completed, so the task loop can consume the DMA queue immediately |
+| UART receiver | `uart_ota_feed_rx_bytes(const uint8_t *data, uint16_t length)` | Consumes bytes drained from the USART1 DMA circular ring, first parsing the header, then streaming payload bytes into the pre-erased download area |
+| Pre-ready erase | `uart_ota_prepare_download_area_before_ready(void)` | Erases the full `0x08059000 ~ 0x0807EFFF` download area before the `ready` probe, because the PC sends a continuous raw stream with no pause/ACK |
+| ISR handoff | `USART1_IRQHandler(void)` and `DMA0_Channel5_IRQHandler(void)` | Clear IDLE/HTF/FTF flags, set `uart_ota_rx_flag`, and leave circular DMA running; no CRC, logging, Flash writes, DMA copy, or DMA re-arm in ISR |
+| Task polling | `uart_ota_task(void)` | Drains up to `UART_OTA_TASK_DRAIN_LIMIT` 512-byte windows from the circular ring, feeds raw bytes to the OTA parser, writes payload chunks to already-erased Flash, and commits BootLoader parameters only after stream CRC and download-area CRC pass |
+| Wiring probe | `uart_ota_emit_startup_probe(void)` | Sends one-shot `OTA485: ready, send Project_ota.bin raw` only after startup self-tests, `scheduler_init()`, and download-area pre-erase have completed |
 
 ### 3. Protocol Contract
 
@@ -62,11 +63,11 @@ All multi-byte fields are little-endian `uint32_t`.
 | App backup area | `0x08033000 ~ 0x08058FFF`, `152KB` | BootLoader writes before updating | Holds the previous run-area image for rollback if the new App copy fails |
 | App download buffer | `0x08059000 ~ 0x0807EFFF`, `152KB` | App writes received payload | BootLoader copies from here after reset |
 | Reserved Flash page | `0x0807F000 ~ 0x0807FFFF`, `4KB` | Unused | Keep unused as a guard/extension page |
-| USART1 DMA window | `BSP_USART1_RX_BUFFER_SIZE = 1024U` | ISR handoff | Raw stream chunk size, not a full image buffer |
-| ISR-to-task queue | `UART_OTA_RX_QUEUE_DEPTH = 4U` | ISR writes, task reads | Absorbs short scheduler delays during continuous raw file send; the task should drain the queued slots up to a bounded per-call limit |
-| OTA RAM payload buffer | `UART_OTA_PAYLOAD_BUFFER_SIZE = 152KB` | App OTA task | Receives the full payload before Flash erase/write |
+| USART1 DMA circular ring | `BSP_USART1_RX_BUFFER_SIZE = 32KB` / `UART_OTA_RING_BUFFER_SIZE` | DMA writes, task reads | Holds continuous raw stream bytes while App performs short Flash programming operations |
+| OTA stream window | `UART_OTA_STREAM_WINDOW_SIZE = 512B` | App OTA task stack | Bounded chunk copied from the DMA ring and written to the pre-erased download area |
+| OTA vector cache | `8B` | App OTA task | Stores payload word 0/1 only, so the final payload vector can be checked without a full payload RAM buffer |
 
-The full-payload RAM buffer is intentional. It avoids erasing/writing internal Flash while the PC is still sending bytes, which would risk losing UART data because internal Flash operations can stall code execution.
+The current raw sender has no pause/ACK, so the App must not erase internal Flash after emitting `ready`. Instead, it erases the whole download area before `ready`, uses USART1 DMA circular ring buffering during the continuous stream, and only programs already-erased Flash while receiving. At `115200 8N1`, a 32KB ring provides about 2.8 seconds of input slack; this covers short programming stalls and scheduler jitter, but not a full 152KB erase.
 
 ### 5. Boot Parameter Fields
 
@@ -91,15 +92,16 @@ If the new App copy or CRC check fails after a successful backup, BootLoader res
 | Check | Valid Condition | Failure Result | Required Behavior |
 |-------|-----------------|----------------|-------------------|
 | Header magic | `magic == 0x474F5441` | Not a valid OTA image | Enter error state; do not erase Flash |
-| Error-state resync | Next raw stream begins with the little-endian magic bytes `41 54 4F 47` | User is retrying after a bad file or bad payload | Reset the OTA session, prefill the 4-byte magic in the header buffer, and continue parsing the new header |
+| Error-state resync before Flash dirty | Next raw stream begins with the little-endian magic bytes `41 54 4F 47` before any payload chunk has been written | User is retrying after a bad header or wrong file | Reset the OTA session, prefill the 4-byte magic in the header buffer, and continue parsing the new header |
+| Error-state after Flash dirty | Payload CRC/vector/write failure after any chunk has programmed the download area | Download area is no longer fully erased | Do not accept an immediate retry; reset or power-cycle so App can pre-erase before the next `ready` |
 | Header size | `header_size == 64` | Unsupported image format | Enter error state; do not erase Flash |
-| Payload size | `1 <= image_size <= 152KB` | Exceeds internal download buffer/RAM buffer | Enter error state; do not erase Flash |
+| Payload size | `1 <= image_size <= 152KB` | Exceeds internal download buffer | Enter error state; do not write BootLoader flags |
 | Load address | `load_addr == 0x0800D000` | Would write wrong App region | Enter error state; do not erase Flash |
 | Header CRC | CRC32(header with `header_crc32=0`) matches | Corrupt header | Enter error state; do not erase Flash |
 | Stack address | `0x20000000 <= stack_addr < 0x20030000` | Invalid vector table | Enter error state; do not erase Flash |
 | Entry address | Thumb address inside App area | Invalid vector table | Enter error state; do not erase Flash |
-| Payload CRC | CRC32(payload) matches `image_crc32` | Corrupt payload | Enter error state; do not erase Flash |
-| Payload vector | Payload word 0/1 match header `stack_addr/entry_addr` and pass vector validation | Header/payload mismatch | Enter error state; do not erase Flash |
+| Payload CRC | Stream CRC32 matches `image_crc32` | Corrupt payload; download area has already been programmed | Enter error state; do not write BootLoader flags; require reset before retry |
+| Payload vector | Cached payload word 0/1 match header `stack_addr/entry_addr` and pass vector validation | Header/payload mismatch; download area may already be programmed | Enter error state; do not write BootLoader flags; require reset before retry |
 | Download writeback CRC | CRC32 at `0x08059000` matches `image_crc32` | Flash write failure or stale data | Do not write BootLoader flags |
 | Parameter write | Full 4KB parameter area write succeeds | BootLoader would not know about the update | Do not reset into BootLoader |
 | Backup before update | CRC32 of `0x0800D000 ~ 0x08032FFF` matches CRC32 of `0x08033000 ~ 0x08058FFF` after backup | Previous App cannot be recovered reliably | Skip new App copy, record failure, and keep/try the existing run area |
@@ -111,13 +113,13 @@ If the new App copy or CRC check fails after a successful backup, BootLoader res
 | Case | Input | Expected Result |
 |------|-------|-----------------|
 | Good | Raw send `project/output/Project_ota.bin`, payload `<= 152KB`, valid header and vector table | App prints `OTA: header ok`, `OTA: payload ok`, `OTA: ready, reset to BootLoader`; BootLoader prints backup/copy CRC logs, `app crc32 check pass`, and `app update success` |
-| Good | User first sends `Project.bin`, sees `OTA: bad header status=...`, then immediately raw-sends `Project_ota.bin` from byte 0 | App prints `OTA: resync after error code=...`, then parses the new header without requiring a reset |
+| Good | User first sends `Project.bin`, sees `OTA: bad header status=...`, then immediately raw-sends `Project_ota.bin` from byte 0 before any payload write | App prints `OTA: resync after error code=...`, then parses the new header without requiring a reset |
 | Base | Normal USART0 debug command | Handled by `uart_task()` and does not affect RS485 OTA state |
 | Base | RS485 receives bytes that do not start with the OTA magic | App enters OTA error state and does not erase Flash |
 | Bad | Raw send `Project.bin` instead of `Project_ota.bin` | Header magic fails; no Flash erase/write |
 | Bad | Send an obsolete packaged stream instead of `Project_ota.bin` raw bytes | Header magic fails; no Flash erase/write |
 | Bad | Payload exceeds `152KB` | Header size check fails |
-| Bad | CRC mismatch or invalid vector table | App rejects and does not set BootLoader update flags |
+| Bad | CRC mismatch or invalid vector table after payload streaming begins | App rejects, does not set BootLoader update flags, and requires reset before retry so the download area can be pre-erased |
 
 ### 8. Tests Required
 
@@ -140,9 +142,9 @@ Required assertions:
 |-----------|-------------------|
 | Packer builds | `gcc` exits with status 0 |
 | Header-bin static contract | `tools.test_header_bin_ota_static` exits with status 0 |
-| Ready probe ordering | Static test proves `uart_ota_emit_startup_probe()` is after `scheduler_init()` |
+| Ready probe ordering | Static test proves `uart_ota_emit_startup_probe()` is after `scheduler_init()` and `uart_ota_prepare_download_area_before_ready()` |
 | Error resync | Static test proves error state keeps a magic-prefix buffer and preloads the first 4 header bytes before retrying |
-| Queue drain | Static test proves `uart_ota_task()` has a bounded drain loop instead of consuming only one DMA slot every 5 ms |
+| Circular DMA streaming | Static test proves USART1 uses `dma_circulation_enable()`, 32KB `BSP_USART1_RX_BUFFER_SIZE`, bounded 512B stream windows, and no 152KB payload RAM buffer |
 | Keil build | Build log reports `0 Error(s)` |
 | Raw App output | `project/output/Project.bin` exists and is non-empty |
 | OTA image output | `project/output/Project_ota.bin` exists and is exactly 64 bytes larger than `Project.bin` |
@@ -157,7 +159,7 @@ Use this procedure whenever sending a new App image through RS485/USART1 OTA.
 |------|------------------|-------------------|
 | 1 | Build the Keil target | Build log reports `0 Error(s)` |
 | 2 | Confirm generated files | `project/output/Project.bin` and `project/output/Project_ota.bin` both exist |
-| 3 | Open a serial tool on the RS485/USART1 COM port at `115200 8N1` | Fresh boot shows `OTA485: ready, send Project_ota.bin raw` after storage self-test and scheduler initialization |
+| 3 | Open a serial tool on the RS485/USART1 COM port at `115200 8N1` | Fresh boot shows `OTA: pre-erase ok`, then `OTA485: ready, send Project_ota.bin raw` after storage self-test, scheduler initialization, and download-area pre-erase |
 | 4 | Use the serial tool's raw/direct file-send mode | Select `project/output/Project_ota.bin`; do not select YModem/XModem |
 | 5 | Watch USART0 debug logs | App prints `OTA: header ok`, `OTA: payload ok`, and `OTA: ready, reset to BootLoader` |
 | 6 | Watch BootLoader UART logs after reset | BootLoader prints `app crc32 check pass` and `app update success` |
@@ -198,9 +200,12 @@ usart_interrupt_enable(USART1, USART_INT_IDLE);
 #### Correct
 
 ```c
-/* Raw file send needs both IDLE and DMA full-transfer handoff. */
+/* Raw file send needs circular DMA plus HTF/FTF wakeup hints. */
+dma_circulation_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 usart_interrupt_enable(USART1, USART_INT_IDLE);
-dma_interrupt_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FTF);
+dma_interrupt_enable(USART1_RX_DMA_PERIPH,
+                     USART1_RX_DMA_CHANNEL,
+                     DMA_INT_HTF | DMA_INT_FTF);
 ```
 
 #### Wrong
@@ -216,11 +221,13 @@ scheduler_init();
 #### Correct
 
 ```c
-/* Correct: ready means startup checks finished and uart_ota_task can consume queued DMA data. */
+/* Correct: ready means startup checks finished, download Flash is erased, and circular DMA can be consumed. */
 uart_ota_reset_runtime();
 smart_storage_self_test();
 scheduler_init();
-uart_ota_emit_startup_probe();
+if (0U != uart_ota_prepare_download_area_before_ready()) {
+    uart_ota_emit_startup_probe();
+}
 ```
 
 ---
@@ -229,12 +236,13 @@ uart_ota_emit_startup_probe();
 
 - Do not send `Project.bin`; send `Project_ota.bin`.
 - Do not use terminal-managed file-transfer modes for this branch's OTA flow; use raw/direct file send.
-- Do not emit the RS485 `ready` probe before `scheduler_init()`; operators may start raw-send immediately after seeing it.
-- Do not make an OTA error state permanent for ordinary bad-file retries; a fresh stream beginning at the OTA magic must resync without requiring a board reset.
+- Do not emit the RS485 `ready` probe before `scheduler_init()` and `uart_ota_prepare_download_area_before_ready()`; operators may start raw-send immediately after seeing it.
+- Do not make an OTA error state permanent for ordinary bad-header retries; a fresh stream beginning at the OTA magic must resync without requiring a board reset while Flash is still clean.
+- Do not accept immediate retry after any payload chunk has programmed the download area; reset first so the App can pre-erase before the next `ready`.
 - Do not reintroduce helper senders or legacy frame wrapping as an operator requirement.
-- Do not reduce `BSP_USART1_RX_BUFFER_SIZE` or `UART_OTA_RX_QUEUE_DEPTH` without validating DMA full-transfer cadence.
-- Do not remove the 152KB RAM payload buffer unless you redesign reception around a real ring buffer or external storage.
-- Do not erase/write internal Flash while the PC is still streaming bytes.
+- Do not reduce `BSP_USART1_RX_BUFFER_SIZE` below the 32KB circular ring unless you validate the worst-case Flash programming stall and scheduler jitter.
+- Do not reintroduce a 152KB RAM payload buffer unless RAM usage is intentionally traded for simpler reception.
+- Do not erase internal Flash while the PC is still streaming bytes; erasing must finish before `ready`. Programming already-erased Flash during receive is allowed through bounded stream windows.
 - Do not move `0x0800C000`, `0x0800D000`, `0x08033000`, or `0x08059000` in one layer only.
 - Do not reset after writing the download buffer if BootLoader parameter flags were not written.
 - Do not claim App payloads larger than `152KB` are supported until the partition and RAM-buffer contract is redesigned.

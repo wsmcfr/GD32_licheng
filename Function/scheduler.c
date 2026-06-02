@@ -193,11 +193,14 @@ void system_init(void)
 
 		scheduler_init();
 		/*
-		 * 只有在调度器完成初始化后才向 RS485 口输出 ready。
+		 * 只有在调度器完成初始化、并且下载缓存区已经预擦后，才向 RS485 口输出 ready。
 		 * 上位机看到该探测串后可能立即裸发 Project_ota.bin，因此此时必须保证
-		 * 主循环中的 uart_ota_task() 已经具备消费 DMA 队列的条件。
+		 * 主循环中的 uart_ota_task() 已经具备消费 circular DMA 环形缓冲的条件，
+		 * 且接收过程中只做 Flash 编程，不再执行耗时整区擦除。
 		 */
-		uart_ota_emit_startup_probe();
+		if(0U != uart_ota_prepare_download_area_before_ready()) {
+			uart_ota_emit_startup_probe();
+		}
 }
 /*
  * 函数作用：

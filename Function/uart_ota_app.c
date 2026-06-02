@@ -1,14 +1,10 @@
 #include "uart_ota_app.h"
 
 __IO uint8_t uart_ota_rx_flag = 0U;
-__IO uint16_t uart_ota_dma_length[UART_OTA_RX_QUEUE_DEPTH] = {0};
-uint8_t uart_ota_dma_buffer[UART_OTA_RX_QUEUE_DEPTH][UART_OTA_FRAME_BUFFER_SIZE] = {{0}};
 __IO uint32_t uart_ota_irq_count = 0U;
 __IO uint32_t uart_ota_overwrite_count = 0U;
 __IO uint16_t uart_ota_last_irq_length = 0U;
-__IO uint8_t uart_ota_queue_write_index = 0U;
-__IO uint8_t uart_ota_queue_read_index = 0U;
-__IO uint8_t uart_ota_queue_count = 0U;
+__IO uint32_t uart_ota_ring_read_index = 0U;
 
 /*
  * 宏作用：
@@ -19,12 +15,14 @@ __IO uint8_t uart_ota_queue_count = 0U;
  */
 #define UART_OTA_IMAGE_MAGIC          0x474F5441UL
 #define UART_OTA_TRACE_LIMIT          6U
-#define UART_OTA_TASK_DRAIN_LIMIT     UART_OTA_RX_QUEUE_DEPTH
+#define UART_OTA_TASK_DRAIN_LIMIT     (UART_OTA_RING_BUFFER_SIZE / UART_OTA_STREAM_WINDOW_SIZE)
+#define UART_OTA_VECTOR_BYTES         8U
 
 /*
  * 枚举作用：
  *   描述头部 bin OTA 接收状态。
  * 成员说明：
+ *   UART_OTA_STATE_ERASING_DOWNLOAD：ready 前正在预擦下载区。
  *   UART_OTA_STATE_WAIT_HEADER：等待并解析 64 字节 OTA 头部。
  *   UART_OTA_STATE_RECEIVING_PAYLOAD：头部合法，继续接收 App payload。
  *   UART_OTA_STATE_READY_TO_COMMIT：payload 已完整接收，等待任务层执行 Flash 操作。
@@ -33,7 +31,8 @@ __IO uint8_t uart_ota_queue_count = 0U;
  */
 typedef enum
 {
-    UART_OTA_STATE_WAIT_HEADER = 0,
+    UART_OTA_STATE_ERASING_DOWNLOAD = 0,
+    UART_OTA_STATE_WAIT_HEADER,
     UART_OTA_STATE_RECEIVING_PAYLOAD,
     UART_OTA_STATE_READY_TO_COMMIT,
     UART_OTA_STATE_COMMITTING,
@@ -80,6 +79,8 @@ typedef struct
  *   running_crc：payload 接收过程中的未取反 CRC32 中间值。
  *   trace_count：已打印的接收摘要数量，用于限制日志刷屏。
  *   error_code：最近一次错误原因，用于调试日志。
+ *   download_area_ready：下载缓存区是否已在 ready 前完成整区预擦。
+ *   flash_dirty：本轮 payload 是否已经写入下载区；写脏后不能无擦除重试。
  */
 typedef struct
 {
@@ -90,6 +91,8 @@ typedef struct
     uint32_t running_crc;
     uint8_t trace_count;
     uint32_t error_code;
+    uint8_t download_area_ready;
+    uint8_t flash_dirty;
 } uart_ota_session_t;
 
 /* OTA 接收头部临时缓存，只保存固定 64 字节头，不保存整包头外数据。 */
@@ -101,13 +104,8 @@ static uint8_t g_uart_ota_resync_magic_buffer[4] = {0};
 /* OTA 错误态重同步 magic 当前已经匹配的字节数。 */
 static uint8_t g_uart_ota_resync_magic_bytes = 0U;
 
-/*
- * OTA payload RAM 缓冲。
- * 说明：
- *   三分区方案下单个 App 镜像上限为 152KB，接收端仍先完整接收并校验
- *   Project_ota.bin 的 payload，再统一写入缓存区，避免内部 Flash 擦写期间丢串口字节。
- */
-static uint8_t g_uart_ota_payload_buffer[UART_OTA_PAYLOAD_BUFFER_SIZE] = {0};
+/* OTA payload 前 8 字节向量表缓存，用于流式写 Flash 后复核 MSP 和入口地址。 */
+static uint8_t g_uart_ota_vector_buffer[UART_OTA_VECTOR_BYTES] = {0};
 
 /* OTA 会话状态只在中断和任务共享，进入任务提交时会临时关闭相关中断保护。 */
 static volatile uart_ota_session_t g_uart_ota_session = {0};
@@ -151,6 +149,54 @@ static uint32_t prv_uart_ota_crc32_calc(const uint8_t *data, uint32_t length)
 
     crc = bootloader_port_crc32_update(0xFFFFFFFFUL, data, length);
     return crc ^ 0xFFFFFFFFUL;
+}
+
+/*
+ * 函数作用：
+ *   读取 USART1 circular DMA 当前硬件写指针。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   返回 DMA 即将写入的环形缓冲偏移，范围为 0..UART_OTA_RING_BUFFER_SIZE-1。
+ */
+static uint32_t prv_uart_ota_dma_write_index(void)
+{
+    uint32_t remaining;
+    uint32_t write_index;
+
+    /*
+     * circular DMA 的剩余计数会在环尾自动重装。用“总长度 - 剩余计数”
+     * 可以得到当前硬件写指针；刚好回绕时结果等于总长度，需要归零。
+     */
+    remaining = dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+    if(remaining > UART_OTA_RING_BUFFER_SIZE){
+        remaining = UART_OTA_RING_BUFFER_SIZE;
+    }
+
+    write_index = UART_OTA_RING_BUFFER_SIZE - remaining;
+    if(write_index >= UART_OTA_RING_BUFFER_SIZE){
+        write_index = 0U;
+    }
+
+    return write_index;
+}
+
+/*
+ * 函数作用：
+ *   计算 circular DMA 中尚未被任务层消费的字节数。
+ * 参数说明：
+ *   read_index：任务层当前读指针，范围必须小于 UART_OTA_RING_BUFFER_SIZE。
+ *   write_index：DMA 当前写指针，范围必须小于 UART_OTA_RING_BUFFER_SIZE。
+ * 返回值说明：
+ *   返回可安全读取的字节数；如果读写指针相等，返回 0。
+ */
+static uint32_t prv_uart_ota_ring_available(uint32_t read_index, uint32_t write_index)
+{
+    if(read_index <= write_index){
+        return write_index - read_index;
+    }
+
+    return UART_OTA_RING_BUFFER_SIZE - read_index + write_index;
 }
 
 /*
@@ -216,7 +262,7 @@ static bootloader_port_status_t prv_uart_ota_validate_header(const uart_ota_imag
     if((UART_OTA_IMAGE_MAGIC != header->magic) ||
        (UART_OTA_IMAGE_HEADER_SIZE != header->header_size) ||
        (0U == header->image_size) ||
-       (header->image_size > UART_OTA_PAYLOAD_BUFFER_SIZE) ||
+       (header->image_size > BOOTLOADER_PORT_DOWNLOAD_MAX_SIZE) ||
        (BOOT_APP_START_ADDRESS != header->load_addr) ||
        (0U != header->flags) ||
        (calc_header_crc32 != header->header_crc32)){
@@ -248,10 +294,14 @@ static bootloader_port_status_t prv_uart_ota_validate_header(const uart_ota_imag
 static void prv_uart_ota_reset_session(uint8_t keep_trace)
 {
     uint8_t trace_count = g_uart_ota_session.trace_count;
+    uint8_t download_area_ready = g_uart_ota_session.download_area_ready;
 
     memset((void *)&g_uart_ota_session, 0, sizeof(g_uart_ota_session));
-    g_uart_ota_session.state = UART_OTA_STATE_WAIT_HEADER;
+    g_uart_ota_session.state = (0U != download_area_ready) ?
+                               UART_OTA_STATE_WAIT_HEADER :
+                               UART_OTA_STATE_ERASING_DOWNLOAD;
     g_uart_ota_session.running_crc = 0xFFFFFFFFUL;
+    g_uart_ota_session.download_area_ready = download_area_ready;
     if(0U != keep_trace){
         g_uart_ota_session.trace_count = trace_count;
     }
@@ -316,6 +366,14 @@ static uint8_t prv_uart_ota_try_resync_from_error(const uint8_t *data,
         /* 当前处于错误态，继续尝试用新 OTA 文件头重新同步。 */
     }else{
         return 1U;
+    }
+
+    if(0U != g_uart_ota_session.flash_dirty){
+        /*
+         * payload 或 Flash 写入阶段失败时，下载区内容已经不是全 0xFF。
+         * 上位机又无法等待我们重新擦除，所以必须复位后重新走 ready 前预擦流程。
+         */
+        return 0U;
     }
 
     if((NULL == data) || (0U == length) || (NULL == consumed_prefix)){
@@ -415,13 +473,40 @@ static bootloader_port_status_t prv_uart_ota_consume_header(const uint8_t *data,
 
 /*
  * 函数作用：
+ *   把一段 payload 数据流式写入已预擦的内部 Flash 下载区。
+ * 参数说明：
+ *   offset：本段数据在完整 payload 中的起始偏移，单位为字节。
+ *   data：本段 payload 数据起始地址。
+ *   length：本段 payload 数据长度，单位为字节。
+ * 返回值说明：
+ *   BOOTLOADER_PORT_STATUS_OK：本段写入成功。
+ *   BOOTLOADER_PORT_STATUS_BAD_PARAM：下载区未预擦、参数非法或越界。
+ *   BOOTLOADER_PORT_STATUS_FLASH_ERROR：内部 Flash 编程失败。
+ */
+static bootloader_port_status_t prv_uart_ota_stream_flash_write(uint32_t offset,
+                                                                const uint8_t *data,
+                                                                uint32_t length)
+{
+    if((0U == g_uart_ota_session.download_area_ready) ||
+       (NULL == data) ||
+       (0U == length) ||
+       ((offset + length) > g_uart_ota_session.header.image_size)){
+        return BOOTLOADER_PORT_STATUS_BAD_PARAM;
+    }
+
+    g_uart_ota_session.flash_dirty = 1U;
+    return bootloader_port_write_download_chunk(offset, data, length);
+}
+
+/*
+ * 函数作用：
  *   消费 OTA payload 字节并更新接收进度与运行 CRC。
  * 参数说明：
  *   data：当前 payload 数据块起始地址。
  *   length：当前 payload 数据块长度。
  *   consumed：输出本函数实际消费的字节数。
  * 返回值说明：
- *   BOOTLOADER_PORT_STATUS_OK：payload 写入 RAM 成功，完整时会切到待提交状态。
+ *   BOOTLOADER_PORT_STATUS_OK：payload 写入下载区成功，完整时会切到待提交状态。
  *   BOOTLOADER_PORT_STATUS_BAD_PARAM：数据超过头部声明长度或 CRC 不匹配。
  *   BOOTLOADER_PORT_STATUS_BAD_VECTOR：payload 实际向量表与头部字段不一致或非法。
  */
@@ -432,8 +517,10 @@ static bootloader_port_status_t prv_uart_ota_consume_payload(const uint8_t *data
     uint32_t remaining;
     uint32_t copy_length;
     uint32_t final_crc32;
-    uint32_t stack_addr = 0U;
-    uint32_t entry_addr = 0U;
+    uint32_t stack_addr;
+    uint32_t entry_addr;
+    uint32_t vector_remaining;
+    uint32_t vector_copy_len;
     bootloader_port_status_t status;
 
     if((NULL == data) || (NULL == consumed)){
@@ -450,9 +537,31 @@ static bootloader_port_status_t prv_uart_ota_consume_payload(const uint8_t *data
         return BOOTLOADER_PORT_STATUS_BAD_PARAM;
     }
 
-    memcpy(&g_uart_ota_payload_buffer[g_uart_ota_session.received_size], data, copy_length);
+    if(g_uart_ota_session.received_size < UART_OTA_VECTOR_BYTES){
+        /*
+         * 流式写入后 RAM 中不再保存完整 payload，因此只缓存向量表前 8 字节。
+         * 这足够在收满后复核 payload 实际 MSP/Reset_Handler 是否与头部一致。
+         */
+        vector_remaining = UART_OTA_VECTOR_BYTES - g_uart_ota_session.received_size;
+        vector_copy_len = copy_length;
+        if(vector_copy_len > vector_remaining){
+            vector_copy_len = vector_remaining;
+        }
+        memcpy(&g_uart_ota_vector_buffer[g_uart_ota_session.received_size],
+               data,
+               vector_copy_len);
+    }
+
     g_uart_ota_session.running_crc =
         bootloader_port_crc32_update(g_uart_ota_session.running_crc, data, copy_length);
+
+    status = prv_uart_ota_stream_flash_write(g_uart_ota_session.received_size,
+                                             data,
+                                             copy_length);
+    if(BOOTLOADER_PORT_STATUS_OK != status){
+        return status;
+    }
+
     g_uart_ota_session.received_size += copy_length;
     *consumed = copy_length;
 
@@ -460,8 +569,8 @@ static bootloader_port_status_t prv_uart_ota_consume_payload(const uint8_t *data
         return BOOTLOADER_PORT_STATUS_OK;
     }
 
-    status = bootloader_port_validate_firmware_vector(g_uart_ota_payload_buffer,
-                                                      g_uart_ota_session.header.image_size,
+    status = bootloader_port_validate_firmware_vector(g_uart_ota_vector_buffer,
+                                                      sizeof(g_uart_ota_vector_buffer),
                                                       &stack_addr,
                                                       &entry_addr);
     if(BOOTLOADER_PORT_STATUS_OK != status){
@@ -515,6 +624,54 @@ void uart_ota_emit_startup_probe(void)
 
 /*
  * 函数作用：
+ *   在发送 OTA ready 前预擦完整下载区，确保后续连续裸流只需要 Flash 编程。
+ * 主要流程：
+ *   1. 将 OTA 会话切换到预擦状态，避免任务层误解析旧 DMA 数据。
+ *   2. 按下载区最大容量擦除 152KB 缓存区。
+ *   3. 擦除成功后清空 DMA ring 读指针和诊断计数，进入等待头部状态。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   1：下载区预擦成功，可以向上位机发 ready。
+ *   0：下载区预擦失败，禁止发 ready，避免收到裸流后无法可靠写入。
+ */
+uint8_t uart_ota_prepare_download_area_before_ready(void)
+{
+    bootloader_port_status_t status;
+
+    g_uart_ota_session.state = UART_OTA_STATE_ERASING_DOWNLOAD;
+    my_printf(DEBUG_USART,
+              "OTA: pre-erase download area size=%lu\r\n",
+              (unsigned long)BOOTLOADER_PORT_DOWNLOAD_MAX_SIZE);
+
+    status = bootloader_port_prepare_download_area(BOOTLOADER_PORT_DOWNLOAD_MAX_SIZE);
+    if(BOOTLOADER_PORT_STATUS_OK != status){
+        my_printf(DEBUG_USART, "OTA: pre-erase failed status=%u\r\n", (unsigned int)status);
+        prv_uart_ota_enter_error((uint32_t)status);
+        return 0U;
+    }
+
+    __disable_irq();
+    uart_ota_rx_flag = 0U;
+    uart_ota_irq_count = 0U;
+    uart_ota_overwrite_count = 0U;
+    uart_ota_last_irq_length = 0U;
+    uart_ota_ring_read_index = prv_uart_ota_dma_write_index();
+    __enable_irq();
+
+    g_uart_ota_session.download_area_ready = 1U;
+    g_uart_ota_session.flash_dirty = 0U;
+    prv_uart_ota_reset_session(0U);
+    memset(g_uart_ota_header_buffer, 0, sizeof(g_uart_ota_header_buffer));
+    memset(g_uart_ota_vector_buffer, 0, sizeof(g_uart_ota_vector_buffer));
+    prv_uart_ota_clear_resync_magic();
+
+    my_printf(DEBUG_USART, "OTA: pre-erase ok\r\n");
+    return 1U;
+}
+
+/*
+ * 函数作用：
  *   对外提供 OTA 运行态复位接口，便于系统初始化后恢复到干净状态。
  * 参数说明：
  *   无参数。
@@ -525,36 +682,35 @@ void uart_ota_reset_runtime(void)
 {
     __disable_irq();
     uart_ota_rx_flag = 0U;
-    memset((void *)uart_ota_dma_length, 0, sizeof(uart_ota_dma_length));
     uart_ota_irq_count = 0U;
     uart_ota_overwrite_count = 0U;
     uart_ota_last_irq_length = 0U;
-    uart_ota_queue_write_index = 0U;
-    uart_ota_queue_read_index = 0U;
-    uart_ota_queue_count = 0U;
+    uart_ota_ring_read_index = prv_uart_ota_dma_write_index();
     prv_uart_ota_reset_session(0U);
     __enable_irq();
 
-    memset(uart_ota_dma_buffer, 0, sizeof(uart_ota_dma_buffer));
     memset(g_uart_ota_header_buffer, 0, sizeof(g_uart_ota_header_buffer));
-    memset(g_uart_ota_payload_buffer, 0, sizeof(g_uart_ota_payload_buffer));
+    memset(g_uart_ota_vector_buffer, 0, sizeof(g_uart_ota_vector_buffer));
     prv_uart_ota_clear_resync_magic();
 }
 
 /*
  * 函数作用：
- *   从 ISR 共享缓冲区取出一段 USART1/RS485 裸流数据到任务层私有处理窗口。
+ *   从 USART1 circular DMA 环形缓冲中取出一段连续裸流数据。
  * 参数说明：
- *   data：输出缓冲区，必须至少可写 UART_OTA_FRAME_BUFFER_SIZE 字节。
+ *   data：输出缓冲区，必须至少可写 UART_OTA_STREAM_WINDOW_SIZE 字节。
  *   length：输出本次取出的有效字节数。
  * 返回值说明：
  *   1：成功取出一段数据。
  *   0：当前没有新数据或参数非法。
  */
-static uint8_t prv_uart_ota_take_rx_bytes(uint8_t *data, uint16_t *length)
+static uint8_t uart_ota_take_ring_bytes(uint8_t *data, uint16_t *length)
 {
-    uint16_t valid_length;
-    uint8_t read_index;
+    uint32_t read_index;
+    uint32_t write_index;
+    uint32_t available;
+    uint32_t contiguous;
+    uint32_t copy_length;
 
     if((NULL == data) || (NULL == length)){
         return 0U;
@@ -562,22 +718,42 @@ static uint8_t prv_uart_ota_take_rx_bytes(uint8_t *data, uint16_t *length)
 
     *length = 0U;
     __disable_irq();
-    if(0U != uart_ota_queue_count){
-        read_index = uart_ota_queue_read_index;
-        valid_length = uart_ota_dma_length[read_index];
-        if(valid_length > UART_OTA_FRAME_BUFFER_SIZE){
-            valid_length = UART_OTA_FRAME_BUFFER_SIZE;
+    read_index = uart_ota_ring_read_index;
+    write_index = prv_uart_ota_dma_write_index();
+    available = prv_uart_ota_ring_available(read_index, write_index);
+
+    if(available >= (UART_OTA_RING_BUFFER_SIZE - UART_OTA_STREAM_WINDOW_SIZE)){
+        /*
+         * 读指针落后过多说明任务层可能已经被 DMA 追上。此时继续解析只会得到
+         * 被覆盖的旧/新混合数据，必须进入错误态，避免写入损坏镜像。
+         */
+        uart_ota_overwrite_count++;
+        prv_uart_ota_enter_error((uint32_t)BOOTLOADER_PORT_STATUS_BAD_PARAM);
+        __enable_irq();
+        return 0U;
+    }
+
+    if(available > 0U){
+        contiguous = UART_OTA_RING_BUFFER_SIZE - read_index;
+        copy_length = available;
+        if(copy_length > contiguous){
+            copy_length = contiguous;
         }
-        if(valid_length > 0U){
-            memcpy(data, uart_ota_dma_buffer[read_index], valid_length);
-            *length = valid_length;
+        if(copy_length > UART_OTA_STREAM_WINDOW_SIZE){
+            copy_length = UART_OTA_STREAM_WINDOW_SIZE;
         }
-        uart_ota_dma_length[read_index] = 0U;
-        uart_ota_queue_read_index = (uint8_t)((read_index + 1U) % UART_OTA_RX_QUEUE_DEPTH);
-        uart_ota_queue_count--;
-        if(0U == uart_ota_queue_count){
-            uart_ota_rx_flag = 0U;
+
+        memcpy(data, &usart1_rxbuffer[read_index], copy_length);
+        read_index += copy_length;
+        if(read_index >= UART_OTA_RING_BUFFER_SIZE){
+            read_index = 0U;
         }
+        uart_ota_ring_read_index = read_index;
+        *length = (uint16_t)copy_length;
+    }
+
+    if(uart_ota_ring_read_index == prv_uart_ota_dma_write_index()){
+        uart_ota_rx_flag = 0U;
     }
     __enable_irq();
 
@@ -589,8 +765,8 @@ static uint8_t prv_uart_ota_take_rx_bytes(uint8_t *data, uint16_t *length)
  *   处理任务层取出的 OTA 裸流字节。
  * 主要流程：
  *   1. 等待并解析固定 64 字节头部。
- *   2. 头部合法后接收 App payload 到 RAM 缓冲。
- *   3. payload 完整后校验 CRC 和向量表，切到待提交状态。
+ *   2. 头部合法后把 App payload 流式写入已预擦下载区。
+ *   3. payload 完整后校验流式 CRC 和向量表，切到待提交状态。
  * 参数说明：
  *   data：本次接收到的连续字节。
  *   length：本次接收字节数。
@@ -665,7 +841,7 @@ void uart_ota_feed_rx_bytes(const uint8_t *data, uint16_t length)
  *   无参数。
  * 返回值说明：
  *   BOOTLOADER_PORT_STATUS_OK：下载区和参数区都准备完毕。
- *   其它状态：Flash 擦写或参数区写入失败。
+ *   其它状态：下载区回读 CRC 或参数区写入失败。
  */
 static bootloader_port_status_t prv_uart_ota_commit_payload_to_bootloader(void)
 {
@@ -678,21 +854,9 @@ static bootloader_port_status_t prv_uart_ota_commit_payload_to_bootloader(void)
               "OTA: commit start size=%lu\r\n",
               (unsigned long)g_uart_ota_session.header.image_size);
 
-    status = bootloader_port_prepare_download_area(g_uart_ota_session.header.image_size);
-    if(BOOTLOADER_PORT_STATUS_OK != status){
-        return status;
-    }
-
-    status = bootloader_port_write_download_chunk(0U,
-                                                  g_uart_ota_payload_buffer,
-                                                  g_uart_ota_session.header.image_size);
-    if(BOOTLOADER_PORT_STATUS_OK != status){
-        return status;
-    }
-
     /*
-     * Flash 写入后必须从下载区回读计算 CRC，确认最终交给 BootLoader 搬运的内容
-     * 与 OTA 文件 payload 完全一致，而不仅仅是 RAM 缓冲 CRC 正确。
+     * payload 已经在接收过程中写入下载区。这里只做回读 CRC，确认最终交给
+     * BootLoader 搬运的 Flash 内容与 OTA 文件 payload 完全一致。
      */
     flash_crc32 = bootloader_port_calc_download_crc32(g_uart_ota_session.header.image_size);
     if(flash_crc32 != g_uart_ota_session.header.image_crc32){
@@ -713,8 +877,8 @@ static bootloader_port_status_t prv_uart_ota_commit_payload_to_bootloader(void)
  * 函数作用：
  *   周期性处理 OTA 提交流程。
  * 主要流程：
- *   1. 接收解析工作在 USART1/DMA 中断中只做 RAM 拷贝和 CRC 累计。
- *   2. payload 完整后，任务层关闭 USART1/DMA 中断并执行 Flash 擦写。
+ *   1. 接收中断只提示 circular DMA 有新数据，任务层按读写指针取 512B 窗口。
+ *   2. payload 接收时边算 CRC 边写入已预擦下载区，完整后只回读 CRC 并写参数区。
  *   3. 参数区写入成功后短延时复位，让 BootLoader 搬运下载区固件。
  * 参数说明：
  *   无参数。
@@ -723,18 +887,18 @@ static bootloader_port_status_t prv_uart_ota_commit_payload_to_bootloader(void)
  */
 void uart_ota_task(void)
 {
-    uint8_t rx_window[UART_OTA_FRAME_BUFFER_SIZE];
+    uint8_t rx_window[UART_OTA_STREAM_WINDOW_SIZE];
     uint16_t rx_length = 0U;
     uint8_t drained_count = 0U;
     bootloader_port_status_t status;
 
     /*
-     * RS485 裸流 OTA 可能连续触发多个 DMA 满缓冲中断。单次任务调用按队列深度设上限
-     * 尽量排空已有槽位，避免 5ms 周期内只处理 1KB 时被 OLED/日志等短抖动追上；
-     * 上限仍然保留，防止异常输入让本任务长期占用合作式调度器。
+     * RS485 裸流 OTA 使用 circular DMA 后，任务层根据 DMA 写指针消费环形缓冲。
+     * 单次调用最多处理 32KB，以便在连续裸流下快速追上输入，同时仍保留上限，
+     * 防止异常输入让本任务长期占用合作式调度器。
      */
     while(drained_count < UART_OTA_TASK_DRAIN_LIMIT) {
-        if(0U == prv_uart_ota_take_rx_bytes(rx_window, &rx_length)) {
+        if(0U == uart_ota_take_ring_bytes(rx_window, &rx_length)) {
             break;
         }
         uart_ota_feed_rx_bytes(rx_window, rx_length);
@@ -750,8 +914,8 @@ void uart_ota_task(void)
     }
 
     /*
-     * Flash 擦写期间 CPU 不能可靠接收新的串口流，因此在提交阶段关闭 OTA 接收中断。
-     * 此时完整文件已经在 RAM 中，继续接收外部字节只会污染当前升级状态。
+     * 进入提交阶段时完整 payload 已经写入下载区。此时关闭 OTA 接收中断，
+     * 避免串口工具尾部杂字节或新一轮裸流污染已经完成的升级会话。
      */
     nvic_irq_disable(USART1_IRQn);
     nvic_irq_disable(DMA0_Channel5_IRQn);

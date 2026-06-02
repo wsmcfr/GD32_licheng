@@ -86,10 +86,10 @@ tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.b
 |---:|---|---|---|
 | 1 | Keil | 构建 App，并生成 `Project.bin` 和 `Project_ota.bin` | OTA 文件准备完成 |
 | 2 | 上位机串口工具 | 以原始/直接发送方式发送 `Project_ota.bin` | 字节流进入 RS485/USART1 |
-| 3 | USART1 + DMA | 持续接收裸流，IDLE 或 DMA 满缓冲时移交数据片段 | ISR 只复制数据并置标志 |
+| 3 | USART1 + DMA | 使用 32KB circular DMA 持续接收裸流，IDLE/半满/满中断只提示有新数据 | ISR 不复制数据、不重装 DMA、不写 Flash |
 | 4 | App `uart_ota_task()` | 解析 64 字节头部，校验 magic、大小、地址、头部 CRC 和向量表 | 头部合法后继续接收 payload |
-| 5 | App `uart_ota_task()` | 把 payload 收到 RAM 缓冲，并计算 CRC32 | 避免边接收边擦写内部 Flash 导致丢字节 |
-| 6 | App | payload CRC 和向量表复核通过后，写入 `0x08059000` App 缓存区 | 新固件 payload 暂存在 Flash |
+| 5 | App 启动阶段 | 在发出 `OTA485: ready` 前预擦完整 `0x08059000 ~ 0x0807EFFF` 下载缓存区 | 连续裸流期间不再执行耗时整区擦除 |
+| 6 | App `uart_ota_task()` | 从 DMA 环形缓冲取 512B 窗口，边计算 CRC32 边写入已擦好的下载区 | 新固件 payload 流式暂存在 Flash，不再占用 152KB RAM |
 | 7 | App | 回读下载缓存区并重新计算 CRC32 | 确认 Flash 写入正确 |
 | 8 | App | 写 `0x0800C000` 参数区，置 `updateFlag=0x5A`、`updateStatus=0x01` | 告诉 BootLoader 新固件已准备好 |
 | 9 | App | 软件复位 | 控制权交还 BootLoader |
@@ -108,21 +108,22 @@ App 侧 OTA 主要由以下文件完成：
 
 | 文件 | 作用 |
 |---|---|
-| [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:1) | RS485/USART1 OTA 总入口，负责头部解析、裸流接收、CRC 校验、下载区写入和参数区提交 |
-| [Function/uart_ota_app.h](D:/GD32/2026706296/Function/uart_ota_app.h:1) | OTA 接收缓冲、共享标志和任务接口声明 |
+| [Function/uart_ota_app.c](D:/GD32/2026706296/Function/uart_ota_app.c:1) | RS485/USART1 OTA 总入口，负责 ready 前预擦、头部解析、环形缓冲消费、流式 CRC、下载区写入和参数区提交 |
+| [Function/uart_ota_app.h](D:/GD32/2026706296/Function/uart_ota_app.h:1) | OTA 环形缓冲参数、共享标志和任务接口声明 |
 | [HardWare/BOOTLOADER/bootloader_port.c](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.c:1) | 下载缓存区擦写、CRC32、参数区回写和软件复位封装 |
-| [User/gd32f4xx_it.c](D:/GD32/2026706296/User/gd32f4xx_it.c:1) | USART1 IDLE 和 DMA 满缓冲中断，把 DMA 数据片段移交给 OTA 任务 |
-| [HardWare/USART/bsp_usart.c](D:/GD32/2026706296/HardWare/USART/bsp_usart.c:1) | USART1/RS485、DMA、IDLE 中断和 DMA 满缓冲中断初始化 |
+| [User/gd32f4xx_it.c](D:/GD32/2026706296/User/gd32f4xx_it.c:1) | USART1 IDLE、DMA 半满和 DMA 满中断只清标志并提示 OTA 任务消费 circular DMA |
+| [HardWare/USART/bsp_usart.c](D:/GD32/2026706296/HardWare/USART/bsp_usart.c:1) | USART1/RS485、32KB circular DMA、IDLE/HTF/FTF 中断初始化 |
 | [tools/pack_ota_image.c](D:/GD32/2026706296/tools/pack_ota_image.c:1) | PC 侧打包工具，把 `Project.bin` 转换为 `Project_ota.bin` |
 
 当前 App 的关键约束：
 
 | 约束 | 说明 |
 |---|---|
-| ISR 不解析协议 | 中断里只做 DMA 数据复制、长度记录、标志置位和 DMA 重新装载 |
-| 任务层解析裸流 | `uart_ota_task()` 周期性消费 DMA 片段，先拼头部，再收 payload |
-| payload 先完整进 RAM | 内部 Flash 擦写可能阻塞取指，先完整接收可降低串口丢字节风险 |
-| 校验失败不擦写参数 | magic、头部 CRC、payload CRC、向量表、回读 CRC 任一失败，都不会设置 BootLoader 升级标志 |
+| ISR 不解析协议 | 中断里只清 IDLE/HTF/FTF 标志、记录诊断计数并置位 `uart_ota_rx_flag`，不复制数据、不停 DMA |
+| 任务层解析裸流 | `uart_ota_task()` 周期性根据 DMA 写指针消费 32KB 环形缓冲，先拼头部，再流式处理 payload |
+| ready 前预擦 | `uart_ota_prepare_download_area_before_ready()` 在发出 ready 前擦完整下载区，避免连续裸流期间执行整区擦除 |
+| payload 流式写 Flash | 任务层每次取 512B 窗口，边更新 CRC32 边写入已擦好的 `0x08059000` 下载区，只缓存 8B 向量表 |
+| 校验失败不写参数 | magic、头部 CRC、payload CRC、向量表、回读 CRC 任一失败，都不会设置 BootLoader 升级标志 |
 | 成功后自动复位 | 参数区写入成功后，App 延时给日志和 RS485 发送完成留时间，再软件复位 |
 
 ---
@@ -163,7 +164,7 @@ BootLoader 搬运时必须满足：
 | 1 | 打开 `project/2026706296.uvprojx`，重新编译 App | 构建日志为 `0 Error(s)` |
 | 2 | 检查输出目录 | `project/output/Project.bin` 和 `project/output/Project_ota.bin` 都存在 |
 | 3 | 打开 RS485/USART1 对应串口 | 波特率 `115200`，8N1 |
-| 4 | 复位或重新上电板子 | RS485 口看到一次 `OTA485: ready, send Project_ota.bin raw` |
+| 4 | 复位或重新上电板子 | USART0 先看到 `OTA: pre-erase ok`，RS485 口随后看到一次 `OTA485: ready, send Project_ota.bin raw` |
 | 5 | 在串口工具中选择原始/直接发送文件 | 选择 `project/output/Project_ota.bin` |
 | 6 | 等待发送完成 | USART0 日志出现 `OTA: header ok` 和 `OTA: payload ok` |
 | 7 | 等待 App 自动复位 | USART0 日志出现 `OTA: ready, reset to BootLoader` |
@@ -177,7 +178,7 @@ BootLoader 搬运时必须满足：
 |---|---|---|
 | RS485 口上电没有 `OTA485: ready` | App 没跑到当前分支，或 RS485 接线/串口号不对 | 先看 USART0 启动日志，再查 RS485 A/B、共地和 COM 口 |
 | USART0 出现 `OTA: header error` | 发送的不是 `Project_ota.bin` 或文件被截断/污染 | 重新确认串口工具选择的是原始/直接发送，并选择 `project/output/Project_ota.bin` |
-| `OTA: payload crc error` | 传输中丢字节或串口工具发送设置不对 | 降低发送速率、关闭附加换行/文本转义，确认是二进制原始发送 |
+| `OTA: payload crc error` | 传输中丢字节、环形缓冲被追上或串口工具发送设置不对 | 复位板子等待重新预擦和 ready，关闭附加换行/文本转义，确认是二进制原始发送 |
 | 下载区回读 CRC 失败 | 内部 Flash 写入失败或 App 缓存区地址不一致 | 检查 `0x08059000` 分区和 BootLoader/App 常量是否一致 |
 | BootLoader 搬运后 CRC 失败 | 搬运过程或正式 App 区擦写异常 | 看 BootLoader 日志中的大小、CRC 和擦除页数 |
 | BootLoader `jump app` 后脱机卡住 | App 早期 C 库可能进入 semihosting | 检查 `project/Listings/Project.map` 中 `_sys_open/_sys_write/_sys_exit/_ttywrch` 是否来自 `main.o` |

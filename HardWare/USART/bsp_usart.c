@@ -164,7 +164,7 @@ void bsp_usart_init(void)
  *   2. 配置 PD5/PD6 为 USART1 的 TX/RX 复用功能。
  *   3. 配置 PE8 为 RS485 收发器方向控制输出，并默认进入接收态。
  *   4. 配置 USART1 为 OTA 默认 115200-8N1 收发模式。
- *   5. 同时打开 USART1 IDLE 中断和 DMA 满缓冲中断，用于接收裸流文件。
+ *   5. 配置 USART1 RX DMA 为 circular ring，用于无停顿接收裸流文件。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -190,15 +190,22 @@ void bsp_usart1_init(void)
     dma_init_struct.priority = DMA_PRIORITY_ULTRA_HIGH;
     dma_single_data_mode_init(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, &dma_init_struct);
 
-    dma_circulation_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+    /*
+     * 连续裸发 Project_ota.bin 时上位机不会在 Flash 编程期间暂停。
+     * circular DMA 可以让硬件持续写 32KB 环形缓冲，任务层只需要追踪 DMA
+     * 当前写指针，不再依赖满缓冲中断里停 DMA、复制、重装载。
+     */
+    dma_circulation_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
     dma_channel_subperipheral_select(USART1_RX_DMA_PERIPH,
                                      USART1_RX_DMA_CHANNEL,
                                      USART1_RX_DMA_SUBPERI);
     /*
-     * 裸发 Project_ota.bin 时，串口工具可能连续输出整个文件，中间没有足够长的
-     * IDLE 间隔。必须启用 DMA 满缓冲中断，在 1024B 窗口满时立即移交数据并重装 DMA。
+     * HTF/FTF 中断只作为“环形缓冲有新数据”的诊断提示，不在 ISR 中搬运数据。
+     * 真正的数据消费由 uart_ota_task() 根据 DMA 剩余计数完成。
      */
-    dma_interrupt_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FTF);
+    dma_interrupt_enable(USART1_RX_DMA_PERIPH,
+                         USART1_RX_DMA_CHANNEL,
+                         DMA_INT_HTF | DMA_INT_FTF);
     dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
     gpio_af_set(USART1_TX_PORT, USART1_AF, USART1_TX_PIN | USART1_RX_PIN);
@@ -218,7 +225,7 @@ void bsp_usart1_init(void)
     usart_dma_receive_config(USART1, USART_RECEIVE_DMA_ENABLE);
     usart_enable(USART1);
 
-    /* USART1/RS485 同时使用 IDLE 和 DMA 满缓冲中断，保证裸流大文件不会卡在 DMA 满。 */
+    /* USART1/RS485 使用 circular DMA，IDLE/HTF/FTF 中断只负责唤醒任务和记录状态。 */
     nvic_irq_enable(USART1_IRQn, 1U, 0U);
     nvic_irq_enable(DMA0_Channel5_IRQn, 1U, 1U);
     usart_interrupt_enable(USART1, USART_INT_IDLE);

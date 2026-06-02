@@ -36,7 +36,8 @@ Examples:
 - `rx_flag`
 - `uart_dma_buffer`
 - `uart_ota_rx_flag`
-- `uart_ota_dma_buffer`
+- `usart1_rxbuffer[]` as the USART1 OTA circular DMA ring
+- `uart_ota_ring_read_index`
 - `ucLed[6]` through `led_app_set()`, `led_app_toggle()`, `led_app_all_off()`, and `led_app_blank_for_sleep()`
 
 ### Module-Private Cached State
@@ -63,7 +64,8 @@ Do **not** create global state just to avoid passing one parameter through a pri
 Good example:
 
 - `rx_flag` is global because it is written in `USART0_IRQHandler()` and consumed in `uart_task()`
-- `uart_ota_rx_flag` is global because it is written in `USART1_IRQHandler()` and consumed in `uart_ota_task()`
+- `uart_ota_rx_flag` is global because it is written in `USART1_IRQHandler()` / `DMA0_Channel5_IRQHandler()` and consumed in `uart_ota_task()`
+- `uart_ota_ring_read_index` is global because the OTA task must preserve its read cursor across scheduler calls while DMA keeps writing `usart1_rxbuffer[]` in circular mode
 
 Bad example:
 

@@ -17,51 +17,56 @@ extern "C" {
 
 /*
  * 宏作用：
- *   定义 OTA 应用层接收缓冲区长度。
+ *   定义 USART1/RS485 连续裸流 OTA 的 DMA 环形缓冲区大小。
  * 说明：
- *   USART1 DMA 只作为流式搬运窗口，不再要求一帧放下完整文件。
+ *   上位机只能无停顿连续发送 Project_ota.bin，所以 USART1 RX 必须使用
+ *   circular DMA，让 Flash 编程期间进入的字节先落到 SRAM 环形缓冲区。
+ *   32KB 在 115200 8N1 下约等于 2.8 秒输入余量，用来覆盖单块 Flash 编程
+ *   和调度抖动；下载区整区擦除必须在 ready 前完成，不能占用这段余量。
  */
-#if defined(BSP_USART1_RX_BUFFER_SIZE)
-#define UART_OTA_FRAME_BUFFER_SIZE     BSP_USART1_RX_BUFFER_SIZE
-#else
-#define UART_OTA_FRAME_BUFFER_SIZE     512U
-#endif
+#define UART_OTA_RING_BUFFER_SIZE    BSP_USART1_RX_BUFFER_SIZE
 
 /*
  * 宏作用：
- *   定义 USART1 ISR 到 OTA 任务之间的环形队列槽数。
+ *   定义任务层每次从 DMA 环形缓冲取出的最大连续处理窗口。
  * 说明：
- *   串口工具连续发送大文件时，DMA 满缓冲中断可能比 5ms 调度任务更频繁；
- *   多槽队列可以吸收短时间调度抖动，只有队列满时才记录丢段计数。
+ *   该窗口只作为短暂栈缓冲，替代原来的 152KB 整包 payload RAM。
+ *   512B 可以让单次 Flash 编程阻塞时间保持较短，同时减少函数调用开销。
  */
-#define UART_OTA_RX_QUEUE_DEPTH        4U
+#define UART_OTA_STREAM_WINDOW_SIZE  512U
 
 /*
  * 宏作用：
- *   定义头部 bin OTA 的固定头部长度和 payload 最大长度。
+ *   定义头部 bin OTA 的固定头部长度。
  * 说明：
- *   payload 最大长度必须与内部 Flash 下载缓存区保持一致；接收端先完整接收
- *   payload 到 RAM，再统一擦写下载区，避免 Flash 擦写期间丢串口数据。
+ *   payload 最大长度由 BootLoader 下载缓存区常量限制。接收端不再申请等长
+ *   payload RAM，而是校验头部后把 payload 流式写入已预擦的下载区。
  */
 #define UART_OTA_IMAGE_HEADER_SIZE     64U
-#define UART_OTA_PAYLOAD_BUFFER_SIZE   BOOTLOADER_PORT_DOWNLOAD_MAX_SIZE
 
 /*
  * 变量作用：
- *   USART1/RS485 中断移交给 OTA 模块的环形队列、长度表和诊断计数。
+ *   USART1/RS485 circular DMA 接收环形缓冲区和诊断计数。
  * 说明：
- *   队列由 USART1 IDLE 中断和 DMA 满缓冲中断写入，由 uart_ota_task() 读取。
- *   写入和读取索引必须在短临界区内更新，避免 ISR 与任务层同时修改。
+ *   DMA 硬件持续写入 uart_ota_ring_buffer，任务层根据 DMA 剩余计数计算硬件
+ *   写指针并推进读指针。中断只用于唤醒/诊断，不再复制数据或重装 DMA。
  */
 extern __IO uint8_t uart_ota_rx_flag;
-extern __IO uint16_t uart_ota_dma_length[UART_OTA_RX_QUEUE_DEPTH];
-extern uint8_t uart_ota_dma_buffer[UART_OTA_RX_QUEUE_DEPTH][UART_OTA_FRAME_BUFFER_SIZE];
 extern __IO uint32_t uart_ota_irq_count;
 extern __IO uint32_t uart_ota_overwrite_count;
 extern __IO uint16_t uart_ota_last_irq_length;
-extern __IO uint8_t uart_ota_queue_write_index;
-extern __IO uint8_t uart_ota_queue_read_index;
-extern __IO uint8_t uart_ota_queue_count;
+extern __IO uint32_t uart_ota_ring_read_index;
+
+/*
+ * 函数作用：
+ *   在对外发送 OTA ready 探测串之前预擦内部 Flash 下载区。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   1：下载区预擦成功，可以开始接收连续裸流。
+ *   0：下载区预擦失败，不能提示上位机发送升级文件。
+ */
+uint8_t uart_ota_prepare_download_area_before_ready(void);
 
 /*
  * 函数作用：

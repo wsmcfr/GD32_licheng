@@ -21,7 +21,7 @@
 | 参数区 | `0x0800C000` | `4KB` | 保存升级标志、App 大小、CRC、版本等参数 |
 | App 运行区 | `0x0800D000` | `152KB` | 当前工程的链接和运行地址 |
 | App 备份区 | `0x08033000` | `152KB` | BootLoader 升级前备份旧 App，搬运失败时恢复 |
-| App 缓存区 | `0x08059000` | `152KB` | App 接收并校验 payload 后，把新固件写到这里 |
+| App 缓存区 | `0x08059000` | `152KB` | App 在 ready 前预擦，随后边接收 payload 边把新固件流式写到这里 |
 | 预留页 | `0x0807F000` | `4KB` | 当前不用，作为保护和后续扩展预留 |
 
 | 问题 | 当前答案 |
@@ -38,8 +38,8 @@
 | `project/2026706296.uvprojx` | IROM 为 `0x0800D000 / 0x026000`，构建后生成 `Project.bin` 和 `Project_ota.bin` |
 | `User/main.c` | 提供 `__use_no_semihosting` 和 `_sys_*` retarget，避免脱机运行卡在 `BKPT 0xAB` |
 | `Function/usart_app.c` | `USART0` 仅作为日志和 LittleFS 调试命令口 |
-| `Function/uart_ota_app.c/.h` | 解析 `Project_ota.bin` 头部，接收 payload，校验 CRC 和向量表，写下载区和参数区 |
-| `HardWare/USART/bsp_usart.c/.h` | USART1/RS485 支持 IDLE + DMA 满缓冲中断，适配连续裸流文件发送 |
+| `Function/uart_ota_app.c/.h` | ready 前预擦下载区，解析 `Project_ota.bin` 头部，消费 32KB DMA 环形缓冲，流式写下载区，校验 CRC 和向量表，写参数区 |
+| `HardWare/USART/bsp_usart.c/.h` | USART1/RS485 使用 32KB circular DMA，并通过 IDLE + DMA 半满/满中断提示任务层消费连续裸流 |
 | `HardWare/BOOTLOADER/bootloader_port.c/.h` | 封装下载区擦写、CRC32、参数区回写和软件复位 |
 | `tools/pack_ota_image.c` | 把 `Project.bin` 打包为带 64 字节头部的 `Project_ota.bin` |
 
@@ -65,14 +65,14 @@ E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\ou
 |---|---|---|
 | 1 | 在 Keil 中重新编译当前 App 工程 | 构建后生成 `Project.bin` 和 `Project_ota.bin` |
 | 2 | 打开 RS485/USART1 对应串口 | 波特率 `115200`，8N1 |
-| 3 | 复位或重新上电板子 | RS485 口在启动自检和调度器初始化完成后看到一次 `OTA485: ready, send Project_ota.bin raw` |
+| 3 | 复位或重新上电板子 | USART0 先看到 `OTA: pre-erase ok`，RS485 口随后看到一次 `OTA485: ready, send Project_ota.bin raw` |
 | 4 | 在串口工具中选择原始/直接发送文件 | 选择 `project/output/Project_ota.bin` |
 | 5 | 观察 `USART0` 日志 | 出现 `OTA: header ok`、`OTA: payload ok`、`OTA: ready, reset to BootLoader` |
 | 6 | 观察 BootLoader 日志 | 出现 `app crc32 check pass` 和 `app update success` |
 
 串口工具必须使用原始/直接发送文件模式；现场只选择 `Project_ota.bin`，不要选择 `Project.bin` 或 `Project.hex`。
 
-如果误发了 `Project.bin`、旧格式流或损坏文件，App 会打印 `OTA: bad header status=...` 或 `OTA: payload failed status=...` 并进入错误态。修正文件后可以不复位，直接从文件开头重新原始发送合法 `Project_ota.bin`；`USART0` 出现 `OTA: resync after error code=...` 后会重新解析新文件头。
+如果误发了 `Project.bin`、旧格式流或损坏文件，App 会打印 `OTA: bad header status=...` 或 `OTA: payload failed status=...` 并进入错误态。若错误发生在 payload 写入 Flash 之前，修正文件后可以不复位，直接从文件开头重新原始发送合法 `Project_ota.bin`；`USART0` 出现 `OTA: resync after error code=...` 后会重新解析新文件头。若已经开始写 payload 后才失败，下载区不再保持全擦除状态，必须复位或重新上电，等待下一次 `OTA: pre-erase ok` 和 `OTA485: ready` 后再发送。
 
 ## 6. OTA 文件头部格式
 

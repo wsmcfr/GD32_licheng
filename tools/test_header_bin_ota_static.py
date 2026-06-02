@@ -150,27 +150,66 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         self.assertNotIn(old_receiver_h, system_all)
         self.assertNotIn(old_receiver_c, uvproj)
 
-    def test_usart_dma_full_handler_is_enabled_for_raw_file_stream(self):
+    def test_usart_dma_circular_handler_is_enabled_for_raw_file_stream(self):
         """
         函数作用：
-          验证裸流接收路径启用了 USART1 DMA 满缓冲中断，避免连续发送大文件时等待 IDLE。
+          验证裸流接收路径启用了 USART1 DMA circular + HTF/FTF 提示中断。
         参数说明：
           无参数。
         返回值说明：
-          无返回值；断言失败时说明 DMA 满缓冲链路缺失。
+          无返回值；断言失败时说明连续裸流接收链路可能仍依赖停 DMA 重装载。
         """
         bsp_usart_c = self.read_text("HardWare/USART/bsp_usart.c")
         irq_c = self.read_text("User/gd32f4xx_it.c")
         irq_h = self.read_text("User/gd32f4xx_it.h")
 
+        self.assertIn("dma_circulation_enable(USART1_RX_DMA_PERIPH", bsp_usart_c)
         self.assertIn("dma_interrupt_enable(USART1_RX_DMA_PERIPH", bsp_usart_c)
+        self.assertIn("DMA_INT_HTF | DMA_INT_FTF", bsp_usart_c)
+        self.assertIn("DMA_INT_FLAG_HTF", irq_c)
         self.assertIn("DMA_INT_FTF", bsp_usart_c)
         self.assertIn("DMA0_Channel5_IRQHandler", irq_c)
-        self.assertIn("UART_OTA_RX_QUEUE_DEPTH", irq_c)
-        self.assertIn("uart_ota_queue_count++", irq_c)
-        self.assertIn("uart_ota_queue_count--", self.read_text("Function/uart_ota_app.c"))
-        self.assertIn("uart_ota_feed_rx_bytes", self.read_text("Function/uart_ota_app.c"))
+        self.assertIn("uart_ota_rx_flag = 1U", irq_c)
+        self.assertNotIn("dma_transfer_number_config(USART1_RX_DMA_PERIPH", irq_c)
+        self.assertIn("uart_ota_take_ring_bytes", self.read_text("Function/uart_ota_app.c"))
         self.assertIn("void DMA0_Channel5_IRQHandler(void);", irq_h)
+
+    def test_streaming_raw_ota_uses_circular_dma_and_no_full_payload_ram(self):
+        """
+        函数作用：
+          验证连续裸流 OTA 改为“ready 前预擦下载区 + DMA 环形缓冲 + payload 边收边写 Flash”。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时说明实现仍依赖整包 RAM 或 DMA 重装载，无法支撑无停顿裸流发送。
+        """
+        uart_ota_c = self.read_text("Function/uart_ota_app.c")
+        uart_ota_h = self.read_text("Function/uart_ota_app.h")
+        bsp_usart_c = self.read_text("HardWare/USART/bsp_usart.c")
+        scheduler_c = self.read_text("Function/scheduler.c")
+        irq_c = self.read_text("User/gd32f4xx_it.c")
+        ota_spec = self.read_text(".trellis/spec/backend/embedded-ota-guidelines.md")
+
+        self.assertIn("#define UART_OTA_RING_BUFFER_SIZE    BSP_USART1_RX_BUFFER_SIZE", uart_ota_h)
+        self.assertIn("#define BSP_USART1_RX_BUFFER_SIZE      (32U * 1024U)", self.read_text("HardWare/USART/bsp_usart.h"))
+        self.assertIn("usart1_rxbuffer", uart_ota_c)
+        self.assertIn("uart_ota_prepare_download_area_before_ready", uart_ota_c)
+        self.assertIn("uart_ota_take_ring_bytes", uart_ota_c)
+        self.assertIn("prv_uart_ota_stream_flash_write", uart_ota_c)
+        self.assertIn("UART_OTA_STATE_ERASING_DOWNLOAD", uart_ota_c)
+        self.assertIn("dma_circulation_enable(USART1_RX_DMA_PERIPH", bsp_usart_c)
+        self.assertIn("memory0_addr = (uint32_t)usart1_rxbuffer", bsp_usart_c)
+        self.assertIn("sizeof(usart1_rxbuffer)", bsp_usart_c)
+        self.assertNotIn("static uint8_t g_uart_ota_payload_buffer", uart_ota_c)
+        self.assertNotIn("UART_OTA_PAYLOAD_BUFFER_SIZE", uart_ota_h)
+        self.assertNotIn("dma_transfer_number_config(USART1_RX_DMA_PERIPH", irq_c)
+        self.assertIn("uart_ota_prepare_download_area_before_ready()", scheduler_c)
+        self.assertLess(
+            scheduler_c.find("uart_ota_prepare_download_area_before_ready()"),
+            scheduler_c.find("uart_ota_emit_startup_probe();"),
+        )
+        self.assertIn("USART1 DMA circular ring", ota_spec)
+        self.assertIn("Pre-ready erase", ota_spec)
 
     def test_ota_ready_probe_is_emitted_after_scheduler_is_ready(self):
         """
