@@ -6,10 +6,10 @@
 |---|---|
 | 当前工程角色 | App 工程，不再从 `0x08000000` 独立启动 |
 | App 链接地址 | `0x0800D000` |
-| App 最大运行区 | `0x0005A000` |
+| App 最大运行区 | `0x00026000`，也就是 `152KB` |
 | 在线升级文件 | `project/output/Project_ota.bin` |
 | 当前升级方式 | RS485/USART1 原始/直接发送 `Project_ota.bin` |
-| 当前接收约束 | 仅接收 `Project_ota.bin` 原始字节流，不需要额外引导命令或文件传输握手 |
+| 当前接收约束 | 仅接收 `Project_ota.bin` 原始字节流，不需要额外引导命令或文件传输握手，必须能从文件第 0 字节一次性连续发送完 |
 
 首次导入 OTA 功能时，仍需先用 SWD/烧录器把带当前 OTA 接收逻辑的 App 写到 `0x0800D000`。板子里如果还是旧 BootLoader，也必须同步重刷 `D:\GD32\2026706296_bootloader` 中的 BootLoader，否则仍可能受旧容量或搬运逻辑限制。
 
@@ -19,13 +19,15 @@
 |---|---:|---:|---|
 | BootLoader 区 | `0x08000000` | `48KB` | MCU 复位后先运行 BootLoader |
 | 参数区 | `0x0800C000` | `4KB` | 保存升级标志、App 大小、CRC、版本等参数 |
-| App 区 | `0x0800D000` | `0x5A000` | 当前工程的链接和运行地址 |
-| 下载缓存区 | `0x08067000` | `100KB` | App 接收并校验 payload 后，把新固件写到这里 |
+| App 运行区 | `0x0800D000` | `152KB` | 当前工程的链接和运行地址 |
+| App 备份区 | `0x08033000` | `152KB` | BootLoader 升级前备份旧 App，搬运失败时恢复 |
+| App 缓存区 | `0x08059000` | `152KB` | App 接收并校验 payload 后，把新固件写到这里 |
+| 预留页 | `0x0807F000` | `4KB` | 当前不用，作为保护和后续扩展预留 |
 
 | 问题 | 当前答案 |
 |---|---|
-| 当前工程“最多能运行多大的 App” | 正式 App 区上限是 `0x5A000 = 360KB` |
-| 当前这套串口 OTA“最多能升级多大的 App” | `Project_ota.bin` 内的 App payload 必须 `<= 100KB` |
+| 当前工程“最多能运行多大的 App” | 正式 App 运行区上限是 `0x00026000 = 152KB` |
+| 当前这套串口 OTA“最多能升级多大的 App” | `Project_ota.bin` 内的 App payload 必须 `<= 152KB` |
 
 ## 3. 当前工程已经做了什么
 
@@ -33,7 +35,7 @@
 |---|---|
 | `User/boot_app_config.h/.c` | 定义 App 起始地址并在启动时设置 `SCB->VTOR = 0x0800D000` |
 | `Function/scheduler.c` | `system_init()` 开头调用 `boot_app_handoff_init()` |
-| `project/2026706296.uvprojx` | IROM 为 `0x0800D000 / 0x5A000`，构建后生成 `Project.bin` 和 `Project_ota.bin` |
+| `project/2026706296.uvprojx` | IROM 为 `0x0800D000 / 0x026000`，构建后生成 `Project.bin` 和 `Project_ota.bin` |
 | `User/main.c` | 提供 `__use_no_semihosting` 和 `_sys_*` retarget，避免脱机运行卡在 `BKPT 0xAB` |
 | `Function/usart_app.c` | `USART0` 仅作为日志和 LittleFS 调试命令口 |
 | `Function/uart_ota_app.c/.h` | 解析 `Project_ota.bin` 头部，接收 payload，校验 CRC 和向量表，写下载区和参数区 |
@@ -94,8 +96,10 @@ E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\ou
 | 复位启动 | BootLoader 从 `0x08000000` 运行 | 初始化 SysTick 和串口 |
 | 读取参数区 | `0x0800C000` | 读取 `magicWord/updateStatus/updateFlag/appSize/appCRC32` |
 | 判断是否升级 | `updateStatus == 0x01` 且 `updateFlag == 0x5A` | 进入固件搬运流程 |
-| 搬运新固件 | 从 `0x08067000` 读，写入 `0x0800D000` | 把下载缓存区的新 App 复制到 App 区 |
+| 备份旧固件 | 从 `0x0800D000` 读，写入 `0x08033000` | 升级前保存当前 App，给失败恢复留后路 |
+| 搬运新固件 | 从 `0x08059000` 读，写入 `0x0800D000` | 把缓存区的新 App 复制到 App 运行区 |
 | CRC 校验 | 对正式 App 区重新计算 CRC32 | 与参数区 `appCRC32` 比较 |
+| 失败恢复 | 搬运失败时从 `0x08033000` 恢复到 `0x0800D000` | 尽量回到旧 App，避免坏镜像反复启动 |
 | 更新参数 | 清除升级标志并记录升级次数 | 成功后复位 |
 | 跳转 App | `iap_load_app(0x0800D000)` | 设置 MSP、VTOR，然后跳转到 App 复位入口 |
 
@@ -103,10 +107,11 @@ E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\ou
 
 | 步骤 | 当前实现 |
 |---|---|
-| 大小检查 | `appSize` 必须大于 0，且不能超过下载缓存区 `100KB` 和 App 区上限 |
+| 大小检查 | `appSize` 必须大于 0，且不能超过缓存区 `152KB` 和 App 运行区上限 |
 | 地址检查 | 目标 App 地址固定要求为 `0x0800D000` |
 | 擦除 App 区 | `erase_pages = (appSize + 4095) / 4096`，按 4KB 页擦除 |
-| 分块复制 | 每次搬运 `1024B`，从 `0x08067000` 写到 `0x0800D000` |
+| 备份复制 | 每次搬运 `1024B`，从 `0x0800D000` 备份完整 `152KB` 到 `0x08033000` |
+| 分块复制 | 每次搬运 `1024B`，从 `0x08059000` 写到 `0x0800D000` |
 | 写后校验 | 从正式 App 区重新读出数据并分块计算 CRC32 |
 | 成功后清标志 | 清除 `updateStatus` 和 `updateFlag`，更新计数后软件复位 |
 

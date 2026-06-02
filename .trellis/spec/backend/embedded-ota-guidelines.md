@@ -42,7 +42,7 @@ All multi-byte fields are little-endian `uint32_t`.
 |--------|-------|----------------|
 | `0x00` | `magic` | `0x474F5441` |
 | `0x04` | `header_size` | `64` |
-| `0x08` | `image_size` | App payload size, `1..100KB` |
+| `0x08` | `image_size` | App payload size, `1..152KB` |
 | `0x0C` | `load_addr` | `0x0800D000` |
 | `0x10` | `version` | App version written to BootLoader parameter area |
 | `0x14` | `image_crc32` | CRC32 over App payload only |
@@ -58,11 +58,13 @@ All multi-byte fields are little-endian `uint32_t`.
 |--------|----------------|-------|----------|
 | BootLoader | `0x08000000`, `48KB` | BootLoader image | MCU reset runs here first |
 | Parameter area | `0x0800C000`, `4KB` | App writes, BootLoader reads | Holds update flags, size, CRC, and version |
-| App area | `0x0800D000`, `0x5A000` | BootLoader writes final App | Must match Keil IROM and header `load_addr` |
-| Download buffer | `0x08067000`, `100KB` | App writes received payload | BootLoader copies from here after reset |
+| App run area | `0x0800D000 ~ 0x08032FFF`, `152KB` | BootLoader writes final App | Must match Keil IROM and header `load_addr` |
+| App backup area | `0x08033000 ~ 0x08058FFF`, `152KB` | BootLoader writes before updating | Holds the previous run-area image for rollback if the new App copy fails |
+| App download buffer | `0x08059000 ~ 0x0807EFFF`, `152KB` | App writes received payload | BootLoader copies from here after reset |
+| Reserved Flash page | `0x0807F000 ~ 0x0807FFFF`, `4KB` | Unused | Keep unused as a guard/extension page |
 | USART1 DMA window | `BSP_USART1_RX_BUFFER_SIZE = 1024U` | ISR handoff | Raw stream chunk size, not a full image buffer |
 | ISR-to-task queue | `UART_OTA_RX_QUEUE_DEPTH = 4U` | ISR writes, task reads | Absorbs short scheduler delays during continuous raw file send; the task should drain the queued slots up to a bounded per-call limit |
-| OTA RAM payload buffer | `UART_OTA_PAYLOAD_BUFFER_SIZE = 100KB` | App OTA task | Receives the full payload before Flash erase/write |
+| OTA RAM payload buffer | `UART_OTA_PAYLOAD_BUFFER_SIZE = 152KB` | App OTA task | Receives the full payload before Flash erase/write |
 
 The full-payload RAM buffer is intentional. It avoids erasing/writing internal Flash while the PC is still sending bytes, which would risk losing UART data because internal Flash operations can stall code execution.
 
@@ -80,7 +82,9 @@ When OTA succeeds, App must write these fields in the BootLoader-compatible para
 | `appVersion` | Header `version` |
 | `appStartAddr` | `0x0800D000` |
 
-BootLoader copies `appSize` bytes from `0x08067000` to `0x0800D000`, then recalculates CRC over the final App area and compares it with `appCRC32`.
+BootLoader first backs up the full `152KB` run area from `0x0800D000` to `0x08033000`.
+It then copies `appSize` bytes from `0x08059000` to `0x0800D000`, recalculates CRC over the final App bytes, and compares it with `appCRC32`.
+If the new App copy or CRC check fails after a successful backup, BootLoader restores the full backup area to the run area, clears the update flags, and requires App to receive a new valid `Project_ota.bin` before retrying.
 
 ### 6. Validation & Error Matrix
 
@@ -89,28 +93,30 @@ BootLoader copies `appSize` bytes from `0x08067000` to `0x0800D000`, then recalc
 | Header magic | `magic == 0x474F5441` | Not a valid OTA image | Enter error state; do not erase Flash |
 | Error-state resync | Next raw stream begins with the little-endian magic bytes `41 54 4F 47` | User is retrying after a bad file or bad payload | Reset the OTA session, prefill the 4-byte magic in the header buffer, and continue parsing the new header |
 | Header size | `header_size == 64` | Unsupported image format | Enter error state; do not erase Flash |
-| Payload size | `1 <= image_size <= 100KB` | Exceeds internal download buffer/RAM buffer | Enter error state; do not erase Flash |
+| Payload size | `1 <= image_size <= 152KB` | Exceeds internal download buffer/RAM buffer | Enter error state; do not erase Flash |
 | Load address | `load_addr == 0x0800D000` | Would write wrong App region | Enter error state; do not erase Flash |
 | Header CRC | CRC32(header with `header_crc32=0`) matches | Corrupt header | Enter error state; do not erase Flash |
 | Stack address | `0x20000000 <= stack_addr < 0x20030000` | Invalid vector table | Enter error state; do not erase Flash |
 | Entry address | Thumb address inside App area | Invalid vector table | Enter error state; do not erase Flash |
 | Payload CRC | CRC32(payload) matches `image_crc32` | Corrupt payload | Enter error state; do not erase Flash |
 | Payload vector | Payload word 0/1 match header `stack_addr/entry_addr` and pass vector validation | Header/payload mismatch | Enter error state; do not erase Flash |
-| Download writeback CRC | CRC32 at `0x08067000` matches `image_crc32` | Flash write failure or stale data | Do not write BootLoader flags |
+| Download writeback CRC | CRC32 at `0x08059000` matches `image_crc32` | Flash write failure or stale data | Do not write BootLoader flags |
 | Parameter write | Full 4KB parameter area write succeeds | BootLoader would not know about the update | Do not reset into BootLoader |
-| Success | Download and parameter writes both pass | Ready for BootLoader | Print ready log and software-reset |
+| Backup before update | CRC32 of `0x0800D000 ~ 0x08032FFF` matches CRC32 of `0x08033000 ~ 0x08058FFF` after backup | Previous App cannot be recovered reliably | Skip new App copy, record failure, and keep/try the existing run area |
+| New App copy | CRC32 of copied bytes in `0x0800D000` matches parameter `appCRC32` | Cache image or writeback failed | Restore `0x08033000` back to `0x0800D000` when backup was valid |
+| Success | Download and parameter writes both pass; BootLoader backup and new App copy pass | Ready for new App | Clear update flags, print success log, and software-reset |
 
 ### 7. Good / Base / Bad Cases
 
 | Case | Input | Expected Result |
 |------|-------|-----------------|
-| Good | Raw send `project/output/Project_ota.bin`, payload `<= 100KB`, valid header and vector table | App prints `OTA: header ok`, `OTA: payload ok`, `OTA: ready, reset to BootLoader`; BootLoader prints `app crc32 check pass` and `app update success` |
+| Good | Raw send `project/output/Project_ota.bin`, payload `<= 152KB`, valid header and vector table | App prints `OTA: header ok`, `OTA: payload ok`, `OTA: ready, reset to BootLoader`; BootLoader prints backup/copy CRC logs, `app crc32 check pass`, and `app update success` |
 | Good | User first sends `Project.bin`, sees `OTA: bad header status=...`, then immediately raw-sends `Project_ota.bin` from byte 0 | App prints `OTA: resync after error code=...`, then parses the new header without requiring a reset |
 | Base | Normal USART0 debug command | Handled by `uart_task()` and does not affect RS485 OTA state |
 | Base | RS485 receives bytes that do not start with the OTA magic | App enters OTA error state and does not erase Flash |
 | Bad | Raw send `Project.bin` instead of `Project_ota.bin` | Header magic fails; no Flash erase/write |
 | Bad | Send an obsolete packaged stream instead of `Project_ota.bin` raw bytes | Header magic fails; no Flash erase/write |
-| Bad | Payload exceeds `100KB` | Header size check fails |
+| Bad | Payload exceeds `152KB` | Header size check fails |
 | Bad | CRC mismatch or invalid vector table | App rejects and does not set BootLoader update flags |
 
 ### 8. Tests Required
@@ -227,11 +233,11 @@ uart_ota_emit_startup_probe();
 - Do not make an OTA error state permanent for ordinary bad-file retries; a fresh stream beginning at the OTA magic must resync without requiring a board reset.
 - Do not reintroduce helper senders or legacy frame wrapping as an operator requirement.
 - Do not reduce `BSP_USART1_RX_BUFFER_SIZE` or `UART_OTA_RX_QUEUE_DEPTH` without validating DMA full-transfer cadence.
-- Do not remove the 100KB RAM payload buffer unless you redesign reception around a real ring buffer or external storage.
+- Do not remove the 152KB RAM payload buffer unless you redesign reception around a real ring buffer or external storage.
 - Do not erase/write internal Flash while the PC is still streaming bytes.
-- Do not move `0x0800C000`, `0x0800D000`, or `0x08067000` in one layer only.
+- Do not move `0x0800C000`, `0x0800D000`, `0x08033000`, or `0x08059000` in one layer only.
 - Do not reset after writing the download buffer if BootLoader parameter flags were not written.
-- Do not claim App payloads larger than `100KB` are supported until the download-buffer storage is redesigned.
+- Do not claim App payloads larger than `152KB` are supported until the partition and RAM-buffer contract is redesigned.
 - Do not diagnose a standalone hang after `BootLoader : jump app ...` as a BootLoader address issue before checking for AC6 semihosting `BKPT 0xAB` in the App.
 
 ---

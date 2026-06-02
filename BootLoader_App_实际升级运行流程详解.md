@@ -15,7 +15,7 @@
 
 > **App 负责“准备好升级现场”，BootLoader 负责“执行最终切换”。**
 
-当前分支不使用额外脚本引导发送，不使用串口协议握手，也不要求上位机发送文本命令。操作者只需要在串口工具里选择原始/直接发送文件，并选择 `Project_ota.bin`。
+当前分支不使用额外脚本引导发送，不使用串口协议握手，也不要求上位机发送文本命令。操作者只需要在串口工具里选择原始/直接发送文件，并选择 `Project_ota.bin`。三分区只改变内部 Flash 存放和 BootLoader 搬运策略，不改变现场发送文件格式；`Project_ota.bin` 仍然必须从第 0 字节开始一次性连续发送完。
 
 ---
 
@@ -25,15 +25,17 @@
 |---|---:|---:|---|---|
 | BootLoader 区 | `0x08000000 ~ 0x0800BFFF` | `48KB` | MCU 复位后先运行这里 | 烧录器 / BootLoader 工程 |
 | 参数区 | `0x0800C000 ~ 0x0800CFFF` | `4KB` | 保存升级标志、大小、CRC、版本、App 地址 | App / BootLoader |
-| 正式 App 区 | `0x0800D000 ~ 0x08066FFF` | `360KB` | 当前真正运行的 App | BootLoader / 烧录器 |
-| 下载缓存区 | `0x08067000 ~ 0x0807FFFF` | `100KB` | 暂存“下一版新固件”payload | App |
+| App 运行区 | `0x0800D000 ~ 0x08032FFF` | `152KB` | 当前真正运行的 App | BootLoader / 烧录器 |
+| App 备份区 | `0x08033000 ~ 0x08058FFF` | `152KB` | 升级前保存旧 App，搬运失败时恢复 | BootLoader |
+| App 缓存区 | `0x08059000 ~ 0x0807EFFF` | `152KB` | 暂存“下一版新固件”payload | App |
+| 预留页 | `0x0807F000 ~ 0x0807FFFF` | `4KB` | 当前不使用，作为保护和扩展预留 | 无 |
 
 | 问题 | 当前答案 |
 |---|---|
-| 这块板子最多能运行多大的 App | 按当前链接地址，正式 App 区上限是 `360KB` |
-| 当前串口 OTA 最多能升级多大的 App | `Project_ota.bin` 里的 payload，也就是原始 `Project.bin`，必须 `<= 100KB` |
+| 这块板子当前工程最多能运行多大的 App | 按当前链接地址，App 运行区上限是 `152KB` |
+| 当前串口 OTA 最多能升级多大的 App | `Project_ota.bin` 里的 payload，也就是原始 `Project.bin`，必须 `<= 152KB` |
 
-当前 OTA 的瓶颈不是正式 App 区，而是内部 Flash 下载缓存区只有 `100KB`。如果后续 App payload 超过 `100KB`，需要重新规划下载缓存区或改用外部 Flash/其他 OTA 架构。
+当前三块 App 区域故意保持接近等大：运行区、备份区、缓存区各 `152KB`，最后 `4KB` 页暂不使用。这样在线升级时既能保存旧 App，也能一次性暂存新 App，代价是当前 App 自身最大也被限制在 `152KB`。
 
 ---
 
@@ -53,7 +55,7 @@ Project_ota.bin
 |---:|---|---|
 | `0x00` | `magic` | `0x474F5441` |
 | `0x04` | `header_size` | `64` |
-| `0x08` | `image_size` | App payload 字节数，范围 `1..100KB` |
+| `0x08` | `image_size` | App payload 字节数，范围 `1..152KB` |
 | `0x0C` | `load_addr` | `0x0800D000` |
 | `0x10` | `version` | 写入 BootLoader 参数区的版本号 |
 | `0x14` | `image_crc32` | 对 App payload 计算的 CRC32 |
@@ -87,15 +89,16 @@ tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.b
 | 3 | USART1 + DMA | 持续接收裸流，IDLE 或 DMA 满缓冲时移交数据片段 | ISR 只复制数据并置标志 |
 | 4 | App `uart_ota_task()` | 解析 64 字节头部，校验 magic、大小、地址、头部 CRC 和向量表 | 头部合法后继续接收 payload |
 | 5 | App `uart_ota_task()` | 把 payload 收到 RAM 缓冲，并计算 CRC32 | 避免边接收边擦写内部 Flash 导致丢字节 |
-| 6 | App | payload CRC 和向量表复核通过后，写入 `0x08067000` 下载缓存区 | 新固件 payload 暂存在 Flash |
+| 6 | App | payload CRC 和向量表复核通过后，写入 `0x08059000` App 缓存区 | 新固件 payload 暂存在 Flash |
 | 7 | App | 回读下载缓存区并重新计算 CRC32 | 确认 Flash 写入正确 |
 | 8 | App | 写 `0x0800C000` 参数区，置 `updateFlag=0x5A`、`updateStatus=0x01` | 告诉 BootLoader 新固件已准备好 |
 | 9 | App | 软件复位 | 控制权交还 BootLoader |
 | 10 | BootLoader | 启动后读取参数区 | 识别到升级任务 |
-| 11 | BootLoader | 把 `0x08067000` 搬到 `0x0800D000` | 新固件变成正式 App |
-| 12 | BootLoader | 对正式 App 区重新计算 CRC32 | 与参数区 `appCRC32` 比较 |
-| 13 | BootLoader | 清升级标志并复位 | 避免下次上电重复搬运 |
-| 14 | BootLoader | 再次启动后跳转 `0x0800D000` | 新 App 正式运行 |
+| 11 | BootLoader | 先把 `0x0800D000 ~ 0x08032FFF` 备份到 `0x08033000 ~ 0x08058FFF` | 保存旧 App，给失败恢复留后路 |
+| 12 | BootLoader | 把 `0x08059000` 搬到 `0x0800D000` | 新固件变成正式 App |
+| 13 | BootLoader | 对正式 App 区重新计算 CRC32 | 与参数区 `appCRC32` 比较 |
+| 14 | BootLoader | 成功则清升级标志并复位；失败则尽量从备份区恢复旧 App | 避免下次上电重复搬运坏镜像 |
+| 15 | BootLoader | 再次启动后跳转 `0x0800D000` | 新 App 或恢复后的旧 App 运行 |
 
 ---
 
@@ -142,8 +145,10 @@ BootLoader 搬运时必须满足：
 
 | 检查项 | 当前要求 |
 |---|---|
-| 固件大小 | `appSize > 0` 且不超过下载缓存区和 App 区上限 |
-| 搬运源地址 | 固定 `0x08067000` |
+| 固件大小 | `appSize > 0` 且不超过缓存区和 App 运行区上限 `152KB` |
+| 备份源地址 | 固定 `0x0800D000`，完整备份 `152KB` |
+| 备份目标地址 | 固定 `0x08033000` |
+| 搬运源地址 | 固定 `0x08059000` |
 | 搬运目标地址 | 固定 `0x0800D000` |
 | 擦除策略 | 按 `appSize` 动态计算 App 区擦除页数 |
 | 搬运策略 | 以 1024 字节分块复制 |
@@ -173,7 +178,7 @@ BootLoader 搬运时必须满足：
 | RS485 口上电没有 `OTA485: ready` | App 没跑到当前分支，或 RS485 接线/串口号不对 | 先看 USART0 启动日志，再查 RS485 A/B、共地和 COM 口 |
 | USART0 出现 `OTA: header error` | 发送的不是 `Project_ota.bin` 或文件被截断/污染 | 重新确认串口工具选择的是原始/直接发送，并选择 `project/output/Project_ota.bin` |
 | `OTA: payload crc error` | 传输中丢字节或串口工具发送设置不对 | 降低发送速率、关闭附加换行/文本转义，确认是二进制原始发送 |
-| 下载区回读 CRC 失败 | 内部 Flash 写入失败或下载缓存区地址不一致 | 检查 `0x08067000` 分区和 BootLoader/App 常量是否一致 |
+| 下载区回读 CRC 失败 | 内部 Flash 写入失败或 App 缓存区地址不一致 | 检查 `0x08059000` 分区和 BootLoader/App 常量是否一致 |
 | BootLoader 搬运后 CRC 失败 | 搬运过程或正式 App 区擦写异常 | 看 BootLoader 日志中的大小、CRC 和擦除页数 |
 | BootLoader `jump app` 后脱机卡住 | App 早期 C 库可能进入 semihosting | 检查 `project/Listings/Project.map` 中 `_sys_open/_sys_write/_sys_exit/_ttywrch` 是否来自 `main.o` |
 
@@ -193,4 +198,4 @@ Test-Path 'project\output\Project_ota.bin'
 Select-String -Path 'project\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'
 ```
 
-`Project_ota.bin` 必须比 `Project.bin` 大 64 字节，且 payload 大小不能超过 `100KB`。
+`Project_ota.bin` 必须比 `Project.bin` 大 64 字节，且 payload 大小不能超过 `152KB`。

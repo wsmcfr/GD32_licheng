@@ -101,7 +101,12 @@ static uint8_t g_uart_ota_resync_magic_buffer[4] = {0};
 /* OTA 错误态重同步 magic 当前已经匹配的字节数。 */
 static uint8_t g_uart_ota_resync_magic_bytes = 0U;
 
-/* OTA payload RAM 缓冲，先完整接收和校验，再统一写下载区，避免 Flash 擦写期间丢串口。 */
+/*
+ * OTA payload RAM 缓冲。
+ * 说明：
+ *   三分区方案下单个 App 镜像上限为 152KB，接收端仍先完整接收并校验
+ *   Project_ota.bin 的 payload，再统一写入缓存区，避免内部 Flash 擦写期间丢串口字节。
+ */
 static uint8_t g_uart_ota_payload_buffer[UART_OTA_PAYLOAD_BUFFER_SIZE] = {0};
 
 /* OTA 会话状态只在中断和任务共享，进入任务提交时会临时关闭相关中断保护。 */
@@ -532,6 +537,7 @@ void uart_ota_reset_runtime(void)
 
     memset(uart_ota_dma_buffer, 0, sizeof(uart_ota_dma_buffer));
     memset(g_uart_ota_header_buffer, 0, sizeof(g_uart_ota_header_buffer));
+    memset(g_uart_ota_payload_buffer, 0, sizeof(g_uart_ota_payload_buffer));
     prv_uart_ota_clear_resync_magic();
 }
 

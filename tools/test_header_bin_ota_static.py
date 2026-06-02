@@ -18,6 +18,10 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
 
     repo_root = Path(__file__).resolve().parents[1]
     expected_boot_magic = "0xC0DEF47A"
+    expected_backup_addr = "0x08033000"
+    expected_download_addr = "0x08059000"
+    expected_region_size_kb = "152"
+    expected_app_region_size = "0x00026000"
 
     def read_text(self, relative_path: str) -> str:
         """
@@ -274,6 +278,57 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         self.assertNotIn("0x5AA5C33C", bootloader_config_c)
         self.assertNotIn("0x5AA5C33C", bootloader_config_h)
         self.assertNotIn("0x5AA5C33C", ota_spec)
+
+    def test_ota_partition_is_three_152kb_regions_across_app_bootloader_and_docs(self):
+        """
+        函数作用：
+          验证 App、独立 BootLoader、Keil IROM、打包工具和规格文档使用同一套
+          运行区、备份区、缓存区各 152KB 的三分区 OTA 契约。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时说明跨工程 Flash 分区或 OTA 容量描述不同步。
+        """
+        bootloader_root = self.repo_root.parent / "2026706296_bootloader"
+        if not bootloader_root.exists():
+            self.skipTest("独立 BootLoader 工程不在当前工作区旁边，跳过跨工程分区一致性检查。")
+
+        app_header = self.read_text("HardWare/BOOTLOADER/bootloader_port.h")
+        app_config = self.read_text("User/boot_app_config.h")
+        pack_tool = self.read_text("tools/pack_ota_image.c")
+        uvproj = self.read_text("project/2026706296.uvprojx")
+        ota_spec = self.read_text(".trellis/spec/backend/embedded-ota-guidelines.md")
+        project_doc = self.read_text("工程文档.md")
+        bootloader_function = (bootloader_root / "Function" / "Function.c").read_text(encoding="utf-8")
+        bootloader_doc = (bootloader_root / "BootLoader_程序详解.md").read_text(encoding="utf-8")
+
+        self.assertIn("BOOTLOADER_PORT_BACKUP_ADDR        " + self.expected_backup_addr + "UL", app_header)
+        self.assertIn("BOOTLOADER_PORT_DOWNLOAD_ADDR      " + self.expected_download_addr + "UL", app_header)
+        self.assertIn("BOOTLOADER_PORT_REGION_SIZE        (" + self.expected_region_size_kb + "U * 1024U)", app_header)
+        self.assertIn("BOOTLOADER_PORT_DOWNLOAD_MAX_SIZE  BOOTLOADER_PORT_REGION_SIZE", app_header)
+        self.assertIn("BOOTLOADER_PORT_APP_MAX_SIZE       " + self.expected_app_region_size + "UL", app_header)
+        self.assertIn("BOOT_APP_FLASH_SIZE             (" + self.expected_app_region_size + "UL)", app_config)
+        self.assertIn("OTA_IMAGE_MAX_SIZE           (" + self.expected_region_size_kb + "UL * 1024UL)", pack_tool)
+        self.assertIn("OTA_APP_REGION_SIZE          " + self.expected_app_region_size + "UL", pack_tool)
+        self.assertIn("IROM(0x0800D000,0x026000)", uvproj)
+        self.assertIn("APP_BACKUP_ADDR             (" + self.expected_backup_addr + "UL)", bootloader_function)
+        self.assertIn("APP_DOWNLOAD_ADDR           (" + self.expected_download_addr + "UL)", bootloader_function)
+        self.assertIn("BOOT_APP_REGION_SIZE        (" + self.expected_app_region_size + "UL)", bootloader_function)
+        self.assertIn("APP_DOWNLOAD_MAX_SIZE       BOOT_APP_REGION_SIZE", bootloader_function)
+        self.assertIn("Backup_Transport", bootloader_function)
+        self.assertIn("Restore_Backup_To_App", bootloader_function)
+        self.assertIn("152KB", ota_spec)
+        self.assertIn("0x08033000", ota_spec)
+        self.assertIn("0x08059000", ota_spec)
+        self.assertIn("0x0807EFFF", ota_spec)
+        self.assertIn("152KB", project_doc)
+        self.assertIn("0x08033000", project_doc)
+        self.assertIn("0x08059000", project_doc)
+        self.assertIn("152KB", bootloader_doc)
+        self.assertIn("0x08033000", bootloader_doc)
+        self.assertIn("0x08059000", bootloader_doc)
+        self.assertIn("Project_ota.bin", ota_spec)
+        self.assertIn("64", ota_spec)
 
 
 if __name__ == "__main__":

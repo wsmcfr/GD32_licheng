@@ -212,7 +212,7 @@ DOWNLOAD_ADDR = 0x08070000
 
 随后把升级包头后面的真正 App 镜像写入 `0x08070000`。
 
-注意：官方原始 App 接收数组只有 `10 * 1024` 字节，而根目录 readme 写“升级数据内存最大 12KB”，早期地址规划又写下载缓存区 52KB。当前仓库已经改为 RS485/USART1 头部 BIN 裸流 OTA，下载缓存区为 `0x08067000 ~ 0x0807FFFF` 共 `100KB`，现场文件为 `Project_ota.bin`。
+注意：官方原始 App 接收数组只有 `10 * 1024` 字节，而根目录 readme 写“升级数据内存最大 12KB”，早期地址规划又写下载缓存区 52KB。当前仓库已经改为 RS485/USART1 头部 BIN 裸流 OTA，现场文件为 `Project_ota.bin`，文件格式仍是 64 字节 OTA 头部 + 原始 `Project.bin` payload，一次性原始/直接发送完整文件；片内 Flash 则改为 App 运行区、App 备份区、App 缓存区各 `152KB`，缓存区地址为 `0x08059000 ~ 0x0807EFFF`。
 
 ### 8.4 App 写参数区并复位
 
@@ -270,16 +270,16 @@ BootLoader 成功搬运后清除升级标志并复位。下一次启动时：
 
 ### 8.7 当前仓库副本相对官方原始例程的差异
 
-当前仓库为了接入现有工程并降低 App RAM 占用，已经对官方原始方案做了如下调整：
+当前仓库为了接入现有工程并统一 App/BootLoader 分区契约，已经对官方原始方案做了如下调整：
 
 | 项目 | 官方原始例程 | 当前仓库副本 |
 |---|---|---|
 | 升级串口默认波特率 | `115200` | `115200` |
-| App 接收方式 | 单次接收整包，依赖 `usart0_tmp_buf[10 * 1024]` | RS485/USART1 接收 `Project_ota.bin` 裸字节流，先解析 64 字节头部，再完整接收 payload 到 RAM，最后统一写下载缓存区 |
+| App 接收方式 | 单次接收整包，依赖 `usart0_tmp_buf[10 * 1024]` | RS485/USART1 接收 `Project_ota.bin` 裸字节流，先解析 64 字节头部，再完整接收 payload 到 RAM，最后统一写 App 缓存区 |
 | 上位机发送方式 | 直接发送官方示例 `.bin` 文件 | 串口工具原始/直接发送 `project/output/Project_ota.bin` |
 | 上位机可见反馈 | 基本没有发送进度 | 主要通过 `USART0` 日志观察 `OTA: header ok`、`OTA: payload ok`、`OTA: ready, reset to BootLoader` |
 | BootLoader 擦除策略 | 固定擦除 App 开头 `3 * 4KB` | 按 `appSize` 计算实际擦除页数 |
-| BootLoader 搬运策略 | 受原始整包缓存思路约束 | 按 `1024B` 分块从下载缓存区搬运到 App 区，并重新做 CRC32 校验 |
+| BootLoader 搬运策略 | 受原始整包缓存思路约束 | 先按 `1024B` 分块备份 `152KB` App 运行区，再从 `0x08059000` App 缓存区搬运新 App 到 `0x0800D000`，并重新做 CRC32 校验 |
 
 当前仓库发送升级包时，可按下面步骤操作：
 
@@ -383,7 +383,7 @@ App 的升级入口也在 `27_1_App\Function\Function.c`：
 
 | 风险点 | 现象 | 建议 |
 |---|---|---|
-| 容量配置不一致 | 官方原始说明中 readme 写最大 12KB、App 缓冲是 10KB、早期下载缓存区规划是 52KB、App 链接区更大 | 当前仓库已统一为 USART2 分包发送、64KB 下载缓存区和按 `appSize` 搬运，后续变更必须同步代码和文档 |
+| 容量配置不一致 | 官方原始说明中 readme 写最大 12KB、App 缓冲是 10KB、早期下载缓存区规划是 52KB、App 链接区更大 | 当前仓库已统一为 RS485/USART1 头部 BIN 裸流发送、运行区/备份区/缓存区各 `152KB` 和按 `appSize` 搬运，后续变更必须同步代码和文档 |
 | BootLoader 只擦 12KB App 区 | `Download_Transport()` 固定擦 3 页 | 按 `appSize` 向上取整计算擦除页数 |
 | BootLoader RAM 缓冲 20KB | `config_buf[CONFIG_APP_SIZE]`，其中 `CONFIG_APP_SIZE = 20KB` | 如果升级包超过 20KB 会越界或写不完整，应增加边界检查 |
 | App 接收缓存 10KB | `usart0_tmp_buf[10 * 1024]` | 若需要 12KB 或更大升级包，应扩大缓存或改成分包协议 |

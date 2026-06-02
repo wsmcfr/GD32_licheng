@@ -3,6 +3,7 @@
 ## 核心结论
 
 当前分支的在线升级文件是 `project/output/Project_ota.bin`。
+现场发送协议不因为三分区而改变：仍然从文件第 0 字节开始，把 `Project_ota.bin` 作为一个普通二进制文件原始/直接连续发送完。
 
 | 文件 | 用途 | 是否现场发送 |
 |------|------|--------------|
@@ -60,10 +61,12 @@ tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.b
 
 | 限制项 | 当前值 |
 |--------|--------|
-| App payload 最大值 | `100KB` |
+| App payload 最大值 | `152KB` |
 | App 起始地址 | `0x0800D000` |
-| 下载缓存区 | `0x08067000 ~ 0x0807FFFF` |
+| App 运行区 | `0x0800D000 ~ 0x08032FFF`，`152KB` |
+| App 备份区 | `0x08033000 ~ 0x08058FFF`，`152KB` |
+| App 缓存区 | `0x08059000 ~ 0x0807EFFF`，`152KB` |
 | 参数区 | `0x0800C000 ~ 0x0800CFFF` |
 | 串口波特率 | `115200` |
 
-当前 App 会先把 payload 收到 RAM，再统一写入下载缓存区。这样可以避免一边接收串口、一边擦写内部 Flash 导致丢字节。
+当前 App 会先把 payload 收到 RAM，再统一写入 App 缓存区。这样可以避免一边接收串口、一边擦写内部 Flash 导致丢字节。

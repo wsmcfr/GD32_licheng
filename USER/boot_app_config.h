@@ -19,9 +19,9 @@
  *   定义当前 App 可使用的 Flash 最大空间。
  * 说明：
  *   当前工程规划 App 区为 0x0800D000 起，
- *   长度 0x0005A000，末尾到 0x08067000 之前，避免覆盖 100KB 下载缓存区。
+ *   长度 0x00026000，末尾到 0x08033000 之前，避免覆盖 152KB 备份区。
  */
-#define BOOT_APP_FLASH_SIZE             (0x0005A000UL)
+#define BOOT_APP_FLASH_SIZE             (0x00026000UL)
 
 #ifdef __cplusplus
 extern "C" {
