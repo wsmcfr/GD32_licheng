@@ -1642,3 +1642,36 @@ Removed the obsolete SD card/FatFs stack and refined the deepest low-power workf
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: PT100 two-point calibration and interpolation
+
+**Date**: 2026-06-05
+**Task**: PT100 two-point calibration and interpolation
+**Branch**: `feature/streaming-raw-ota`
+
+### Summary
+
+Updated GD30AD3344 PT100 conversion to use firmware-Vout two-point resistance calibration and resistor-temperature table interpolation. Synced project docs and static regression checks; verified with python tools/test_static_optimizations.py and git diff --check.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dc810a2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
