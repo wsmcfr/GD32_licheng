@@ -14,9 +14,9 @@ extern "C" {
  *   sample_ready：为 1 表示已经完成至少一次非丢弃采样，缓存数据可被显示或上传。
  *   range_valid：为 1 表示温度落在本应用支持的 -50℃~150℃ 范围内。
  *   adc_voltage_v：GD30AD3344 采集到的商业版 PT100 调理模块 Vout，单位 V。
- *   pt100_voltage_v：Vout 扣除 0.9617V 偏置后的有效信号电压，单位 V。
- *   resistance_ohm：按 R测=(Vout-0.9617)/0.001957 反算出的 PT100 电阻，单位 Ω。
- *   temperature_c：按 T≈2.635*R测-263.5 换算并限幅后的温度，单位 ℃。
+ *   pt100_voltage_v：Vout 扣除 0.94235185V 偏置后的有效信号电压，单位 V。
+ *   resistance_ohm：按 R测=(Vout-0.94235185)/0.0019314815 反算出的 PT100 电阻，单位 Ω。
+ *   temperature_c：按测试板电阻-温度表分段线性插值并限幅后的温度，单位 ℃。
  */
 typedef struct {
     uint8_t sample_ready;

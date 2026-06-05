@@ -12,7 +12,7 @@
  * 宏作用：
  *   指定 GD30AD3344 的默认量程。
  * 说明：
- *   商业版 PT100 调理模块的 Vout 带约 0.9617V 偏置，常用温区输出落在
+ *   商业版 PT100 调理模块的 Vout 带约 0.94235185V 偏置，常用温区输出落在
  *   ±4.096V 量程的有效区间内，同时给异常高输出保留余量。
  */
 #define PT100_ADC_PGA                  GD30AD3344_PGA_4V096
@@ -21,35 +21,20 @@
  * 宏作用：
  *   商业版 PT100 调理模块在 0Ω 等效输入附近的输出偏置，单位 V。
  * 说明：
- *   用户实测标定公式为 R测=(Vout-0.9617)/0.001957，这里把 0.9617V
- *   单独命名，便于后续按实测两点标定重新修正。
+ *   用户按固件 ADC 读数 100Ω->1.1355V、154Ω->1.2398V 两点重新标定得到
+ *   R测=(Vout-0.94235185)/0.0019314815，这里把零点偏置单独命名，
+ *   避免万用表 TP4 电压与 ADC 换算电压之间的毫伏级差异继续带入电阻计算。
  */
-#define PT100_COMMERCIAL_OFFSET_V      0.9617f
+#define PT100_COMMERCIAL_OFFSET_V      0.94235185f
 
 /*
  * 宏作用：
  *   商业版 PT100 调理模块输出电压相对 PT100 电阻的斜率，单位 V/Ω。
  * 说明：
- *   该值来自用户给出的商业版模块公式 R测=(Vout-0.9617)/0.001957，
- *   表示电阻每增加 1Ω，模块输出约增加 1.957mV。
+ *   该值来自用户按固件 ADC 读数中的 100Ω 和 154Ω 两个点重新计算的公式，
+ *   表示电阻每增加 1Ω，固件 Vout 读数约增加 1.9314815mV。
  */
-#define PT100_COMMERCIAL_RESISTANCE_SLOPE_V_PER_OHM 0.001957f
-
-/*
- * 宏作用：
- *   商业版 PT100 调理模块从电阻换算到温度的线性增益，单位 ℃/Ω。
- * 说明：
- *   用户给出的公式为 T≈2.635*R测-263.5，适合当前商业版模块的现场标定。
- */
-#define PT100_COMMERCIAL_TEMPERATURE_GAIN 2.635f
-
-/*
- * 宏作用：
- *   商业版 PT100 调理模块线性温度公式中的常量偏移，单位 ℃。
- * 说明：
- *   公式写作 T≈2.635*R测-263.5，因此实现中会减去该偏移值。
- */
-#define PT100_COMMERCIAL_TEMPERATURE_OFFSET_C 263.5f
+#define PT100_COMMERCIAL_RESISTANCE_SLOPE_V_PER_OHM 0.0019314815f
 
 /* 本应用按题目要求覆盖的最低温度，单位 ℃。 */
 #define PT100_TEMPERATURE_MIN_C        (-50.0f)
@@ -59,12 +44,55 @@
 
 /*
  * 宏作用：
+ *   计算测试板电阻-温度标定表的元素个数。
+ * 说明：
+ *   标定表只在本文件内部使用，计数宏集中定义可以避免插值循环手写表长度。
+ */
+#define PT100_TEMPERATURE_TABLE_COUNT  \
+    (sizeof(s_pt100_temperature_table) / sizeof(s_pt100_temperature_table[0]))
+
+/*
+ * 宏作用：
  *   定义 PT100 调试日志最小输出间隔，单位毫秒。
  * 说明：
  *   采样仍保持 200ms 周期，但串口浮点日志降到 1s 一次，避免阻塞式 USART0 输出
  *   抢占过多合作式调度时间，影响 OLED、按键和 RS485 OTA 队列消费。
  */
 #define PT100_DEBUG_LOG_PERIOD_MS      1000U
+
+/*
+ * 结构体作用：
+ *   描述测试板一个已知电阻点和它对应的标称温度。
+ * 成员说明：
+ *   resistance_ohm：测试板丝印或实测采用的标称电阻，单位 Ω，表内必须按升序排列。
+ *   temperature_c：该电阻在测试板上标注的理论温度，单位 ℃。
+ */
+typedef struct {
+    float resistance_ohm;
+    float temperature_c;
+} pt100_calibration_point_t;
+
+/*
+ * 表作用：
+ *   保存测试板可切换电阻点对应的温度，用于把反算电阻转换成更贴合测试板的温度。
+ * 说明：
+ *   这些点来自测试板丝印/原理图。任务先用两点标定把 Vout 反算成电阻，
+ *   再在本表中做分段线性插值；这样比单条 T=2.635*R-263.5 直线更贴合全量程。
+ */
+static const pt100_calibration_point_t s_pt100_temperature_table[] = {
+    {80.6f,  -49.27f},
+    {82.5f,  -44.49f},
+    {100.0f,   0.0f},
+    {107.79f, 20.0f},
+    {113.0f,  33.44f},
+    {115.0f,  38.61f},
+    {115.54f, 40.0f},
+    {123.24f, 60.0f},
+    {130.90f, 80.0f},
+    {138.51f, 100.0f},
+    {150.0f,  130.45f},
+    {154.0f,  141.11f},
+};
 
 /*
  * 变量作用：
@@ -93,9 +121,49 @@ static uint32_t s_pt100_last_log_ms;
 
 /*
  * 函数作用：
- *   判断商业版模块线性公式换算出的温度是否落在应用支持范围内。
+ *   根据测试板电阻-温度标定表，把 PT100 电阻换算为温度。
+ * 主要流程：
+ *   1. 若电阻低于或等于表首点，返回表首温度，后续统一限幅。
+ *   2. 若电阻高于或等于表尾点，返回表尾温度，避免外推放大误差。
+ *   3. 在相邻两个标定点之间执行线性插值，得到更贴合测试板丝印的温度。
  * 参数说明：
- *   temperature_c：由商业版模块线性公式得到的温度，单位 ℃。
+ *   resistance_ohm：由 Vout 两点标定公式反算出的 PT100 电阻，单位 Ω。
+ * 返回值说明：
+ *   返回插值后的温度，单位 ℃；超出表范围时返回最近边界标定温度。
+ */
+static float prv_pt100_resistance_to_temperature(float resistance_ohm)
+{
+    uint32_t index;
+
+    if(resistance_ohm <= s_pt100_temperature_table[0].resistance_ohm) {
+        return s_pt100_temperature_table[0].temperature_c;
+    }
+
+    for(index = 1U; index < PT100_TEMPERATURE_TABLE_COUNT; index++) {
+        const pt100_calibration_point_t *lower = &s_pt100_temperature_table[index - 1U];
+        const pt100_calibration_point_t *upper = &s_pt100_temperature_table[index];
+
+        if(resistance_ohm <= upper->resistance_ohm) {
+            float span_ohm = upper->resistance_ohm - lower->resistance_ohm;
+            float position = (resistance_ohm - lower->resistance_ohm) / span_ohm;
+
+            /*
+             * 测试板标定点不是完全等间隔，使用相邻点插值可以把每个旋钮档位附近的
+             * 温度误差限制在局部区间，而不是让单条全局直线牵连整个量程。
+             */
+            return lower->temperature_c +
+                   (position * (upper->temperature_c - lower->temperature_c));
+        }
+    }
+
+    return s_pt100_temperature_table[PT100_TEMPERATURE_TABLE_COUNT - 1U].temperature_c;
+}
+
+/*
+ * 函数作用：
+ *   判断测试板分段插值换算出的温度是否落在应用支持范围内。
+ * 参数说明：
+ *   temperature_c：由测试板电阻-温度表分段插值得到的温度，单位 ℃。
  *   range_valid：输出参数；为 1 表示温度位于 -50℃~150℃，为 0 表示越界。
  * 返回值说明：
  *   返回限制后的温度；低于下限时返回 -50℃，高于上限时返回 150℃。
@@ -108,7 +176,7 @@ static float prv_pt100_clamp_temperature(float temperature_c, uint8_t *range_val
 
     if(temperature_c <= PT100_TEMPERATURE_MIN_C) {
         /*
-         * 商业版模块公式是现场线性标定，超出应用温区时只发布边界值，
+         * 测试板插值仍可能遇到表外电阻，超出应用温区时只发布边界值，
          * 并通过 range_valid 提醒上层不要把边界值当作精确温度。
          */
         if(NULL != range_valid) {
@@ -214,8 +282,7 @@ void gd30ad3344_pt100_task(void)
      */
     module_signal_v = adc_voltage_v - PT100_COMMERCIAL_OFFSET_V;
     resistance_ohm = module_signal_v / PT100_COMMERCIAL_RESISTANCE_SLOPE_V_PER_OHM;
-    temperature_c = (PT100_COMMERCIAL_TEMPERATURE_GAIN * resistance_ohm) -
-                    PT100_COMMERCIAL_TEMPERATURE_OFFSET_C;
+    temperature_c = prv_pt100_resistance_to_temperature(resistance_ohm);
 
     s_pt100_latest.adc_voltage_v = adc_voltage_v;
     s_pt100_latest.pt100_voltage_v = module_signal_v;

@@ -171,10 +171,12 @@ def main() -> None:
 
     require("GD30AD3344_PGA_0V256" in gd30 and "0.256" in gd30, "GD30AD3344 PGA 0.256V 映射缺失")
     require("GD30AD3344_PGA_0V064" in gd30 and "0.064" in gd30, "GD30AD3344 PGA 0.064V 映射缺失")
-    require("PT100_COMMERCIAL_OFFSET_V" in pt100_app and "0.9617f" in pt100_app, "PT100 app 未配置商业版模块 Vout 零点偏置")
-    require("PT100_COMMERCIAL_RESISTANCE_SLOPE_V_PER_OHM" in pt100_app and "0.001957f" in pt100_app, "PT100 app 未配置商业版模块 Vout-电阻斜率")
-    require("PT100_COMMERCIAL_TEMPERATURE_GAIN" in pt100_app and "2.635f" in pt100_app, "PT100 app 未配置商业版模块线性温度增益")
-    require("PT100_COMMERCIAL_TEMPERATURE_OFFSET_C" in pt100_app and "263.5f" in pt100_app, "PT100 app 未配置商业版模块线性温度偏移")
+    require("PT100_COMMERCIAL_OFFSET_V" in pt100_app and "0.94235185f" in pt100_app, "PT100 app 未配置商业版模块 Vout 零点偏置")
+    require("PT100_COMMERCIAL_RESISTANCE_SLOPE_V_PER_OHM" in pt100_app and "0.0019314815f" in pt100_app, "PT100 app 未配置商业版模块 Vout-电阻斜率")
+    require("pt100_calibration_point_t" in pt100_app and "s_pt100_temperature_table" in pt100_app, "PT100 app 未配置测试板电阻-温度插值表")
+    require("prv_pt100_resistance_to_temperature" in pt100_app and "PT100_TEMPERATURE_TABLE_COUNT" in pt100_app, "PT100 app 未通过分段线性插值换算温度")
+    require("154.0f" in pt100_app and "141.11f" in pt100_app and "80.6f" in pt100_app and "-49.27f" in pt100_app, "PT100 app 插值表缺少测试板边界标定点")
+    require("PT100_COMMERCIAL_TEMPERATURE_GAIN" not in pt100_app and "PT100_COMMERCIAL_TEMPERATURE_OFFSET_C" not in pt100_app, "PT100 app 仍保留全局线性温度公式")
     require("PT100_FRONTEND_GAIN" not in pt100_app and "PT100_EXCITATION_CURRENT_A" not in pt100_app, "PT100 app 仍保留工业版前端增益/激励电流换算")
     require("GD30AD3344_Channel_4" in pt100_app, "PT100 app 未默认读取 AIN0~GND 通道")
     require("GD30AD3344_PGA_4V096" in pt100_app, "PT100 app 未默认使用 ±4.096V 量程")
@@ -214,7 +216,7 @@ def main() -> None:
     require("PT100 串口日志节流" in doc, "工程文档未同步 PT100 日志节流说明")
     require("ADC DMA 缓冲区为 __IO" in doc, "工程文档未同步 ADC DMA volatile 说明")
     require("GD30AD3344 PT100 应用层" in doc, "工程文档未同步 GD30AD3344 PT100 app 说明")
-    require("0.9617" in doc and "0.001957" in doc and "2.635" in doc, "工程文档未同步商业版 PT100 线性标定公式")
+    require("0.94235185" in doc and "0.0019314815" in doc and "分段线性插值" in doc and "141.11" in doc, "工程文档未同步商业版 PT100 分段插值公式")
     require("SD_FATFS" not in doc and "fat_fs" not in doc and "FatFs" not in doc and "SDIO" not in doc and "SD 卡" not in doc, "工程文档仍保留 SD/FatFs 用户说明")
 
 
