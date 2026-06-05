@@ -1675,3 +1675,49 @@ Updated GD30AD3344 PT100 conversion to use firmware-Vout two-point resistance ca
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: Align Driver layout and OTA partitions
+
+**Date**: 2026-06-05
+**Task**: Align Driver layout and OTA partitions
+**Branch**: `feature/streaming-raw-ota`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 内容 |
+|---|---|
+| 用户目标 | 按截图要求把 `HardWare` 目录改为 `Driver`，新增 `Protocol` 协议层，并把 Flash 分区统一为 BootLoader 64KB、参数区 4KB、App/备份/缓存各 128KB。 |
+| 主要实现 | 迁移 App 工程目录到 `Driver/`，新增 `Protocol/ota_image_protocol.h/.c`，将 OTA 头部解析、头 CRC、payload CRC 更新和头字段校验下沉到协议层。 |
+| 分区同步 | App 起始地址改为 `0x08011000`，App 容量 `0x00020000`；参数区 `0x08010000`；备份区修正为 `0x08031000`；缓存区 `0x08051000`。 |
+| 工程配置 | 更新 `project/2026706296.uvprojx` 的 IROM、Include Path、Keil Group 和 After Build 打包地址，生成 `Project.bin` 后继续生成 `Project_ota.bin`。 |
+| 交叉工程 | 同步相邻 BootLoader 工程 `D:\GD32\2026706296_bootloader` 的 `Driver` 目录和新分区地址，BootLoader 构建日志确认通过。 |
+| 文档/spec | 同步更新工程文档、OTA 文档、Flash 分区说明、官方例程说明中的当前仓库差异，以及 `.trellis/spec/` 中 Driver/Protocol/OTA 分区约定。 |
+| 关键修复 | 修正旧备份区 `0x08033000` 误用风险；按 `0x08011000 + 128KB = 0x08031000` 设置备份区，避免覆盖 `0x08051000` 缓存区。 |
+| 编译修复 | 修复 `HeaderFiles/system_all.h` 中 `SYSTEM_ALL_BASE_ONLY` 作用域不稳定导致 `bootloader_port_status_t` 在协议头中不可见的 include 环问题。 |
+| 验证 | `python -m unittest tools.test_header_bin_ota_static` 11 项通过；`python tools/test_static_optimizations.py` 通过；`gcc -std=c99 -Wall -Wextra -Werror tools\pack_ota_image.c -o tools\pack_ota_image.exe` 通过。 |
+| Keil 验证 | App 工程 Keil 构建日志为 `0 Error(s), 0 Warning(s)`，并生成 `Project_ota.bin`；BootLoader 工程 Keil 构建日志为 `0 Error(s), 0 Warning(s)`。 |
+| GitHub | 提交 `5e90b38 feat(ota): align driver layout and ota partitions` 已推送到 `origin/feature/streaming-raw-ota`，本地 HEAD 与远端分支一致。 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5e90b38` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

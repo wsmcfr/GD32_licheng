@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 35
+- **Total Sessions**: 36
 - **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1677 | Active |
+| `journal-1.md` | ~1723 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-06-05 | Align Driver layout and OTA partitions | `5e90b38` | `feature/streaming-raw-ota` |
 | 35 | 2026-06-05 | PT100 two-point calibration and interpolation | `dc810a2` | `feature/streaming-raw-ota` |
 | 34 | 2026-06-03 | OTA raw stream circular DMA | `1b02724` | `feature/streaming-raw-ota` |
 | 33 | 2026-06-02 | OTA 三分区和 144KB 测试包 | `8a4dacb` | `feature/header-bin-ota` |
