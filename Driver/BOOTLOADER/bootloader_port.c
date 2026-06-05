@@ -228,7 +228,7 @@ static void prv_bootloader_port_init_default_parameter(bootloader_port_parameter
     parameter->boot_param.appEntryAddr = *(volatile uint32_t *)(BOOT_APP_START_ADDRESS + 4U);
     parameter->boot_param.appStackAddr = *(volatile uint32_t *)(BOOT_APP_START_ADDRESS + 0U);
     parameter->boot_param.bootVersion = 0x01U;
-    parameter->boot_param.bootSize = 4096U;
+    parameter->boot_param.bootSize = 64U * 1024U;
     parameter->boot_param.backupAddr = BOOTLOADER_PORT_PARAM_ADDR +
                                        sizeof(bootloader_port_boot_param_t);
     parameter->boot_param.backupSize = sizeof(bootloader_port_boot_param_t);

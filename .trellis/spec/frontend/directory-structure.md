@@ -46,7 +46,7 @@ Examples:
 
 - OLED formatting belongs in `oled_app`
 - button-to-action policy belongs in `btn_app`
-- storage command behavior belongs in `usart_app` while low-level SMARTFS helpers stay under `HardWare/GD25QXX/`
+- storage command behavior belongs in `usart_app` while low-level SMARTFS helpers stay under `Driver/GD25QXX/`
 
 ### Central scheduling stays in `scheduler.c`
 
@@ -62,7 +62,7 @@ App modules may read:
 - `rx_flag`
 - RTC state
 
-But pin definitions, DMA channels, SPI mode, and IRQ enables remain below in `HardWare/` or `Library/`.
+But pin definitions, DMA channels, SPI mode, and IRQ enables remain below in `Driver/` or `Library/`.
 
 ---
 

@@ -19,7 +19,7 @@ Treat storage changes as interface changes, especially when they affect file nam
 
 ### SMARTFS Port Workflow
 
-The GD25Q16 port now uses `HardWare/GD25QXX/smartfs_port.c/.h`.
+The GD25Q16 port now uses `Driver/GD25QXX/smartfs_port.c/.h`.
 It is a bare-metal SMARTFS-style static metadata implementation tailored for this project, not a direct NuttX VFS import.
 
 The port must keep all low-level runtime state in static storage:
@@ -76,7 +76,7 @@ Runtime SMARTFS shell helpers should keep behavior explicit:
 
 #### 1. Scope / Trigger
 
-- Trigger: editing `HardWare/GD25QXX/gd25qxx.c`, `HardWare/GD25QXX/gd25qxx.h`, `HardWare/GD25QXX/smartfs_port.c`, or any storage backend that writes or erases GD25QXX Flash.
+- Trigger: editing `Driver/GD25QXX/gd25qxx.c`, `Driver/GD25QXX/gd25qxx.h`, `Driver/GD25QXX/smartfs_port.c`, or any storage backend that writes or erases GD25QXX Flash.
 - Trigger: changing SPI DMA timeout behavior, write-enable flow, page-program splitting, metadata commits, file append/write paths, or full-format behavior.
 
 #### 2. Signatures
@@ -165,7 +165,7 @@ g_smartfs_image.block_next[sector] = SMARTFS_BLOCK_MAP_FREE;
 #### 1. Scope / Trigger
 
 - Trigger: editing `Function/usart_app.c` shell commands such as `ls`, `stat`, or `rm`.
-- Trigger: editing `HardWare/GD25QXX/smartfs_port.c` path-info, directory traversal, append, overwrite, delete, or block-map helpers.
+- Trigger: editing `Driver/GD25QXX/smartfs_port.c` path-info, directory traversal, append, overwrite, delete, or block-map helpers.
 - Trigger: any change that makes UART shell output depend on recursive directory inspection or storage-helper recursion.
 
 #### 2. Signatures

@@ -1,271 +1,148 @@
 # Flash 分区原理与 OTA 容量限制说明
 
-## 1. 文档目的
+## 1. 当前结论
 
-本文只回答一件事：
+当前工程按题目要求重新规划为：
 
-> 当前工程为什么把 App 相关 Flash 分成运行区、备份区、缓存区三块，
-> 以及这三块区域分别限制了什么。
-
-这是一份独立的原理说明文档，不展开串口协议细节，也不逐行讲代码流程。
-如果你只想先把地址、容量、限制关系看明白，先看这份就够了。
-
----
-
-## 2. 当前工程有效结论
-
-以下内容以**当前工程真实生效的常量、链接地址和文档约束**为准：
-
-| 项目 | 当前值 | 说明 |
-|---|---:|---|
-| BootLoader 区 | `0x08000000 ~ 0x0800BFFF` | MCU 复位后先运行这里，大小 `48KB` |
-| 参数区 | `0x0800C000 ~ 0x0800CFFF` | 独占 `4KB`，供 App / BootLoader 共享升级参数 |
-| App 运行区 | `0x0800D000 ~ 0x08032FFF` | 当前工程真正运行的 App 区，大小 `152KB` |
-| App 备份区 | `0x08033000 ~ 0x08058FFF` | BootLoader 升级前备份旧 App，大小 `152KB` |
-| App 缓存区 | `0x08059000 ~ 0x0807EFFF` | 暂存下一版固件 payload，大小 `152KB` |
-| 预留页 | `0x0807F000 ~ 0x0807FFFF` | 当前不用，大小 `4KB`，作为保护和后续扩展预留 |
-| 当前 OTA 固件上限 | `152KB` | `Project_ota.bin` 中的原始 `Project.bin` payload 不能超过此值 |
-
-最重要的区别只有一句：
-
-| 概念 | 当前含义 |
+| 项目 | 当前值 |
 |---|---|
-| App 运行区 | 设备最终运行程序的长期空间 |
-| App 备份区 | 升级前保存旧 App，搬运失败时用于恢复 |
-| App 缓存区 | App 接收并校验新固件后的临时中转仓库 |
+| BootLoader | `0x08000000 ~ 0x0800FFFF`，`64KB` |
+| 参数区 | `0x08010000 ~ 0x08010FFF`，`4KB` |
+| App 运行区 | `0x08011000 ~ 0x08030FFF`，`128KB` |
+| App 备份区 | `0x08031000 ~ 0x08050FFF`，`128KB` |
+| App 缓存区 | `0x08051000 ~ 0x08070FFF`，`128KB` |
+| 未使用区 | `0x08071000 ~ 0x0807FFFF`，`60KB` |
+| 当前 OTA payload 上限 | `128KB`，也就是原始 `Project.bin` 不能超过 `0x00020000` 字节 |
+
+`Project_ota.bin` 比 `Project.bin` 多 64 字节 OTA 头部；容量限制看的是头部后的 App payload，也就是 `Project.bin` 本身。
 
 ---
 
-## 3. 当前分区总览
+## 2. 地址推导
 
-当前工程把 `0x08000000 ~ 0x0807FFFF` 这一段 512KB 内部 Flash 作为 BootLoader + App + OTA 工作区来规划。
+内部 Flash 从 `0x08000000` 开始，本工程只使用 512KB 区间：
 
 ```text
 0x08000000
-├─ BootLoader 区      48KB   = 12 页
-0x0800C000
-├─ 参数区             4KB    = 1 页
-0x0800D000
-├─ App 运行区         152KB  = 38 页
-0x08033000
-├─ App 备份区         152KB  = 38 页
-0x08059000
-├─ App 缓存区         152KB  = 38 页
-0x0807F000
-├─ 预留页             4KB    = 1 页
+├─ BootLoader          64KB  = 16 页
+0x08010000
+├─ 参数区               4KB  = 1 页
+0x08011000
+├─ App 运行区          128KB = 32 页
+0x08031000
+├─ App 备份区          128KB = 32 页
+0x08051000
+├─ App 缓存区          128KB = 32 页
+0x08071000
+├─ 未使用区             60KB = 15 页
 0x08080000
 ```
 
-如果按当前工程统一采用的 `4KB/页` 来看，对应关系如下：
-
-| 区域 | 起始地址 | 页数 | 大小 |
-|---|---:|---:|---:|
-| BootLoader 区 | `0x08000000` | `12` 页 | `48KB` |
-| 参数区 | `0x0800C000` | `1` 页 | `4KB` |
-| App 运行区 | `0x0800D000` | `38` 页 | `152KB` |
-| App 备份区 | `0x08033000` | `38` 页 | `152KB` |
-| App 缓存区 | `0x08059000` | `38` 页 | `152KB` |
-| 预留页 | `0x0807F000` | `1` 页 | `4KB` |
-
----
-
-## 4. 地址为什么这样分
-
-这些地址不是芯片“天然规定只能这样”，而是当前工程为了同时满足下面 5 个条件，按页对齐后计算出来的。
-
-| 约束 | 为什么必须满足 |
-|---|---|
-| 复位后必须先跑 BootLoader | Cortex-M 复位向量从 `0x08000000` 开始取，所以 BootLoader 必须放在最前面 |
-| 参数区必须独立 | App 和 BootLoader 都要读写升级标志，必须留一块独立共享区 |
-| App 要有运行区 | 当前 App 链接到 `0x0800D000`，运行区必须从这里开始 |
-| 升级失败要能回退 | BootLoader 在搬运新 App 前要把旧 App 复制到备份区 |
-| 新固件要先完整缓存 | App 先接收和校验 payload，再统一写缓存区，不能一边收串口一边擦运行区 |
-
-### 4.1 从头往后推
-
 | 计算 | 结果 | 含义 |
 |---|---:|---|
-| `0x08000000 + 48KB` | `0x0800C000` | BootLoader 先占用前 12 页 |
-| `0x0800C000 + 4KB` | `0x0800D000` | 参数区独占 1 页，下一页开始才是 App 运行区 |
-| `0x0800D000 + 152KB` | `0x08033000` | App 运行区结束，备份区从这里开始 |
-| `0x08033000 + 152KB` | `0x08059000` | 备份区结束，缓存区从这里开始 |
-| `0x08059000 + 152KB` | `0x0807F000` | 缓存区结束，最后保留 1 页 |
+| `0x08000000 + 64KB` | `0x08010000` | BootLoader 结束，参数区开始 |
+| `0x08010000 + 4KB` | `0x08011000` | 参数区结束，App 运行区开始 |
+| `0x08011000 + 128KB` | `0x08031000` | 运行区结束，备份区开始 |
+| `0x08031000 + 128KB` | `0x08051000` | 备份区结束，缓存区开始 |
+| `0x08051000 + 128KB` | `0x08071000` | 缓存区结束，后续暂不使用 |
 
-### 4.2 为什么不是 153KB 或 154KB
-
-`512KB - 48KB - 4KB = 460KB`，如果完全三等分，每块约 `153.33KB`。
-但当前内部 Flash 按 `4KB` 页擦除，分区必须页对齐，所以三块都取 `152KB = 38 页`：
-
-| 方案 | 结果 | 取舍 |
-|---|---|---|
-| 三块各 `152KB` | 共 `456KB`，剩 `4KB` | 页对齐，地址清晰，留出保护页 |
-| 三块各约 `153KB` | 不满足 4KB 页对齐 | 擦写边界复杂，容易误擦 |
-| 某一块更大 | 三块不等大 | 会牺牲运行、备份或缓存中的某一项能力 |
-
-所以这套分区本质上就是：
-
-> 前面给 BootLoader，
-> 单独留参数页，
-> 后面三块 152KB 分别给运行、备份、缓存，
-> 最后一页暂时不用。
+所有分区都按 `4KB` Flash 页对齐。备份区必须从 `0x08031000` 开始；如果仍用旧地址 `0x08033000`，128KB 备份区会延伸到 `0x08052FFF`，直接覆盖 `0x08051000` 开始的缓存区。
 
 ---
 
-## 5. 参数区为什么正好是 4KB
+## 3. 各分区职责
 
-很多人第一次看会觉得奇怪：
+| 分区 | 谁写入 | 谁读取 | 关键约束 |
+|---|---|---|---|
+| BootLoader 区 | 烧录器 / BootLoader 工程 | MCU 复位入口 | App 不能擦写或覆盖 |
+| 参数区 | App 提交升级信息，BootLoader 清标志 | BootLoader 启动读取 | App/BootLoader 的结构体字段偏移必须一致 |
+| App 运行区 | BootLoader 搬运新 App，或烧录器直接写入 | BootLoader 跳转，CPU 运行 | Keil IROM 必须是 `0x08011000 / 0x020000` |
+| App 备份区 | BootLoader 升级前备份旧 App | BootLoader 失败时恢复 | 起始地址固定 `0x08031000`，大小 `128KB` |
+| App 缓存区 | App 接收 `Project_ota.bin` payload 时写入 | BootLoader 升级时搬运 | ready 前整区预擦，接收时只做编程 |
+| 未使用区 | 无 | 无 | 当前不参与 OTA，后续改动必须同步代码和文档 |
 
-> 升级标志、长度、CRC 这些字段加起来也没多少字节，为什么参数区要留整整 `4KB`？
+---
 
-真正原因不是“这些字段本身有 4KB 大”，而是**Flash 擦写规则**和**共享参数管理方式**决定参数区最好独占一页。
+## 4. 为什么 App 上限是 128KB
 
-| 原因 | 详细说明 |
+当前在线升级需要三块等大的 App 工作区：
+
+| 工作区 | 为什么必须容纳完整 App |
 |---|---|
-| Flash 擦除粒度就是页 | 当前工程把参数区和 App 区都按 `4KB` 页擦除，参数区独占 1 页最自然 |
-| 参数区必须和 App 隔离 | 否则升级时擦 App，可能顺带把参数也擦掉 |
-| 当前实现按整页回写 | 代码里会先读出整个参数页，改动字段后整页擦除、整页写回 |
-| 参数区不仅是升级标志 | 还预留了备份参数、日志、配置、校准和扩展空间 |
+| App 运行区 | 新 App 最终要在这里运行 |
+| App 备份区 | 升级前要保存旧 App，搬运失败时恢复 |
+| App 缓存区 | App 接收新 App payload 后先暂存在这里 |
 
-当前参数区内部规划如下：
-
-| 子区域 | 大小 | 用途 |
-|---|---:|---|
-| 主参数区 | `256B` | `magicWord`、`updateFlag`、`updateStatus`、`appSize`、`appCRC32` 等核心升级字段 |
-| 备份参数区 | `256B` | 主参数的冗余备份 |
-| 升级日志区 | `1024B` | 记录升级历史 |
-| 用户配置区 | `512B` | 串口等配置参数 |
-| 校准数据区 | `512B` | 保留校准数据 |
-| 预留扩展区 | `1536B` | 给后续功能扩展留空间 |
-
----
-
-## 6. 当前 OTA 容量限制到底卡在哪里
-
-当前 OTA 的容量限制同时受三块区域约束。因为运行区、备份区、缓存区都按 `152KB` 规划，所以 App 最大运行大小和在线 OTA 最大 payload 大小统一为 `152KB`。
-
-| 限制点 | 当前值 | 影响 |
-|---|---:|---|
-| App 运行区大小 | `152KB` | Keil IROM 和 `Project.bin` payload 不能超过此值 |
-| App 缓存区大小 | `152KB` | 新固件必须完整放得下 |
-| App 备份区大小 | `152KB` | 旧 App 必须能完整备份 |
-| OTA 头部 `image_size` 检查 | `image_size <= 152KB` | 超过后 App 会拒绝升级 |
-| BootLoader 搬运上限检查 | `appSize <= 152KB` | 即使参数写进去了，BootLoader 也不会搬运超限镜像 |
-
-典型场景如下：
-
-| 场景 | 是否可行 | 原因 |
-|---|---|---|
-| 生成一个 `40KB` 的新 App 并串口 OTA | 可以 | 运行区、备份区、缓存区都放得下 |
-| 生成一个 `120KB` 的新 App 并串口 OTA | 可以 | 仍在 `152KB` 上限内 |
-| 生成一个 `160KB` 的新 App 并串口 OTA | 不可以 | 超过运行区和缓存区上限 |
-| 生成一个 `160KB` 的新 App，用 SWD 直接烧到 `0x0800D000` | 不可以作为当前工程使用 | Keil IROM 已限制为 `0x026000`，还会覆盖备份区 |
-
----
-
-## 7. 三分区升级流程
-
-当前现场发送文件仍然是：
+因此 `image_size` 必须同时满足：
 
 ```text
-Project_ota.bin = 64 字节 OTA 头部 + Project.bin payload
+1 <= image_size <= 128KB
 ```
 
-三分区不会改变上位机发送协议。串口工具仍然只需要用原始/直接发送方式，从文件第 0 字节开始一次性连续发送完整 `Project_ota.bin`。
+超过 `128KB` 时：
 
-内部 Flash 流程如下：
+| 层级 | 行为 |
+|---|---|
+| `tools/pack_ota_image.c` | 默认拒绝打包超出 `OTA_IMAGE_MAX_SIZE` 的 payload |
+| App `Protocol/ota_image_protocol.c` | 校验头部时拒绝 `image_size > BOOTLOADER_PORT_DOWNLOAD_MAX_SIZE` |
+| BootLoader `Function/Function.c` | 拒绝 `appSize > BOOT_APP_REGION_SIZE` 的搬运任务 |
+| Keil 工程 | IROM 限制为 `0x020000`，超出会构建失败或生成越界镜像 |
+
+---
+
+## 5. OTA 数据流
 
 | 顺序 | 执行方 | 动作 | 地址 |
 |---:|---|---|---|
-| 1 | App | 接收并校验 `Project_ota.bin` 头部和 payload | RAM payload 缓冲 |
-| 2 | App | payload 校验通过后写入 App 缓存区 | `0x08059000` |
-| 3 | App | 回读缓存区并确认 CRC | `0x08059000` |
-| 4 | App | 写参数区，置 `updateFlag=0x5A`、`updateStatus=0x01` | `0x0800C000` |
-| 5 | App | 软件复位 | 回到 BootLoader |
-| 6 | BootLoader | 先备份当前运行区到备份区 | `0x0800D000 -> 0x08033000` |
-| 7 | BootLoader | 再把缓存区新 App 搬到运行区 | `0x08059000 -> 0x0800D000` |
-| 8 | BootLoader | 对运行区新 App 重新计算 CRC | `0x0800D000` |
-| 9 | BootLoader | 成功则清标志并复位，失败则尽量恢复备份 | `0x08033000 -> 0x0800D000` |
+| 1 | Keil / 打包工具 | 生成 `Project.bin`，再加 64 字节头部生成 `Project_ota.bin` | `load_addr = 0x08011000` |
+| 2 | App | 收到合法头部后，把 payload 流式写入缓存区 | `0x08051000` |
+| 3 | App | 回读缓存区计算 CRC32 | `0x08051000` |
+| 4 | App | 写参数区并置升级标志 | `0x08010000` |
+| 5 | BootLoader | 复位后读取参数区 | `0x08010000` |
+| 6 | BootLoader | 备份当前运行区 | `0x08011000 -> 0x08031000` |
+| 7 | BootLoader | 搬运缓存区新 App 到运行区 | `0x08051000 -> 0x08011000` |
+| 8 | BootLoader | 对正式 App 区重新计算 CRC32 | `0x08011000` |
+| 9 | BootLoader | 失败时尽量恢复旧 App | `0x08031000 -> 0x08011000` |
 
 ---
 
-## 8. 如果以后 App 超过 152KB，会发生什么
+## 6. 相关文件
 
-如果未来 `Project.bin` 超过 `152KB`，当前内部 Flash OTA 会在 App 解析 `Project_ota.bin` 头部时直接失败。
-
-| 超限后会怎样 | 结果 |
+| 文件 | 必须保持一致的内容 |
 |---|---|
-| 上位机原始发送 `Project_ota.bin` | App 先读取 64 字节 OTA 头部 |
-| App 发现 `image_size > 152KB` | 进入错误状态，不擦写缓存区和参数区 |
-| App 缓存区不会开始写入 | 旧 App 不受影响 |
-| BootLoader 不会收到有效升级条件 | 下次复位也不会去搬运 |
-
-这是一种**保守失败**设计：
-
-| 特性 | 意义 |
-|---|---|
-| 超限时直接拒绝 | 防止写爆缓存区，破坏后面的 Flash 区域 |
-| 不先擦运行区 | 保住当前还能运行的旧版本 |
-| 不勉强进入升级流程 | 避免“升级到一半设备变砖” |
+| [User/boot_app_config.h](D:/GD32/2026706296/User/boot_app_config.h:1) | `BOOT_APP_START_ADDRESS = 0x08011000`，`BOOT_APP_FLASH_SIZE = 0x00020000` |
+| [Driver/BOOTLOADER/bootloader_port.h](D:/GD32/2026706296/Driver/BOOTLOADER/bootloader_port.h:1) | 参数区、备份区、缓存区和 128KB 上限 |
+| [Protocol/ota_image_protocol.c](D:/GD32/2026706296/Protocol/ota_image_protocol.c:1) | OTA 头部地址、容量、向量表校验 |
+| [tools/pack_ota_image.c](D:/GD32/2026706296/tools/pack_ota_image.c:1) | 默认 `load_addr` 和最大 payload |
+| [project/2026706296.uvprojx](D:/GD32/2026706296/project/2026706296.uvprojx:1) | IROM 和 After Build 打包地址 |
+| [D:\GD32\2026706296_bootloader\Function\Function.c](D:/GD32/2026706296_bootloader/Function/Function.c:1) | BootLoader 搬运、备份、恢复地址 |
+| [D:\GD32\2026706296_bootloader\Driver\BootLoader\BootConfig.h](D:/GD32/2026706296_bootloader/Driver/BootLoader/BootConfig.h:1) | 参数区起始地址和默认字段说明 |
 
 ---
 
-## 9. 如果将来要支持更大的 OTA，需要怎么改
+## 7. 常见误解
 
-如果以后要在线升级超过 `152KB` 的 App，必须重做分区或升级架构。
-
-| 方向 | 做法 | 优点 | 代价 |
-|---|---|---|---|
-| 重新切分内部 Flash | 压缩 BootLoader 或取消预留页，或者让三块不等大 | 仍然使用片内 Flash | 可靠性和边界会更紧 |
-| 改用外部 Flash / SD 卡 | 新固件先写片外存储，再由 BootLoader 搬运 | OTA 容量上限可以大很多 | 需要额外硬件和驱动 |
-| 做双分区 A/B | 保留两份可运行 App，升级写备用分区 | 升级可靠性高 | 占用空间大，BootLoader 复杂度上升 |
-| 做分段下载 / 分段校验 | 不再要求整包长期存放在同一缓存区 | 更灵活 | 异常恢复逻辑更复杂 |
-
-当前最现实的判断：
-
-| 情况 | 建议 |
+| 误解 | 正确理解 |
 |---|---|
-| App 长期小于 `152KB` | 继续沿用当前三分区方案 |
-| App 开始接近 `152KB` | 提前规划外部缓存或不等大分区，不要等超限后再补救 |
-| App 明显会超过 `152KB` | 优先考虑外部 Flash / SD 卡或新的 OTA 架构 |
+| 三块 128KB 意味着要发送三个文件 | 错，上位机仍然只原始发送一个 `Project_ota.bin` |
+| App 会直接把新固件写到运行区 | 错，App 只写缓存区，正式搬运由 BootLoader 完成 |
+| `Project_ota.bin` 文件总大小必须小于 128KB | 不准确，限制的是 payload；`Project_ota.bin` 总大小可以是 `128KB + 64B` |
+| 旧的 `0x0800D000/152KB` 还能继续混用 | 不行，当前代码、Keil IROM、BootLoader 和文档统一为 `0x08011000/128KB` |
+| 备份区可以从 `0x08033000` 开始 | 不行，当前 128KB 备份区必须从 `0x08031000` 开始，否则会覆盖缓存区 |
 
 ---
 
-## 10. 当前工程里哪些文件是“权威来源”
+## 8. 验证命令
 
-如果以后你要再次核对这份文档是否和工程一致，优先看下面这些文件：
+```powershell
+gcc -std=c99 -Wall -Wextra -Werror tools\pack_ota_image.c -o tools\pack_ota_image.exe
+python -m unittest tools.test_header_bin_ota_static
+python tools/test_static_optimizations.py
+```
 
-| 文件 | 为什么看它 |
-|---|---|
-| [D:\GD32\2026706296_bootloader\Function\Function.c](D:/GD32/2026706296_bootloader/Function/Function.c:1) | 里面定义了 `BOOT_APP_REGION_SIZE`、`APP_BACKUP_ADDR`、`APP_DOWNLOAD_ADDR` 和备份/恢复流程 |
-| [HardWare/BOOTLOADER/bootloader_port.h](D:/GD32/2026706296/HardWare/BOOTLOADER/bootloader_port.h:1) | App 侧共享分区常量，决定缓存区写入地址和 payload 上限 |
-| [User/boot_app_config.h](D:/GD32/2026706296/User/boot_app_config.h:1) | 说明当前 App 链接地址和运行边界 |
-| [project/2026706296.uvprojx](D:/GD32/2026706296/project/2026706296.uvprojx:1) | Keil IROM 起始地址和大小配置 |
-| [BootLoader_APP_接入说明.md](D:/GD32/2026706296/BootLoader_APP_%E6%8E%A5%E5%85%A5%E8%AF%B4%E6%98%8E.md:1) | 当前工程接入说明 |
-| [BootLoader_App_实际升级运行流程详解.md](D:/GD32/2026706296/BootLoader_App_%E5%AE%9E%E9%99%85%E5%8D%87%E7%BA%A7%E8%BF%90%E8%A1%8C%E6%B5%81%E7%A8%8B%E8%AF%A6%E8%A7%A3.md:1) | 当前运行流程与职责边界 |
+若有 Keil 环境，还应执行：
 
----
-
-## 11. 常见误区
-
-| 常见误解 | 正确认识 |
-|---|---|
-| 参数区只有几个字段，没必要 4KB | 当前按页擦写，参数区独占 1 页最合理 |
-| 三块 152KB 意味着上位机要发三次文件 | 错，上位机仍然一次性原始发送一个 `Project_ota.bin` |
-| App 备份区是上位机发送过来的 | 错，备份区由 BootLoader 从当前运行区复制得到 |
-| 升级时 App 会直接把新固件写到 `0x0800D000` | 错，App 只写缓存区，真正搬运由 BootLoader 完成 |
-| 早期文档里出现的 `100KB` 缓存区也能当当前配置用 | 不行，当前工程真实生效的是三块 `152KB` |
-| 早期文档里出现的 `0x5A000 = 360KB` App 区还能用 | 不行，当前 App IROM 已收缩为 `0x026000 = 152KB` |
-
----
-
-## 12. 一句话总结
-
-当前工程的 Flash 规划核心思想可以压缩成一句话：
-
-> 用最前面的区域放 BootLoader，
-> 用独立 1 页参数区传递升级状态，
-> 用三块等大的 152KB 区域分别承担 App 运行、旧 App 备份、新 App 缓存。
-
-而当前 OTA 的真正容量上限是：
-
-> **App payload 最大 `152KB`，也就是 `Project.bin` 不能超过 `152KB`。**
+```powershell
+& 'E:\Keil_v5\UV4\UV4.exe' -b 'project\2026706296.uvprojx' -j0
+Select-String -Path 'project\output\Project.build_log.htm' -Pattern 'Program Size|Error\(s\)|Warning\(s\)'
+```

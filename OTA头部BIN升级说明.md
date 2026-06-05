@@ -20,7 +20,7 @@
 | `0x00` | `magic = 0x474F5441` | 判断是否为当前 OTA 文件 |
 | `0x04` | `header_size = 64` | 固定头部长度 |
 | `0x08` | `image_size` | App payload 字节数 |
-| `0x0C` | `load_addr = 0x0800D000` | App 正式写入地址 |
+| `0x0C` | `load_addr = 0x08011000` | App 正式写入地址 |
 | `0x10` | `version` | 写入 BootLoader 参数区的版本号 |
 | `0x14` | `image_crc32` | App payload CRC32 |
 | `0x18` | `flags = 0` | 预留 |
@@ -34,13 +34,13 @@ Keil After Build 当前执行两步：
 
 ```powershell
 E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\output\Project.axf
-..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x0800D000
+..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x08011000
 ```
 
 也可以手动重新打包：
 
 ```powershell
-tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.bin 0x00000001 0x0800D000
+tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.bin 0x00000001 0x08011000
 ```
 
 ## 现场发送步骤
@@ -61,12 +61,12 @@ tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.b
 
 | 限制项 | 当前值 |
 |--------|--------|
-| App payload 最大值 | `152KB` |
-| App 起始地址 | `0x0800D000` |
-| App 运行区 | `0x0800D000 ~ 0x08032FFF`，`152KB` |
-| App 备份区 | `0x08033000 ~ 0x08058FFF`，`152KB` |
-| App 缓存区 | `0x08059000 ~ 0x0807EFFF`，`152KB` |
-| 参数区 | `0x0800C000 ~ 0x0800CFFF` |
+| App payload 最大值 | `128KB` |
+| App 起始地址 | `0x08011000` |
+| App 运行区 | `0x08011000 ~ 0x08030FFF`，`128KB` |
+| App 备份区 | `0x08031000 ~ 0x08050FFF`，`128KB` |
+| App 缓存区 | `0x08051000 ~ 0x08070FFF`，`128KB` |
+| 参数区 | `0x08010000 ~ 0x08010FFF` |
 | 串口波特率 | `115200` |
 
-当前 App 会先把 payload 收到 RAM，再统一写入 App 缓存区。这样可以避免一边接收串口、一边擦写内部 Flash 导致丢字节。
+当前 App 在发出 `OTA485: ready` 前会预擦完整 App 缓存区。收到 `Project_ota.bin` 后，任务层从 USART1 circular DMA 环形缓冲取 512B 窗口，边更新 CRC32 边把 payload 写入已擦好的 `0x08051000` 缓存区，不再申请 128KB 整包 RAM。

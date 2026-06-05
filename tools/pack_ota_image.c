@@ -14,10 +14,10 @@
 
 #define OTA_IMAGE_MAGIC              0x474F5441UL
 #define OTA_IMAGE_HEADER_SIZE        64UL
-#define OTA_IMAGE_MAX_SIZE           (152UL * 1024UL)
+#define OTA_IMAGE_MAX_SIZE           (128UL * 1024UL)
 #define OTA_DEFAULT_VERSION          0x00000001UL
-#define OTA_DEFAULT_LOAD_ADDR        0x0800D000UL
-#define OTA_APP_REGION_SIZE          0x00026000UL
+#define OTA_DEFAULT_LOAD_ADDR        0x08011000UL
+#define OTA_APP_REGION_SIZE          0x00020000UL
 #define OTA_SRAM_START               0x20000000UL
 #define OTA_SRAM_END                 0x20030000UL
 
@@ -327,7 +327,7 @@ static void print_usage(const char *program)
 {
     fprintf(stderr,
             "usage: %s <input_app_bin> <output_ota_bin> [version] [load_addr]\n"
-            "example: %s project/output/Project.bin project/output/Project_ota.bin 0x00000001 0x0800D000\n",
+            "example: %s project/output/Project.bin project/output/Project_ota.bin 0x00000001 0x08011000\n",
             (NULL != program) ? program : "pack_ota_image",
             (NULL != program) ? program : "pack_ota_image");
 }

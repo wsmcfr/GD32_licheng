@@ -64,7 +64,7 @@ Prefer one-line messages that make serial logs scannable.
 
 Good examples:
 
-- `HardWare/GD25QXX/lfs_port.c` and `smartfs_port.c` print storage init, self-test, and failure points
+- `Driver/GD25QXX/lfs_port.c` and `smartfs_port.c` print storage init, self-test, and failure points
 - `Function/scheduler.c::system_init()` prints boot progress around major peripherals
 
 ---

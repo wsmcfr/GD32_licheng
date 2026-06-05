@@ -87,7 +87,7 @@ Where possible, verify using:
 
 ## Code Review Checklist
 
-- Is the app code in `Function/` instead of leaking into `HardWare/` or library layers?
+- Is the app code in `Function/` instead of leaking into `Driver/`, `Protocol/`, or library layers?
 - Does the module expose only the public functions or shared buffers it needs?
 - Is periodic behavior registered centrally in `scheduler_task[]`?
 - Are display and logging buffers bounded?

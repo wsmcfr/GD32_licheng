@@ -99,7 +99,7 @@ The current code already follows a lightweight version of this:
 
 ### Putting formatting logic in low-level drivers
 
-Do not push app strings or UI layout concerns into `HardWare/OLED/`.
+Do not push app strings or UI layout concerns into `Driver/OLED/`.
 
 ### Exposing private helpers in headers
 

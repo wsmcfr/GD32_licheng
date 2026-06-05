@@ -9,7 +9,8 @@
 In this repository, the Trellis `backend` layer does **not** mean a web server.
 It maps to hardware-near firmware code:
 
-- `HardWare/` board-support, peripheral resource ownership, and reusable device drivers
+- `Driver/` board-support, peripheral resource ownership, and reusable device drivers
+- `Protocol/` firmware protocol parsing, CRC, and format validation that should stay independent from app tasks
 - `Library/` vendor standard peripheral library
 - `User/gd32f4xx_it.c` interrupt handlers
 - `User/systick.c`, `User/main.c`, and shared runtime infrastructure code
@@ -58,7 +59,7 @@ It maps to hardware-near firmware code:
 ## Anchor Examples
 
 - `HeaderFiles/system_all.h`: shared include aggregation and layer ordering
-- `HardWare/USART/bsp_usart.c`: typical peripheral/DMA/IRQ initialization style
+- `Driver/USART/bsp_usart.c`: typical peripheral/DMA/IRQ initialization style
 - `User/gd32f4xx_it.c`: ISR structure and fail-stop handlers
 - `Function/uart_ota_app.c`: RS485/USART1 header-bin raw OTA parsing and BootLoader parameter handoff
 - `tools/pack_ota_image.c`: PC-side `Project.bin` to `Project_ota.bin` packer

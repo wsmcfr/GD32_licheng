@@ -18,10 +18,12 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
 
     repo_root = Path(__file__).resolve().parents[1]
     expected_boot_magic = "0xC0DEF47A"
-    expected_backup_addr = "0x08033000"
-    expected_download_addr = "0x08059000"
-    expected_region_size_kb = "152"
-    expected_app_region_size = "0x00026000"
+    expected_param_addr = "0x08010000"
+    expected_app_addr = "0x08011000"
+    expected_backup_addr = "0x08031000"
+    expected_download_addr = "0x08051000"
+    expected_region_size_kb = "128"
+    expected_app_region_size = "0x00020000"
 
     def read_text(self, relative_path: str) -> str:
         """
@@ -69,7 +71,7 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         返回值说明：
           返回原始 App bin 字节串；前 8 字节分别是 MSP 和 Reset_Handler。
         """
-        vector = struct.pack("<II", 0x20001000, 0x0800D101)
+        vector = struct.pack("<II", 0x20001000, 0x08011101)
         payload = bytes(range(64))
         return vector + payload
 
@@ -96,7 +98,7 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
                     str(input_bin),
                     str(output_bin),
                     "0x0000002A",
-                    "0x0800D000",
+                    "0x08011000",
                 ],
                 cwd=self.repo_root,
                 check=True,
@@ -113,11 +115,11 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
             self.assertEqual(0x474F5441, fields[0])
             self.assertEqual(64, fields[1])
             self.assertEqual(len(firmware), fields[2])
-            self.assertEqual(0x0800D000, fields[3])
+            self.assertEqual(0x08011000, fields[3])
             self.assertEqual(0x0000002A, fields[4])
             self.assertEqual(binascii.crc32(firmware) & 0xFFFFFFFF, fields[5])
             self.assertEqual(0x20001000, fields[8])
-            self.assertEqual(0x0800D101, fields[9])
+            self.assertEqual(0x08011101, fields[9])
             self.assertEqual(binascii.crc32(header_without_crc) & 0xFFFFFFFF, fields[7])
             self.assertEqual(firmware, image[64:])
 
@@ -132,12 +134,13 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         """
         uart_ota_c = self.read_text("Function/uart_ota_app.c")
         uart_ota_h = self.read_text("Function/uart_ota_app.h")
+        protocol_h = self.read_text("Protocol/ota_image_protocol.h")
         system_all = self.read_text("HeaderFiles/system_all.h")
         uvproj = self.read_text("project/2026706296.uvprojx")
 
-        self.assertIn("UART_OTA_IMAGE_MAGIC", uart_ota_c)
+        self.assertIn("OTA_IMAGE_MAGIC", protocol_h)
         self.assertIn("uart_ota_feed_rx_bytes", uart_ota_c)
-        self.assertIn("UART_OTA_IMAGE_HEADER_SIZE", uart_ota_h)
+        self.assertIn("OTA_IMAGE_HEADER_SIZE", protocol_h)
         old_receiver_symbol = "uart_ota_" + "ym" + "odem"
         old_receiver_c = old_receiver_symbol + ".c"
         old_receiver_h = old_receiver_symbol + ".h"
@@ -150,6 +153,42 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         self.assertNotIn(old_receiver_h, system_all)
         self.assertNotIn(old_receiver_c, uvproj)
 
+    def test_ota_header_parse_and_crc_live_in_protocol_layer(self):
+        """
+        函数作用：
+          验证 OTA 头部字段解析、头部 CRC 和向量表元数据校验被放入 Protocol 层。
+          这样 Function 层只保留接收状态机和业务交接逻辑，符合题目对协议层
+          单独放置帧解析、应答组帧和 CRC 校验的目录要求。
+        参数说明：
+          无参数。
+        返回值说明：
+          无返回值；断言失败时说明 OTA 协议职责仍残留在业务逻辑层。
+        """
+        protocol_h = self.read_text("Protocol/ota_image_protocol.h")
+        protocol_c = self.read_text("Protocol/ota_image_protocol.c")
+        uart_ota_c = self.read_text("Function/uart_ota_app.c")
+        uvproj = self.read_text("project/2026706296.uvprojx")
+
+        self.assertIn("OTA_IMAGE_MAGIC", protocol_h)
+        self.assertIn("OTA_IMAGE_HEADER_SIZE", protocol_h)
+        self.assertIn("ota_image_header_t", protocol_h)
+        self.assertIn("ota_image_parse_header", protocol_h)
+        self.assertIn("ota_image_validate_header", protocol_h)
+        self.assertIn("ota_image_crc32_update", protocol_h)
+        self.assertIn("ota_image_read_u32_le", protocol_c)
+        self.assertIn("header_for_crc[28] = 0U", protocol_c)
+        self.assertIn("OTA_IMAGE_MAGIC != header->magic", protocol_c)
+        self.assertIn("ota_image_parse_header", uart_ota_c)
+        self.assertIn("ota_image_validate_header", uart_ota_c)
+        self.assertIn("ota_image_crc32_update", uart_ota_c)
+        # Function 层允许保留 OTA 接收会话状态结构体；这里只禁止协议头结构体和解析工具回流。
+        self.assertIn("} uart_ota_session_t;", uart_ota_c)
+        self.assertNotIn("} ota_image_header_t;", uart_ota_c)
+        self.assertNotIn("uint32_t magic;\n    uint32_t header_size;\n    uint32_t image_size;", uart_ota_c)
+        self.assertNotIn("prv_uart_ota_read_u32_le", uart_ota_c)
+        self.assertNotIn("prv_uart_ota_crc32_calc", uart_ota_c)
+        self.assertIn("<FilePath>..\\Protocol\\ota_image_protocol.c</FilePath>", uvproj)
+
     def test_usart_dma_circular_handler_is_enabled_for_raw_file_stream(self):
         """
         函数作用：
@@ -159,7 +198,7 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         返回值说明：
           无返回值；断言失败时说明连续裸流接收链路可能仍依赖停 DMA 重装载。
         """
-        bsp_usart_c = self.read_text("HardWare/USART/bsp_usart.c")
+        bsp_usart_c = self.read_text("Driver/USART/bsp_usart.c")
         irq_c = self.read_text("User/gd32f4xx_it.c")
         irq_h = self.read_text("User/gd32f4xx_it.h")
 
@@ -185,13 +224,13 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         """
         uart_ota_c = self.read_text("Function/uart_ota_app.c")
         uart_ota_h = self.read_text("Function/uart_ota_app.h")
-        bsp_usart_c = self.read_text("HardWare/USART/bsp_usart.c")
+        bsp_usart_c = self.read_text("Driver/USART/bsp_usart.c")
         scheduler_c = self.read_text("Function/scheduler.c")
         irq_c = self.read_text("User/gd32f4xx_it.c")
         ota_spec = self.read_text(".trellis/spec/backend/embedded-ota-guidelines.md")
 
         self.assertIn("#define UART_OTA_RING_BUFFER_SIZE    BSP_USART1_RX_BUFFER_SIZE", uart_ota_h)
-        self.assertIn("#define BSP_USART1_RX_BUFFER_SIZE      (32U * 1024U)", self.read_text("HardWare/USART/bsp_usart.h"))
+        self.assertIn("#define BSP_USART1_RX_BUFFER_SIZE      (32U * 1024U)", self.read_text("Driver/USART/bsp_usart.h"))
         self.assertIn("usart1_rxbuffer", uart_ota_c)
         self.assertIn("uart_ota_prepare_download_area_before_ready", uart_ota_c)
         self.assertIn("uart_ota_take_ring_bytes", uart_ota_c)
@@ -300,11 +339,11 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         if not bootloader_root.exists():
             self.skipTest("独立 BootLoader 工程不在当前工作区旁边，跳过跨工程魔术字一致性检查。")
 
-        app_header = self.read_text("HardWare/BOOTLOADER/bootloader_port.h")
+        app_header = self.read_text("Driver/BOOTLOADER/bootloader_port.h")
         ota_spec = self.read_text(".trellis/spec/backend/embedded-ota-guidelines.md")
         bootloader_function = (bootloader_root / "Function" / "Function.c").read_text(encoding="utf-8")
-        bootloader_config_c = (bootloader_root / "HardWare" / "BootLoader" / "BootConfig.c").read_text(encoding="utf-8")
-        bootloader_config_h = (bootloader_root / "HardWare" / "BootLoader" / "BootConfig.h").read_text(encoding="utf-8")
+        bootloader_config_c = (bootloader_root / "Driver" / "BootLoader" / "BootConfig.c").read_text(encoding="utf-8")
+        bootloader_config_h = (bootloader_root / "Driver" / "BootLoader" / "BootConfig.h").read_text(encoding="utf-8")
 
         self.assertIn("BOOTLOADER_PORT_MAGIC_WORD         " + self.expected_boot_magic + "UL", app_header)
         self.assertIn("BOOT_PARAM_MAGIC            (" + self.expected_boot_magic + "UL)", bootloader_function)
@@ -318,11 +357,11 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         self.assertNotIn("0x5AA5C33C", bootloader_config_h)
         self.assertNotIn("0x5AA5C33C", ota_spec)
 
-    def test_ota_partition_is_three_152kb_regions_across_app_bootloader_and_docs(self):
+    def test_ota_partition_is_three_128kb_regions_across_app_bootloader_and_docs(self):
         """
         函数作用：
           验证 App、独立 BootLoader、Keil IROM、打包工具和规格文档使用同一套
-          运行区、备份区、缓存区各 152KB 的三分区 OTA 契约。
+          运行区、备份区、缓存区各 128KB 的三分区 OTA 契约。
         参数说明：
           无参数。
         返回值说明：
@@ -332,7 +371,7 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         if not bootloader_root.exists():
             self.skipTest("独立 BootLoader 工程不在当前工作区旁边，跳过跨工程分区一致性检查。")
 
-        app_header = self.read_text("HardWare/BOOTLOADER/bootloader_port.h")
+        app_header = self.read_text("Driver/BOOTLOADER/bootloader_port.h")
         app_config = self.read_text("User/boot_app_config.h")
         pack_tool = self.read_text("tools/pack_ota_image.c")
         uvproj = self.read_text("project/2026706296.uvprojx")
@@ -341,6 +380,7 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         bootloader_function = (bootloader_root / "Function" / "Function.c").read_text(encoding="utf-8")
         bootloader_doc = (bootloader_root / "BootLoader_程序详解.md").read_text(encoding="utf-8")
 
+        self.assertIn("BOOTLOADER_PORT_PARAM_ADDR         " + self.expected_param_addr + "UL", app_header)
         self.assertIn("BOOTLOADER_PORT_BACKUP_ADDR        " + self.expected_backup_addr + "UL", app_header)
         self.assertIn("BOOTLOADER_PORT_DOWNLOAD_ADDR      " + self.expected_download_addr + "UL", app_header)
         self.assertIn("BOOTLOADER_PORT_REGION_SIZE        (" + self.expected_region_size_kb + "U * 1024U)", app_header)
@@ -349,23 +389,35 @@ class HeaderBinOtaStaticTest(unittest.TestCase):
         self.assertIn("BOOT_APP_FLASH_SIZE             (" + self.expected_app_region_size + "UL)", app_config)
         self.assertIn("OTA_IMAGE_MAX_SIZE           (" + self.expected_region_size_kb + "UL * 1024UL)", pack_tool)
         self.assertIn("OTA_APP_REGION_SIZE          " + self.expected_app_region_size + "UL", pack_tool)
-        self.assertIn("IROM(0x0800D000,0x026000)", uvproj)
+        self.assertIn("IROM(0x08011000,0x020000)", uvproj)
+        self.assertIn("..\\Protocol", uvproj)
+        self.assertIn("<GroupName>Driver</GroupName>", uvproj)
+        self.assertIn("<GroupName>Protocol</GroupName>", uvproj)
+        self.assertNotIn("..\\HardWare\\", uvproj)
+        self.assertIn("BOOT_APP_START_ADDR         (" + self.expected_app_addr + "UL)", bootloader_function)
+        self.assertIn("BOOT_PARAM_ADDR             (" + self.expected_param_addr + "UL)", bootloader_function)
         self.assertIn("APP_BACKUP_ADDR             (" + self.expected_backup_addr + "UL)", bootloader_function)
         self.assertIn("APP_DOWNLOAD_ADDR           (" + self.expected_download_addr + "UL)", bootloader_function)
         self.assertIn("BOOT_APP_REGION_SIZE        (" + self.expected_app_region_size + "UL)", bootloader_function)
         self.assertIn("APP_DOWNLOAD_MAX_SIZE       BOOT_APP_REGION_SIZE", bootloader_function)
         self.assertIn("Backup_Transport", bootloader_function)
         self.assertIn("Restore_Backup_To_App", bootloader_function)
-        self.assertIn("152KB", ota_spec)
-        self.assertIn("0x08033000", ota_spec)
-        self.assertIn("0x08059000", ota_spec)
-        self.assertIn("0x0807EFFF", ota_spec)
-        self.assertIn("152KB", project_doc)
-        self.assertIn("0x08033000", project_doc)
-        self.assertIn("0x08059000", project_doc)
-        self.assertIn("152KB", bootloader_doc)
-        self.assertIn("0x08033000", bootloader_doc)
-        self.assertIn("0x08059000", bootloader_doc)
+        self.assertIn("128KB", ota_spec)
+        self.assertIn("0x08010000", ota_spec)
+        self.assertIn("0x08011000", ota_spec)
+        self.assertIn("0x08031000", ota_spec)
+        self.assertIn("0x08051000", ota_spec)
+        self.assertIn("0x08070FFF", ota_spec)
+        self.assertIn("128KB", project_doc)
+        self.assertIn("0x08010000", project_doc)
+        self.assertIn("0x08011000", project_doc)
+        self.assertIn("0x08031000", project_doc)
+        self.assertIn("0x08051000", project_doc)
+        self.assertIn("128KB", bootloader_doc)
+        self.assertIn("0x08010000", bootloader_doc)
+        self.assertIn("0x08011000", bootloader_doc)
+        self.assertIn("0x08031000", bootloader_doc)
+        self.assertIn("0x08051000", bootloader_doc)
         self.assertIn("Project_ota.bin", ota_spec)
         self.assertIn("64", ota_spec)
 

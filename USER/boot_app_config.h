@@ -12,16 +12,16 @@
  *   2. 与官方 BootLoader 跳转时使用的 appStartAddr 一致。
  *   3. 满足 Cortex-M 向量表对齐要求。
  */
-#define BOOT_APP_START_ADDRESS          (0x0800D000UL)
+#define BOOT_APP_START_ADDRESS          (0x08011000UL)
 
 /*
  * 宏作用：
  *   定义当前 App 可使用的 Flash 最大空间。
  * 说明：
- *   当前工程规划 App 区为 0x0800D000 起，
- *   长度 0x00026000，末尾到 0x08033000 之前，避免覆盖 152KB 备份区。
+ *   当前工程规划 App 区为 0x08011000 起，
+ *   长度 0x00020000，末尾到 0x08031000 之前，避免覆盖 128KB 备份区。
  */
-#define BOOT_APP_FLASH_SIZE             (0x00026000UL)
+#define BOOT_APP_FLASH_SIZE             (0x00020000UL)
 
 #ifdef __cplusplus
 extern "C" {

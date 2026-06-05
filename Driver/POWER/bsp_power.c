@@ -418,7 +418,7 @@ static void bsp_deepsleep_reinit_after_wakeup(uint32_t sleep_epoch, uint8_t slee
     SystemInit();
 
     /*
-     * 当前工程作为 BootLoader App 运行，真实向量表在 0x0800D000。
+     * 当前工程作为 BootLoader App 运行，真实向量表在 0x08011000。
      * GD32 标准库的 SystemInit() 会按默认工程假设把 VTOR 重新设回
      * 0x08000000；如果不立刻切回 App 向量表，后续 SysTick/EXTI/USART
      * 中断会从 BootLoader 向量表取入口，表现为“已经唤醒但回不来”。

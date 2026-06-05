@@ -132,7 +132,7 @@ application-layer forwarding.
 
 #### 2. Signatures
 
-Expected driver-level resources belong in `HardWare/USART/bsp_usart.h` or the owning driver header:
+Expected driver-level resources belong in `Driver/USART/bsp_usart.h` or the owning driver header:
 
 ```c
 #define RS485_USART                    USART1
@@ -211,14 +211,14 @@ If the board uses an inverter or a different transceiver, document the polarity 
 ### Do not use dynamic allocation in low-level storage or hot runtime paths
 
 The current GD25Q16 SMARTFS port uses static metadata and sector buffers in
-`HardWare/GD25QXX/smartfs_port.c`. Follow that pattern unless there is a
+`Driver/GD25QXX/smartfs_port.c`. Follow that pattern unless there is a
 very strong reason to introduce heap use.
 
 ### OLED I2C display writes should use page-sized batch transfers
 
 #### 1. Scope / Trigger
 
-- Trigger: modifying `HardWare/OLED/oled.c`, `HardWare/OLED/oled.h`, `HardWare/OLED/bsp_oled.c`, or `HardWare/OLED/bsp_oled.h`.
+- Trigger: modifying `Driver/OLED/oled.c`, `Driver/OLED/oled.h`, `Driver/OLED/bsp_oled.c`, or `Driver/OLED/bsp_oled.h`.
 - Trigger: changing SSD1306 clear, fill, bitmap, character, or string rendering paths.
 - Trigger: changing OLED I2C0 DMA buffer sizes or public OLED write APIs.
 
@@ -317,7 +317,7 @@ Keep callback glue and local helpers `static` in the `.c` file.
 Examples:
 
 - storage shell helpers in `Function/usart_app.c`
-- `bsp_usart_disable_for_deepsleep()` in `HardWare/POWER/bsp_power.c`
+- `bsp_usart_disable_for_deepsleep()` in `Driver/POWER/bsp_power.c`
 
 ### Do not ignore valid-length tracking
 
@@ -335,7 +335,7 @@ second artifact from being generated.
 #### 1. Scope / Trigger
 
 - Trigger: editing `*.uvprojx` `AfterMake` settings, adding `fromelf --bin`, adding `pack_ota_image.exe`, changing generated BIN/HEX outputs, or diagnosing a Keil log where `Program Size` is printed before an after-build warning/error.
-- Project example: `project/2026706296.uvprojx` runs `fromelf.exe --bin --output=.\output\Project.bin .\output\Project.axf`, then runs `..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x0800D000`.
+- Project example: `project/2026706296.uvprojx` runs `fromelf.exe --bin --output=.\output\Project.bin .\output\Project.axf`, then runs `..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x08011000`.
 
 #### 2. Signatures
 
@@ -346,7 +346,7 @@ Expected `AfterMake` XML contract for raw BIN and header-BIN generation:
   <RunUserProg1>1</RunUserProg1>
   <RunUserProg2>1</RunUserProg2>
   <UserProg1Name>E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\output\Project.axf</UserProg1Name>
-  <UserProg2Name>..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x0800D000</UserProg2Name>
+  <UserProg2Name>..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x08011000</UserProg2Name>
   <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
   <UserProg2Dos16Mode>0</UserProg2Dos16Mode>
   <nStopA1X>0</nStopA1X>
@@ -422,7 +422,7 @@ Required build artifacts for the App target:
   <RunUserProg1>1</RunUserProg1>
   <RunUserProg2>1</RunUserProg2>
   <UserProg1Name>E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\output\Project.axf</UserProg1Name>
-  <UserProg2Name>..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x0800D000</UserProg2Name>
+  <UserProg2Name>..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x08011000</UserProg2Name>
   <nStopA1X>0</nStopA1X>
   <nStopA2X>0</nStopA2X>
 </AfterMake>
@@ -436,9 +436,9 @@ as only a GPIO problem.
 
 #### 1. Scope / Trigger
 
-- Trigger: editing `HardWare/POWER/bsp_power.c`, `HardWare/KEY/bsp_key.c`, `User/gd32f4xx_it.c`, `User/boot_app_config.c`, or any wakeup/low-power path.
+- Trigger: editing `Driver/POWER/bsp_power.c`, `Driver/KEY/bsp_key.c`, `User/gd32f4xx_it.c`, `User/boot_app_config.c`, or any wakeup/low-power path.
 - Trigger: changing the App start address, BootLoader handoff, vector-table setup, SysTick setup, or EXTI wake source.
-- Project example: the App runs at `0x0800D000`, but `SystemInit()` resets `SCB->VTOR` to the default Flash base. If wake recovery does not switch VTOR back before interrupts resume, SysTick/EXTI/USART can dispatch through the BootLoader vector table and look like "wake button does not return".
+- Project example: the App runs at `0x08011000`, but `SystemInit()` resets `SCB->VTOR` to the default Flash base. If wake recovery does not switch VTOR back before interrupts resume, SysTick/EXTI/USART can dispatch through the BootLoader vector table and look like "wake button does not return".
 
 #### 2. Signatures
 
@@ -461,7 +461,7 @@ Expected App relocation contract:
 
 | Symbol / Function | Required Value / Behavior |
 |-------------------|---------------------------|
-| `BOOT_APP_START_ADDRESS` | App vector table base, currently `0x0800D000` |
+| `BOOT_APP_START_ADDRESS` | App vector table base, currently `0x08011000` |
 | `boot_app_vector_table_init()` | Writes `SCB->VTOR = BOOT_APP_START_ADDRESS`, then executes `__DSB()` and `__ISB()` |
 | `SystemInit()` | May restore clock tree and default `SCB->VTOR`; callers in relocated App code must correct VTOR immediately afterward |
 | `bsp_wkup_key_exti_init()` | Configures PA0/WK_UP as EXTI0 wake source and clears stale EXTI/NVIC pending state |
@@ -520,10 +520,10 @@ Expected App relocation contract:
 
 | Case | Expected Result |
 |------|-----------------|
-| Good | KEY2 enters deep sleep; WK_UP falling edge wakes; App restores VTOR to `0x0800D000`; UART/OLED/tasks resume |
+| Good | KEY2 enters deep sleep; WK_UP falling edge wakes; App restores VTOR to `0x08011000`; UART/OLED/tasks resume |
 | Good | KEY1 enters Sleep; WK_UP falling edge wakes; App resumes without full peripheral reinitialization and scheduler baselines are reset |
 | Good | KEY3 blanks OLED/LED first, waits for KEY4 press-release confirmation, enters Standby, then KEYW/PA0 wakes and the App logs `BOOT: wake from standby` |
-| Base | Normal reset still prints BootLoader/App logs and App starts at `0x0800D000` |
+| Base | Normal reset still prints BootLoader/App logs and App starts at `0x08011000` |
 | Bad | Calling `SystemInit()` after wake and leaving VTOR at `0x08000000` |
 | Bad | Using both-edge wake for a pulled-up button and letting release generate an unnecessary EXTI0 interrupt |
 | Bad | Clearing only EXTI flag but not NVIC pending before WFI |
@@ -633,7 +633,7 @@ Do not overwrite RTC date/time on every boot just because the firmware re-entere
 
 #### 1. Scope / Trigger
 
-- Trigger: editing `HardWare/RTC/bsp_rtc.c`, `HardWare/RTC/bsp_rtc.h`, board power notes, or any startup path that calls `bsp_rtc_init()`.
+- Trigger: editing `Driver/RTC/bsp_rtc.c`, `Driver/RTC/bsp_rtc.h`, board power notes, or any startup path that calls `bsp_rtc_init()`.
 - Trigger: changing RTC clock-source setup, backup-register markers, default date/time values, or `VBAT` wiring assumptions.
 
 #### 2. Signatures

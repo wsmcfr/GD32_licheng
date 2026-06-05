@@ -30,19 +30,10 @@ extern "C" {
  * 宏作用：
  *   定义任务层每次从 DMA 环形缓冲取出的最大连续处理窗口。
  * 说明：
- *   该窗口只作为短暂栈缓冲，替代原来的 152KB 整包 payload RAM。
+ *   该窗口只作为短暂栈缓冲，替代原来的 128KB 整包 payload RAM。
  *   512B 可以让单次 Flash 编程阻塞时间保持较短，同时减少函数调用开销。
  */
 #define UART_OTA_STREAM_WINDOW_SIZE  512U
-
-/*
- * 宏作用：
- *   定义头部 bin OTA 的固定头部长度。
- * 说明：
- *   payload 最大长度由 BootLoader 下载缓存区常量限制。接收端不再申请等长
- *   payload RAM，而是校验头部后把 payload 流式写入已预擦的下载区。
- */
-#define UART_OTA_IMAGE_HEADER_SIZE     64U
 
 /*
  * 变量作用：

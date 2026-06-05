@@ -25,11 +25,21 @@
 
 /*
  * 说明：
- *   以下头文件按“基础组件 -> Driver -> Component -> App”顺序聚合，
+ *   Driver/Protocol 头文件会用 SYSTEM_ALL_BASE_ONLY 请求只展开基础依赖。
+ *   由于 Driver 头之间会互相包含 system_all.h，临时宏可能被内层头文件撤销，
+ *   所以在聚合开始时复制一份内部标记，保证本轮 system_all.h 展开期间判断稳定。
+ */
+#if defined(SYSTEM_ALL_BASE_ONLY)
+#define SYSTEM_ALL_SKIP_UPPER_LAYERS
+#endif
+
+/*
+ * 说明：
+ *   以下头文件按“基础组件 -> Driver -> Component -> Protocol -> App”顺序聚合，
  *   这样上层头文件只需要包含 system_all.h 即可获得所需声明。
  *   Driver 层头文件在自身内部包含本文件时，会定义 SYSTEM_ALL_BASE_ONLY，
- *   从而仅跳过 App 层聚合，避免 Driver 头尚未完成定义时，
- *   App 头就提前使用它的宏和声明，形成循环依赖。
+ *   从而跳过 Protocol 和 App 层聚合，避免 Driver 头尚未完成定义时，
+ *   上层头文件就提前使用它的宏、类型和声明，形成循环依赖。
  */
 
 /* Driver 层头文件。 */
@@ -49,8 +59,11 @@
 #include "gd30ad3344.h"
 #include "oled.h"
 
+#if !defined(SYSTEM_ALL_SKIP_UPPER_LAYERS)
+/* Protocol 层头文件。 */
+#include "ota_image_protocol.h"
+
 /* App 层头文件。 */
-#if !defined(SYSTEM_ALL_BASE_ONLY)
 #include "adc_app.h"
 #include "btn_app.h"
 #include "gd30ad3344_pt100_app.h"
@@ -67,6 +80,10 @@ extern "C" {
 
 #ifdef __cplusplus
 }
+#endif
+
+#if defined(SYSTEM_ALL_SKIP_UPPER_LAYERS)
+#undef SYSTEM_ALL_SKIP_UPPER_LAYERS
 #endif
 
 #endif /* SYSTEM_ALL_H */

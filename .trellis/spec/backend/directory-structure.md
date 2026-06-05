@@ -32,7 +32,7 @@ Function/
 ├── gd30ad3344_pt100_app.c / gd30ad3344_pt100_app.h
 └── rtc_app.c / rtc_app.h
 
-HardWare/
+Driver/
 ├── LED/
 ├── KEY/
 ├── USART/
@@ -44,6 +44,9 @@ HardWare/
 ├── BOOTLOADER/
 ├── GD25QXX/
 └── GD30AD3344/
+
+Protocol/
+└── ota_image_protocol.c / .h       # OTA header-bin protocol parsing, CRC, and metadata validation
 
 HeaderFiles/
 └── system_all.h                   # Shared aggregation header
@@ -62,7 +65,7 @@ project/                           # Keil project, RTE, Objects, output, Listing
 
 ### Driver Layer
 
-Use `HardWare/` for board-specific resource ownership:
+Use `Driver/` for board-specific resource ownership:
 
 - pin definitions
 - DMA channel mapping
@@ -72,22 +75,30 @@ Use `HardWare/` for board-specific resource ownership:
 
 Example:
 
-- `HardWare/USART/bsp_usart.c` owns USART pin mapping, DMA setup, and IDLE interrupt enable
-- `HardWare/POWER/bsp_power.c` owns deep-sleep resource shutdown and wakeup re-init order
+- `Driver/USART/bsp_usart.c` owns USART pin mapping, DMA setup, and IDLE interrupt enable
+- `Driver/POWER/bsp_power.c` owns deep-sleep resource shutdown and wakeup re-init order
 
 ### Component Layer
 
-Use `HardWare/<device>/` for reusable device or protocol logic:
+Use `Driver/<device>/` for reusable device logic:
 
-- SSD1306 display primitives in `HardWare/OLED/`
-- GD25Qxx SPI Flash and SMARTFS operations in `HardWare/GD25QXX/`
-- GD30AD3344 command/data protocol in `HardWare/GD30AD3344/`
+- SSD1306 display primitives in `Driver/OLED/`
+- GD25Qxx SPI Flash and SMARTFS operations in `Driver/GD25QXX/`
+- GD30AD3344 command/data protocol in `Driver/GD30AD3344/`
+
+### Protocol Layer
+
+Use `Protocol/` for packet/file-format contracts that are consumed by app tasks but do not own hardware:
+
+- OTA header parsing and CRC helpers in `Protocol/ota_image_protocol.c`
+- metadata validation for magic, header size, load address, payload size, and vector-table fields
+- no DMA, UART, Flash erase/write, scheduler, or BootLoader parameter writes in this layer
 
 Component code may depend on driver-provided buses, but it should not become the place that owns board-level pin maps.
 
 Keil project display should keep all low-level source entries under a single
-`HardWare` group. Do not create separate uVision groups such as
-`HardWare/OLED` or `HardWare/GD25QXX`; the physical
+`Driver` group. Do not create separate uVision groups such as
+`Driver/OLED` or `Driver/GD25QXX`; the physical
 subdirectories still carry ownership boundaries, while the IDE tree stays
 compact and consistent with the top-level firmware layer.
 
@@ -123,7 +134,7 @@ Header conventions:
 - Public macros, `extern` buffers, and public function declarations belong in the matching `.h`
 - Driver headers that include `system_all.h` while avoiding app-layer cycles use the `SYSTEM_ALL_BASE_ONLY` guard pattern
 
-Example from `HardWare/STORAGE/bsp_storage.h`:
+Example from `Driver/STORAGE/bsp_storage.h`:
 
 ```c
 #define SYSTEM_ALL_BASE_ONLY
@@ -138,8 +149,9 @@ Example from `HardWare/STORAGE/bsp_storage.h`:
 | File | Why It Is A Good Example |
 |------|--------------------------|
 | `HeaderFiles/system_all.h` | Shows the real include order: standard headers, common components, drivers, components, then apps |
-| `HardWare/USART/bsp_usart.h` | Keeps all USART pin/DMA macros and shared buffers in the public header |
-| `HardWare/POWER/bsp_power.c` | Groups power-state transitions and wakeup recovery in one ownership unit |
+| `Driver/USART/bsp_usart.h` | Keeps all USART pin/DMA macros and shared buffers in the public header |
+| `Driver/POWER/bsp_power.c` | Groups power-state transitions and wakeup recovery in one ownership unit |
+| `Protocol/ota_image_protocol.c` | Keeps OTA file-format parsing and CRC checks out of the app task state machine |
 | `Function/scheduler.c` | Keeps app task registration centralized instead of scattering scheduling logic |
 
 ### Common Placement Mistakes

@@ -6,17 +6,8 @@ __IO uint32_t uart_ota_overwrite_count = 0U;
 __IO uint16_t uart_ota_last_irq_length = 0U;
 __IO uint32_t uart_ota_ring_read_index = 0U;
 
-/*
- * 宏作用：
- *   定义头部 bin OTA 协议的固定字段和日志限流参数。
- * 说明：
- *   Project_ota.bin 固定格式为 64 字节 OTA 头部 + 原始 App bin。现场发送时只需要
- *   使用串口工具的原始/直接发送文件功能，不依赖额外引导命令或握手流程。
- */
-#define UART_OTA_IMAGE_MAGIC          0x474F5441UL
 #define UART_OTA_TRACE_LIMIT          6U
 #define UART_OTA_TASK_DRAIN_LIMIT     (UART_OTA_RING_BUFFER_SIZE / UART_OTA_STREAM_WINDOW_SIZE)
-#define UART_OTA_VECTOR_BYTES         8U
 
 /*
  * 枚举作用：
@@ -41,35 +32,6 @@ typedef enum
 
 /*
  * 结构体作用：
- *   保存 Project_ota.bin 头部解析后的关键字段。
- * 成员说明：
- *   magic：固定魔数，用于判断发送的文件是否是 OTA 镜像。
- *   header_size：头部长度，当前固定为 64 字节。
- *   image_size：后续 App payload 的真实长度。
- *   load_addr：payload 最终写入的 App 地址，必须是 0x0800D000。
- *   version：升级版本号，写入 BootLoader 参数区。
- *   image_crc32：对 App payload 计算的 CRC32。
- *   flags：预留标志位，当前必须为 0。
- *   header_crc32：头部自身 CRC32，计算时该字段置 0。
- *   stack_addr：App 向量表第 0 项 MSP 初值，用于日志和校验。
- *   entry_addr：App 向量表第 1 项 Reset_Handler 地址，用于日志和校验。
- */
-typedef struct
-{
-    uint32_t magic;
-    uint32_t header_size;
-    uint32_t image_size;
-    uint32_t load_addr;
-    uint32_t version;
-    uint32_t image_crc32;
-    uint32_t flags;
-    uint32_t header_crc32;
-    uint32_t stack_addr;
-    uint32_t entry_addr;
-} uart_ota_image_header_t;
-
-/*
- * 结构体作用：
  *   保存一次头部 bin OTA 接收会话的运行态。
  * 成员说明：
  *   state：当前接收状态。
@@ -85,7 +47,7 @@ typedef struct
 typedef struct
 {
     uart_ota_state_t state;
-    uart_ota_image_header_t header;
+    ota_image_header_t header;
     uint32_t header_bytes;
     uint32_t received_size;
     uint32_t running_crc;
@@ -96,7 +58,7 @@ typedef struct
 } uart_ota_session_t;
 
 /* OTA 接收头部临时缓存，只保存固定 64 字节头，不保存整包头外数据。 */
-static uint8_t g_uart_ota_header_buffer[UART_OTA_IMAGE_HEADER_SIZE] = {0};
+static uint8_t g_uart_ota_header_buffer[OTA_IMAGE_HEADER_SIZE] = {0};
 
 /* OTA 错误态重同步时缓存 magic 前缀，允许 4 字节 magic 被 DMA 拆成多块。 */
 static uint8_t g_uart_ota_resync_magic_buffer[4] = {0};
@@ -105,51 +67,10 @@ static uint8_t g_uart_ota_resync_magic_buffer[4] = {0};
 static uint8_t g_uart_ota_resync_magic_bytes = 0U;
 
 /* OTA payload 前 8 字节向量表缓存，用于流式写 Flash 后复核 MSP 和入口地址。 */
-static uint8_t g_uart_ota_vector_buffer[UART_OTA_VECTOR_BYTES] = {0};
+static uint8_t g_uart_ota_vector_buffer[OTA_IMAGE_VECTOR_BYTES] = {0};
 
 /* OTA 会话状态只在中断和任务共享，进入任务提交时会临时关闭相关中断保护。 */
 static volatile uart_ota_session_t g_uart_ota_session = {0};
-
-/*
- * 函数作用：
- *   从小端字节序缓冲区读取 32 位无符号整数。
- * 参数说明：
- *   data：指向至少 4 字节有效数据的缓冲区。
- * 返回值说明：
- *   返回解析出的 32 位数值；data 为空时返回 0。
- */
-static uint32_t prv_uart_ota_read_u32_le(const uint8_t *data)
-{
-    if(NULL == data){
-        return 0U;
-    }
-
-    return ((uint32_t)data[0]) |
-           ((uint32_t)data[1] << 8U) |
-           ((uint32_t)data[2] << 16U) |
-           ((uint32_t)data[3] << 24U);
-}
-
-/*
- * 函数作用：
- *   计算一段数据的标准 CRC32。
- * 参数说明：
- *   data：待计算数据起始地址；length 大于 0 时必须非空。
- *   length：待计算字节数。
- * 返回值说明：
- *   返回标准 CRC32 值；非法空指针输入返回 0。
- */
-static uint32_t prv_uart_ota_crc32_calc(const uint8_t *data, uint32_t length)
-{
-    uint32_t crc;
-
-    if((NULL == data) && (length > 0U)){
-        return 0U;
-    }
-
-    crc = bootloader_port_crc32_update(0xFFFFFFFFUL, data, length);
-    return crc ^ 0xFFFFFFFFUL;
-}
 
 /*
  * 函数作用：
@@ -197,90 +118,6 @@ static uint32_t prv_uart_ota_ring_available(uint32_t read_index, uint32_t write_
     }
 
     return UART_OTA_RING_BUFFER_SIZE - read_index + write_index;
-}
-
-/*
- * 函数作用：
- *   把 64 字节 OTA 头部缓存解析到结构体。
- * 参数说明：
- *   header：输出结构体。
- * 返回值说明：
- *   1：解析成功。
- *   0：输出参数为空。
- */
-static uint8_t prv_uart_ota_parse_header(uart_ota_image_header_t *header)
-{
-    if(NULL == header){
-        return 0U;
-    }
-
-    header->magic = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[0]);
-    header->header_size = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[4]);
-    header->image_size = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[8]);
-    header->load_addr = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[12]);
-    header->version = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[16]);
-    header->image_crc32 = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[20]);
-    header->flags = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[24]);
-    header->header_crc32 = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[28]);
-    header->stack_addr = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[32]);
-    header->entry_addr = prv_uart_ota_read_u32_le(&g_uart_ota_header_buffer[36]);
-
-    return 1U;
-}
-
-/*
- * 函数作用：
- *   校验 OTA 头部字段、头部 CRC 和 payload 向量表元数据。
- * 参数说明：
- *   header：待校验的 OTA 头部字段。
- * 返回值说明：
- *   BOOTLOADER_PORT_STATUS_OK：头部合法。
- *   BOOTLOADER_PORT_STATUS_BAD_PARAM：头部字段、大小或 CRC 不合法。
- *   BOOTLOADER_PORT_STATUS_BAD_VECTOR：头部记录的向量表不满足 App 跳转要求。
- */
-static bootloader_port_status_t prv_uart_ota_validate_header(const uart_ota_image_header_t *header)
-{
-    uint8_t header_for_crc[UART_OTA_IMAGE_HEADER_SIZE];
-    uint32_t calc_header_crc32;
-    uint32_t app_region_end;
-
-    if(NULL == header){
-        return BOOTLOADER_PORT_STATUS_BAD_PARAM;
-    }
-
-    memcpy(header_for_crc, g_uart_ota_header_buffer, sizeof(header_for_crc));
-    /*
-     * header_crc32 字段自身不参与头部 CRC 计算，必须临时清零后再算。
-     * 这样接收端和打包工具对同一头部会得到完全一致的结果。
-     */
-    header_for_crc[28] = 0U;
-    header_for_crc[29] = 0U;
-    header_for_crc[30] = 0U;
-    header_for_crc[31] = 0U;
-    calc_header_crc32 = prv_uart_ota_crc32_calc(header_for_crc, sizeof(header_for_crc));
-
-    if((UART_OTA_IMAGE_MAGIC != header->magic) ||
-       (UART_OTA_IMAGE_HEADER_SIZE != header->header_size) ||
-       (0U == header->image_size) ||
-       (header->image_size > BOOTLOADER_PORT_DOWNLOAD_MAX_SIZE) ||
-       (BOOT_APP_START_ADDRESS != header->load_addr) ||
-       (0U != header->flags) ||
-       (calc_header_crc32 != header->header_crc32)){
-        return BOOTLOADER_PORT_STATUS_BAD_PARAM;
-    }
-
-    if((header->stack_addr < 0x20000000UL) || (header->stack_addr >= 0x20030000UL)){
-        return BOOTLOADER_PORT_STATUS_BAD_VECTOR;
-    }
-
-    app_region_end = BOOT_APP_START_ADDRESS + BOOTLOADER_PORT_APP_MAX_SIZE;
-    if((0U == (header->entry_addr & 1UL)) ||
-       ((header->entry_addr & ~1UL) < BOOT_APP_START_ADDRESS) ||
-       ((header->entry_addr & ~1UL) >= app_region_end)){
-        return BOOTLOADER_PORT_STATUS_BAD_VECTOR;
-    }
-
-    return BOOTLOADER_PORT_STATUS_OK;
 }
 
 /*
@@ -436,7 +273,7 @@ static bootloader_port_status_t prv_uart_ota_consume_header(const uint8_t *data,
     }
 
     *consumed = 0U;
-    remaining = UART_OTA_IMAGE_HEADER_SIZE - g_uart_ota_session.header_bytes;
+    remaining = OTA_IMAGE_HEADER_SIZE - g_uart_ota_session.header_bytes;
     copy_length = length;
     if(copy_length > remaining){
         copy_length = remaining;
@@ -446,15 +283,17 @@ static bootloader_port_status_t prv_uart_ota_consume_header(const uint8_t *data,
     g_uart_ota_session.header_bytes += copy_length;
     *consumed = copy_length;
 
-    if(g_uart_ota_session.header_bytes < UART_OTA_IMAGE_HEADER_SIZE){
+    if(g_uart_ota_session.header_bytes < OTA_IMAGE_HEADER_SIZE){
         return BOOTLOADER_PORT_STATUS_OK;
     }
 
-    if(0U == prv_uart_ota_parse_header((uart_ota_image_header_t *)&g_uart_ota_session.header)){
+    if(0U == ota_image_parse_header(g_uart_ota_header_buffer,
+                                    (ota_image_header_t *)&g_uart_ota_session.header)){
         return BOOTLOADER_PORT_STATUS_BAD_PARAM;
     }
 
-    status = prv_uart_ota_validate_header((const uart_ota_image_header_t *)&g_uart_ota_session.header);
+    status = ota_image_validate_header(g_uart_ota_header_buffer,
+                                       (const ota_image_header_t *)&g_uart_ota_session.header);
     if(BOOTLOADER_PORT_STATUS_OK != status){
         return status;
     }
@@ -537,12 +376,12 @@ static bootloader_port_status_t prv_uart_ota_consume_payload(const uint8_t *data
         return BOOTLOADER_PORT_STATUS_BAD_PARAM;
     }
 
-    if(g_uart_ota_session.received_size < UART_OTA_VECTOR_BYTES){
+    if(g_uart_ota_session.received_size < OTA_IMAGE_VECTOR_BYTES){
         /*
          * 流式写入后 RAM 中不再保存完整 payload，因此只缓存向量表前 8 字节。
          * 这足够在收满后复核 payload 实际 MSP/Reset_Handler 是否与头部一致。
          */
-        vector_remaining = UART_OTA_VECTOR_BYTES - g_uart_ota_session.received_size;
+        vector_remaining = OTA_IMAGE_VECTOR_BYTES - g_uart_ota_session.received_size;
         vector_copy_len = copy_length;
         if(vector_copy_len > vector_remaining){
             vector_copy_len = vector_remaining;
@@ -553,7 +392,7 @@ static bootloader_port_status_t prv_uart_ota_consume_payload(const uint8_t *data
     }
 
     g_uart_ota_session.running_crc =
-        bootloader_port_crc32_update(g_uart_ota_session.running_crc, data, copy_length);
+        ota_image_crc32_update(g_uart_ota_session.running_crc, data, copy_length);
 
     status = prv_uart_ota_stream_flash_write(g_uart_ota_session.received_size,
                                              data,
@@ -627,7 +466,7 @@ void uart_ota_emit_startup_probe(void)
  *   在发送 OTA ready 前预擦完整下载区，确保后续连续裸流只需要 Flash 编程。
  * 主要流程：
  *   1. 将 OTA 会话切换到预擦状态，避免任务层误解析旧 DMA 数据。
- *   2. 按下载区最大容量擦除 152KB 缓存区。
+     *   2. 按下载区最大容量擦除 128KB 缓存区。
  *   3. 擦除成功后清空 DMA ring 读指针和诊断计数，进入等待头部状态。
  * 参数说明：
  *   无参数。

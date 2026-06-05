@@ -212,7 +212,7 @@ DOWNLOAD_ADDR = 0x08070000
 
 随后把升级包头后面的真正 App 镜像写入 `0x08070000`。
 
-注意：官方原始 App 接收数组只有 `10 * 1024` 字节，而根目录 readme 写“升级数据内存最大 12KB”，早期地址规划又写下载缓存区 52KB。当前仓库已经改为 RS485/USART1 头部 BIN 裸流 OTA，现场文件为 `Project_ota.bin`，文件格式仍是 64 字节 OTA 头部 + 原始 `Project.bin` payload，一次性原始/直接发送完整文件；片内 Flash 则改为 App 运行区、App 备份区、App 缓存区各 `152KB`，缓存区地址为 `0x08059000 ~ 0x0807EFFF`。
+注意：官方原始 App 接收数组只有 `10 * 1024` 字节，而根目录 readme 写“升级数据内存最大 12KB”，早期地址规划又写下载缓存区 52KB。当前仓库已经改为 RS485/USART1 头部 BIN 裸流 OTA，现场文件为 `Project_ota.bin`，文件格式仍是 64 字节 OTA 头部 + 原始 `Project.bin` payload，一次性原始/直接发送完整文件；片内 Flash 则按题目要求改为 BootLoader `64KB`、参数区 `4KB`、App 运行区/备份区/缓存区各 `128KB`，缓存区地址为 `0x08051000 ~ 0x08070FFF`。
 
 ### 8.4 App 写参数区并复位
 
@@ -275,17 +275,23 @@ BootLoader 成功搬运后清除升级标志并复位。下一次启动时：
 | 项目 | 官方原始例程 | 当前仓库副本 |
 |---|---|---|
 | 升级串口默认波特率 | `115200` | `115200` |
-| App 接收方式 | 单次接收整包，依赖 `usart0_tmp_buf[10 * 1024]` | RS485/USART1 接收 `Project_ota.bin` 裸字节流，先解析 64 字节头部，再完整接收 payload 到 RAM，最后统一写 App 缓存区 |
+| App 接收方式 | 单次接收整包，依赖 `usart0_tmp_buf[10 * 1024]` | RS485/USART1 接收 `Project_ota.bin` 裸字节流，先在 `Protocol/` 解析 64 字节头部，再通过 32KB circular DMA 环形缓冲边接收边写 App 缓存区 |
 | 上位机发送方式 | 直接发送官方示例 `.bin` 文件 | 串口工具原始/直接发送 `project/output/Project_ota.bin` |
 | 上位机可见反馈 | 基本没有发送进度 | 主要通过 `USART0` 日志观察 `OTA: header ok`、`OTA: payload ok`、`OTA: ready, reset to BootLoader` |
 | BootLoader 擦除策略 | 固定擦除 App 开头 `3 * 4KB` | 按 `appSize` 计算实际擦除页数 |
-| BootLoader 搬运策略 | 受原始整包缓存思路约束 | 先按 `1024B` 分块备份 `152KB` App 运行区，再从 `0x08059000` App 缓存区搬运新 App 到 `0x0800D000`，并重新做 CRC32 校验 |
+| BootLoader 搬运策略 | 受原始整包缓存思路约束 | 先按 `1024B` 分块备份 `128KB` App 运行区，再从 `0x08051000` App 缓存区搬运新 App 到 `0x08011000`，并重新做 CRC32 校验 |
 
 当前仓库发送升级包时，可按下面步骤操作：
 
 ```powershell
 cd D:\GD32\2026706296
 tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.bin 0x00000001 0x0800D000
+```
+
+上面命令是官方旧地址示例。当前仓库实际应使用：
+
+```powershell
+tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.bin 0x00000001 0x08011000
 ```
 
 典型 App 侧日志如下：
@@ -383,7 +389,7 @@ App 的升级入口也在 `27_1_App\Function\Function.c`：
 
 | 风险点 | 现象 | 建议 |
 |---|---|---|
-| 容量配置不一致 | 官方原始说明中 readme 写最大 12KB、App 缓冲是 10KB、早期下载缓存区规划是 52KB、App 链接区更大 | 当前仓库已统一为 RS485/USART1 头部 BIN 裸流发送、运行区/备份区/缓存区各 `152KB` 和按 `appSize` 搬运，后续变更必须同步代码和文档 |
+| 容量配置不一致 | 官方原始说明中 readme 写最大 12KB、App 缓冲是 10KB、早期下载缓存区规划是 52KB、App 链接区更大 | 当前仓库已统一为 RS485/USART1 头部 BIN 裸流发送、运行区/备份区/缓存区各 `128KB` 和按 `appSize` 搬运，后续变更必须同步代码和文档 |
 | BootLoader 只擦 12KB App 区 | `Download_Transport()` 固定擦 3 页 | 按 `appSize` 向上取整计算擦除页数 |
 | BootLoader RAM 缓冲 20KB | `config_buf[CONFIG_APP_SIZE]`，其中 `CONFIG_APP_SIZE = 20KB` | 如果升级包超过 20KB 会越界或写不完整，应增加边界检查 |
 | App 接收缓存 10KB | `usart0_tmp_buf[10 * 1024]` | 若需要 12KB 或更大升级包，应扩大缓存或改成分包协议 |
@@ -398,7 +404,7 @@ App 的升级入口也在 `27_1_App\Function\Function.c`：
 
 | 检查项 | 必须确认的内容 |
 |---|---|
-| App 链接地址 | Keil IROM1 起始地址必须是 `0x0800D000` 或你规划的新 App 起始地址 |
+| App 链接地址 | 官方原始例程为 `0x0800D000`；当前仓库 Keil IROM1 起始地址必须是 `0x08011000` |
 | BootLoader 链接地址 | 必须从 `0x08000000` 开始，否则 MCU 复位后不会先进入 BootLoader |
 | `SCB->VTOR` | App 启动后必须设置成 App 起始地址 |
 | 参数区地址 | App 和 BootLoader 中 `BOOT_CONFIG_ADDR/PARAM_ADDR` 必须一致 |
@@ -431,8 +437,8 @@ App 的升级入口也在 `27_1_App\Function\Function.c`：
 | 关键点 | 结论 |
 |---|---|
 | 启动入口 | MCU 复位先进入 BootLoader，因为 BootLoader 位于 `0x08000000` |
-| App 位置 | App 必须链接到 `0x0800D000`，并在运行时设置 `SCB->VTOR = 0x0800D000` |
-| 升级触发 | App 串口收到魔术值正确的升级包后，把镜像写入 `0x08070000`，把升级标志写入 `0x0800C000`，然后复位 |
+| App 位置 | 官方原始例程 App 链接到 `0x0800D000`；当前仓库 App 必须链接到 `0x08011000`，并在运行时设置 `SCB->VTOR = 0x08011000` |
+| 升级触发 | 官方原始例程把镜像写入 `0x08070000`，把升级标志写入 `0x0800C000`；当前仓库把 payload 写入 `0x08051000`，把升级标志写入 `0x08010000` |
 | 升级执行 | BootLoader 读取参数区，发现 `updateFlag=0x5A` 且 `updateStatus=0x01` 后，把缓存区镜像复制到 App 区 |
 | 正确性检查 | App 和 BootLoader 使用同一套 CRC32 算法确认镜像数据 |
 | 跳转关键 | 跳 App 前必须清中断、停 SysTick、切 VTOR、设 MSP，再跳 Reset_Handler |
