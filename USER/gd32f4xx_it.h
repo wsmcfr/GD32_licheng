@@ -119,43 +119,13 @@ void PendSV_Handler(void);
 
 /*
  * 函数作用：
- *   处理 USART0 IDLE 中断并移交 DMA 接收帧。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void USART0_IRQHandler(void);
-
-/*
- * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，提示 OTA 应用层消费 circular DMA 环形缓冲。
+ *   处理 USART1/RS485 IDLE 中断，将完整 ASCII 协议帧移交给任务层。
  * 参数说明：
  *   无参数。
  * 返回值说明：
  *   无返回值。
  */
 void USART1_IRQHandler(void);
-
-/*
- * 函数作用：
- *   处理 USART1 RX DMA 半满/满中断，提示 OTA 应用层消费 circular DMA 环形缓冲。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void DMA0_Channel5_IRQHandler(void);
-
-/*
- * 函数作用：
- *   处理 EXTI0 外部中断，主要用于唤醒按键中断标志清理。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void EXTI0_IRQHandler(void);
 
 /*
  * 函数作用：

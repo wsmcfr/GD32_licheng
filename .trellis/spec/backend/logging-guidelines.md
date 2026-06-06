@@ -12,7 +12,10 @@ Logging is done through:
 - `my_printf(DEBUG_USART, ...)` in app and test code
 - `printf()` / `fputc()` redirection in `User/main.c`
 
-The output target is the debug UART, currently `USART0`.
+Formal firmware must not emit debug logs on the contest RS485 bus by default.
+`my_printf()` and C-library retarget output are kept for compatibility, but the
+current App drops output unless `CIMC_DEBUG_LOG_ENABLE` is explicitly enabled for
+local debugging.
 
 ---
 
@@ -24,7 +27,7 @@ Instead, the project uses message prefixes and context.
 | Style | When To Use | Example |
 |-------|-------------|---------|
 | `BOOT:` | startup sequencing and init milestones | `BOOT: adc init...` |
-| Module prefix | module-specific diagnostics or demos | `SMARTFS: self-test PASS:` |
+| Module prefix | module-specific diagnostics or demos | `PT100: sample failed err=...` |
 | `ASSERT:` | fatal assertion reporting | `ASSERT: expr, file, line` |
 | Plain echo | simple shell behavior such as `cat` file-content echo or `ls` output | `bsp_usart_send_buffer(DEBUG_USART, uart_file_buffer, len);` |
 
@@ -46,7 +49,6 @@ Examples from the existing codebase:
 
 ```c
 my_printf(DEBUG_USART, "BOOT: rtc init...\r\n");
-my_printf(DEBUG_USART, "SMARTFS: self-test PASS: %s=%s\r\n", test_file, readback);
 my_printf(DEBUG_USART, "ASSERT: %s, file: %s, line: %d\r\n", ...);
 ```
 
@@ -56,15 +58,13 @@ Prefer one-line messages that make serial logs scannable.
 
 ## What to Log
 
-- startup stage boundaries in `system_init()`
-- hardware identification values such as flash ID
-- result codes for mount/open/read/write operations
-- PASS / FAIL outcomes for self-tests
+- startup stage boundaries in `system_init()` when temporary debug logging is enabled
+- hardware identification values needed during bring-up
+- result codes for sensor, protocol, Flash, or Bootloader-handoff failures
 - assertion context for fatal failures
 
 Good examples:
 
-- `Driver/GD25QXX/lfs_port.c` and `smartfs_port.c` print storage init, self-test, and failure points
 - `Function/scheduler.c::system_init()` prints boot progress around major peripherals
 
 ---
@@ -79,10 +79,10 @@ Good examples:
 
 Example rule:
 
-- `USART0_IRQHandler()` should capture data and re-arm DMA
-- `uart_task()` may log or echo the completed shell command result later
+- `USART1_IRQHandler()` should capture data and re-arm DMA only
+- `uart_task()` may parse and respond with contest protocol frames later
 
-This keeps interrupt latency predictable and avoids flooding the serial console.
+This keeps interrupt latency predictable and avoids polluting the contest RS485 protocol stream.
 
 ---
 
@@ -94,7 +94,7 @@ For the BootLoader App target, `printf()` support must remain usable without a d
 |----------|-------------------|
 | `__use_no_semihosting` | Must be present for ARMCLANG / AC6 builds so the C library does not use debugger-hosted semihosting services |
 | `_sys_open()` | May only accept `stdin`, `stdout`, and `stderr`; normal file opens must fail instead of falling back to host files |
-| `_sys_write()` / `fputc()` / `_ttywrch()` | Must route to the debug UART only when USART0 is already configured, and must otherwise drop early characters without blocking |
+| `_sys_write()` / `fputc()` / `_ttywrch()` | Must drop output by default; if a temporary debug backend is enabled, it must not pollute formal RS485 frames |
 | `_sys_read()` | Must return immediately when no input backend exists; startup code must never wait for host input |
 | `_sys_exit()` | Must not attempt to return to a host process; use a fail-stop loop for bare-metal firmware |
 
@@ -104,6 +104,6 @@ Validation:
 |-------|-------------------|
 | Build log | `project/output/Project.build_log.htm` reports `0 Error(s)` |
 | Link map | `project/Listings/Project.map` resolves `_sys_open`, `_sys_write`, `_sys_exit`, and `_ttywrch` to `main.o` |
-| Standalone boot | After `BootLoader : jump app ...`, the serial log continues with `BOOT: handoff start` |
+| Standalone boot | App reaches `system_init()` without semihosting traps; protocol output remains contest-framed |
 
 If a debugger stops at `BKPT 0xAB` with a stack such as `_sys_open -> freopen -> __rt_lib_init`, treat it as semihosting leakage. Do not work around that symptom by changing BootLoader jump addresses or vendor `SystemInit()` code.

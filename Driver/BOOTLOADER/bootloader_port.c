@@ -1,5 +1,8 @@
 #include "bootloader_port.h"
 
+/* updateStatus=0x02 表示 App 已收到 0x0501，请 Bootloader 进入大赛串口升级等待窗口。 */
+#define BOOTLOADER_PORT_STATUS_WAIT_CONTEST_OTA    0x02U
+
 /*
  * 结构体作用：
  *   描述 BootLoader 主参数区的 256 字节布局。
@@ -509,6 +512,57 @@ bootloader_port_status_t bootloader_port_write_upgrade_info(uint32_t app_version
      */
     parameter->boot_param.backupCRC32 = bootloader_port_crc32_calc(backup_bytes,
                                                                    sizeof(backup_bytes));
+    parameter->boot_param.tailMagic = BOOTLOADER_PORT_TAIL_MAGIC;
+
+    fmc_unlock();
+    status = prv_bootloader_port_flash_erase_pages(BOOTLOADER_PORT_PARAM_ADDR,
+                                                   BOOTLOADER_PORT_PARAM_SIZE);
+    if(BOOTLOADER_PORT_STATUS_OK == status){
+        status = prv_bootloader_port_flash_write_bytes(BOOTLOADER_PORT_PARAM_ADDR,
+                                                       g_bootloader_port_param_buffer,
+                                                       BOOTLOADER_PORT_PARAM_SIZE);
+    }
+    fmc_lock();
+
+    return status;
+}
+
+/*
+ * 函数作用：
+ *   写入“进入 Bootloader 等待赛题串口升级”的请求标志。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   BOOTLOADER_PORT_STATUS_OK：参数区写入成功。
+ *   BOOTLOADER_PORT_STATUS_FLASH_ERROR：参数区擦写失败。
+ * 说明：
+ *   该接口只写 updateFlag/updateStatus，不写 appSize/appCRC32。
+ *   Bootloader 据此知道下一次复位是由 0x0501 触发，应等待 0x0502 接收 bin；
+ *   普通上电或下载区搬运流程不会误用这个状态。
+ */
+bootloader_port_status_t bootloader_port_request_bootloader_upgrade(void)
+{
+    uint32_t index;
+    bootloader_port_status_t status;
+    bootloader_port_parameter_t *parameter;
+
+    for(index = 0U; index < BOOTLOADER_PORT_PARAM_SIZE; index++){
+        g_bootloader_port_param_buffer[index] =
+            *(volatile uint8_t *)(BOOTLOADER_PORT_PARAM_ADDR + index);
+    }
+
+    parameter = (bootloader_port_parameter_t *)g_bootloader_port_param_buffer;
+    if(BOOTLOADER_PORT_MAGIC_WORD != parameter->boot_param.magicWord){
+        prv_bootloader_port_init_default_parameter(parameter);
+    }
+
+    parameter->boot_param.magicWord = BOOTLOADER_PORT_MAGIC_WORD;
+    parameter->boot_param.version = 0x0001U;
+    parameter->boot_param.structSize = sizeof(bootloader_port_boot_param_t);
+    parameter->boot_param.updateFlag = 0x5AU;
+    parameter->boot_param.updateMode = 0x01U;
+    parameter->boot_param.updateStatus = BOOTLOADER_PORT_STATUS_WAIT_CONTEST_OTA;
+    parameter->boot_param.updateProgress = 0U;
     parameter->boot_param.tailMagic = BOOTLOADER_PORT_TAIL_MAGIC;
 
     fmc_unlock();

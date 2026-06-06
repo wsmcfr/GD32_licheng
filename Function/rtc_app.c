@@ -2,10 +2,10 @@
 
 /*
  * 函数作用：
- *   周期性读取 RTC 当前时间，并把时分秒显示到 OLED 第 4 行。
+ *   周期性读取 RTC 当前时间并刷新驱动层共享时间缓存。
  * 主要流程：
  *   1. 调用驱动层 rtc_current_time_get() 更新 rtc_initpara。
- *   2. 将 BCD/十六进制格式的时分秒按两位宽度输出到 OLED。
+ *   2. 不再写 OLED；正式版 OLED 只保留队伍编号和运行状态两行。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -14,6 +14,4 @@
 void rtc_task(void)
 {
     rtc_current_time_get(&rtc_initpara);
-
-    oled_printf(0, 3, "%0.2x:%0.2x:%0.2x", rtc_initpara.hour, rtc_initpara.minute, rtc_initpara.second);
 }

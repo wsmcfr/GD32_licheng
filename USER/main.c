@@ -25,60 +25,18 @@ __asm(".global __use_no_semihosting\n");
 
 /*
  * 函数作用：
- *   判断调试串口 USART0 是否已经完成最小发送条件配置。
- * 主要流程：
- *   1. 检查 USART0 外设时钟是否打开。
- *   2. 检查 USART0 外设和发送器是否使能。
+ *   处理 C 库 retarget 的单字符输出。
  * 参数说明：
- *   无参数。
- * 返回值说明：
- *   1：表示 USART0 可以发送字符。
- *   0：表示 USART0 尚未初始化，不能访问发送流程。
- */
-static uint8_t app_debug_usart_is_ready(void)
-{
-    if(0U == (RCU_APB2EN & RCU_APB2EN_USART0EN)) {
-        return 0U;
-    }
-
-    if(0U == (USART_CTL0(DEBUG_USART) & USART_CTL0_UEN)) {
-        return 0U;
-    }
-
-    if(0U == (USART_CTL0(DEBUG_USART) & USART_CTL0_TEN)) {
-        return 0U;
-    }
-
-    return 1U;
-}
-
-/*
- * 函数作用：
- *   以阻塞轮询方式向调试串口发送 1 个字符。
- * 主要流程：
- *   1. 若 USART0 还未初始化，直接丢弃字符，避免 C 库启动阶段卡死。
- *   2. 写入 USART 数据寄存器。
- *   3. 等待发送缓冲区空，等待过程带超时保护。
- * 参数说明：
- *   ch：待发送字符，只有低 8 位会被写入 USART0。
+ *   ch：待输出字符，正式版直接丢弃。
  * 返回值说明：
  *   无返回值。
+ * 说明：
+ *   USART0 已按正式版要求删除。printf/my_printf 调试输出默认不能落到 USART1/RS485，
+ *   否则会污染赛题协议帧，因此这里保留 retarget 桩但不访问任何串口寄存器。
  */
 static void app_debug_usart_putc(uint8_t ch)
 {
-    uint32_t timeout = 1000000UL;
-
-    if(0U == app_debug_usart_is_ready()) {
-        return;
-    }
-
-    usart_data_transmit(DEBUG_USART, ch);
-    while(RESET == usart_flag_get(DEBUG_USART, USART_FLAG_TBE)) {
-        if(0U == timeout) {
-            break;
-        }
-        timeout--;
-    }
+    (void)ch;
 }
 
 /*
@@ -149,7 +107,7 @@ int _sys_close(FILEHANDLE fh)
  * 函数作用：
  *   Arm C 库块写 retarget 桩函数。
  * 主要流程：
- *   对 stdout/stderr，把缓冲区逐字节发送到 USART0；对其它句柄返回失败。
+ *   对 stdout/stderr 直接丢弃缓冲区；对其它句柄返回失败。
  * 参数说明：
  *   fh：目标文件句柄。
  *   buf：待写入数据缓冲区。
@@ -235,7 +193,7 @@ int _sys_seek(FILEHANDLE fh, long pos)
  * 参数说明：
  *   fh：文件句柄。
  * 返回值说明：
- *   0：表示刷新成功；USART0 发送由底层轮询立即完成。
+ *   0：表示刷新成功；正式版不绑定调试串口，输出在 retarget 层已丢弃。
  */
 int _sys_ensure(FILEHANDLE fh)
 {
@@ -343,25 +301,23 @@ int main(void)
 #ifdef GD_ECLIPSE_GCC
 /*
  * 函数作用：
- *   在 Eclipse GCC 环境下重定向 C 库 printf 的单字符输出到调试串口。
+ *   在 Eclipse GCC 环境下处理 C 库 printf 的单字符输出。
  * 参数说明：
- *   ch：待输出的单个字符，低 8 位会写入串口数据寄存器。
+ *   ch：待输出的单个字符，正式版直接丢弃。
  * 返回值说明：
  *   返回已经写入的字符值。
  */
 int __io_putchar(int ch)
 {
-    usart_data_transmit(EVAL_COM0, (uint8_t)ch);
-    /* 等待发送缓冲区空，保证下一个字符不会覆盖当前字符。 */
-    while(RESET == usart_flag_get(EVAL_COM0, USART_FLAG_TBE));
+    app_debug_usart_putc((uint8_t)ch);
     return ch;
 }
 #else
 /*
  * 函数作用：
- *   重定向 C 库 printf/fputc 的单字符输出到 USART0 调试串口。
+ *   处理 C 库 printf/fputc 的单字符输出。
  * 参数说明：
- *   ch：待输出的单个字符，低 8 位会写入串口数据寄存器。
+ *   ch：待输出的单个字符，正式版直接丢弃。
  *   f：C 标准库传入的文件流指针，本工程不区分具体流。
  * 返回值说明：
  *   返回已经写入的字符值。

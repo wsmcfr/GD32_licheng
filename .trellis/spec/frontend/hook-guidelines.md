@@ -28,10 +28,9 @@ Good examples:
 - `led_task()`
 - `adc_task()`
 - `oled_task()`
-- `btn_task()`
 - `uart_task()`
-- `uart_ota_task()`
 - `rtc_task()`
+- `gd30ad3344_pt100_task()`
 
 If the logic needs periodic execution and no external framework owns the timing, this is the default pattern.
 
@@ -61,10 +60,8 @@ When data originates from an interrupt:
 
 Reference pair:
 
-- `User/gd32f4xx_it.c::USART0_IRQHandler()`
-- `Function/usart_app.c::uart_task()`
 - `User/gd32f4xx_it.c::USART1_IRQHandler()`
-- `Function/uart_ota_app.c::uart_ota_task()`
+- `Function/usart_app.c::uart_task()`
 
 ---
 
@@ -82,7 +79,7 @@ Examples:
 - `adc_task()` consumes `adc_value[]`
 - `rtc_task()` reads current RTC data and formats it for display
 - `uart_task()` consumes `uart_dma_buffer` after ISR handoff
-- `uart_ota_task()` consumes `usart1_rxbuffer[]` through the USART1 DMA circular-ring read cursor after RS485/USART1 ISR wakeup hints
+- `gd30ad3344_pt100_task()` consumes GD30AD3344 samples and publishes the latest PT100 measurement cache
 
 ---
 

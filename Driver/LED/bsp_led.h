@@ -19,13 +19,9 @@ extern "C" {
 #define LED_PORT                GPIOD
 #define LED_CLK_PORT            RCU_GPIOD
 
-/* 六个 LED 的物理引脚定义。 */
+/* 正式版只使用两个 LED：LED1 为系统状态灯，LED2 为采集工作灯。 */
 #define LED1_PIN                GPIO_PIN_10
 #define LED2_PIN                GPIO_PIN_11
-#define LED3_PIN                GPIO_PIN_12
-#define LED4_PIN                GPIO_PIN_13
-#define LED5_PIN                GPIO_PIN_14
-#define LED6_PIN                GPIO_PIN_15
 
 /* LED 电平有效配置：1 表示高电平点亮，0 表示低电平点亮。 */
 #define LED_ACTIVE_HIGH         1U
@@ -58,35 +54,19 @@ extern "C" {
 /* 单个 LED 控制宏。 */
 #define LED1_SET(state)         do { LED_WRITE(LED1_PIN, ((state) != 0U)); } while (0)
 #define LED2_SET(state)         do { LED_WRITE(LED2_PIN, ((state) != 0U)); } while (0)
-#define LED3_SET(state)         do { LED_WRITE(LED3_PIN, ((state) != 0U)); } while (0)
-#define LED4_SET(state)         do { LED_WRITE(LED4_PIN, ((state) != 0U)); } while (0)
-#define LED5_SET(state)         do { LED_WRITE(LED5_PIN, ((state) != 0U)); } while (0)
-#define LED6_SET(state)         do { LED_WRITE(LED6_PIN, ((state) != 0U)); } while (0)
 
 #define LED1_TOGGLE             do { GPIO_TG(LED_PORT) = LED1_PIN; } while (0)
 #define LED2_TOGGLE             do { GPIO_TG(LED_PORT) = LED2_PIN; } while (0)
-#define LED3_TOGGLE             do { GPIO_TG(LED_PORT) = LED3_PIN; } while (0)
-#define LED4_TOGGLE             do { GPIO_TG(LED_PORT) = LED4_PIN; } while (0)
-#define LED5_TOGGLE             do { GPIO_TG(LED_PORT) = LED5_PIN; } while (0)
-#define LED6_TOGGLE             do { GPIO_TG(LED_PORT) = LED6_PIN; } while (0)
 
 #define LED1_ON                 do { LED_WRITE(LED1_PIN, 1U); } while (0)
 #define LED2_ON                 do { LED_WRITE(LED2_PIN, 1U); } while (0)
-#define LED3_ON                 do { LED_WRITE(LED3_PIN, 1U); } while (0)
-#define LED4_ON                 do { LED_WRITE(LED4_PIN, 1U); } while (0)
-#define LED5_ON                 do { LED_WRITE(LED5_PIN, 1U); } while (0)
-#define LED6_ON                 do { LED_WRITE(LED6_PIN, 1U); } while (0)
 
 #define LED1_OFF                do { LED_WRITE(LED1_PIN, 0U); } while (0)
 #define LED2_OFF                do { LED_WRITE(LED2_PIN, 0U); } while (0)
-#define LED3_OFF                do { LED_WRITE(LED3_PIN, 0U); } while (0)
-#define LED4_OFF                do { LED_WRITE(LED4_PIN, 0U); } while (0)
-#define LED5_OFF                do { LED_WRITE(LED5_PIN, 0U); } while (0)
-#define LED6_OFF                do { LED_WRITE(LED6_PIN, 0U); } while (0)
 
 /*
  * 函数作用：
- *   初始化板载 LED 使用的 GPIO，并统一关闭所有 LED。
+ *   初始化正式版使用的两个板载 LED GPIO，并统一关闭。
  * 参数说明：
  *   无参数。
  * 返回值说明：

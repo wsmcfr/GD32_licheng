@@ -3,8 +3,8 @@
 
 /*
  * 文件作用：
- *   定义调试串口和 DMA 接收相关的硬件资源、共享缓冲区和初始化接口。
- *   串口相关宏统一集中在本头文件，不再放在公共头文件里。
+ *   定义正式比赛通信使用的 USART1/RS485 硬件资源、共享缓冲区和初始化接口。
+ *   本工程正式版删除 USART0 和 USART5，避免非评分串口影响协议链路。
  */
 
 #define SYSTEM_ALL_BASE_ONLY
@@ -15,59 +15,32 @@
 extern "C" {
 #endif
 
-/* 调试串口选择。 */
-#define DEBUG_USART                    USART0
+/*
+ * 宏作用：
+ *   定义正式比赛通信串口和默认波特率。
+ * 说明：
+ *   赛题明确要求自动评分默认通过 USART1 的 RS485 接口通信，出厂默认波特率必须为 19200。
+ */
+#define CIMC_RS485_USART               USART1
+#define CIMC_RS485_BAUDRATE            19200U
 
 /*
  * 宏作用：
- *   定义当前工程默认调试串口波特率。
+ *   兼容旧代码中 my_printf(DEBUG_USART, ...) 的调用签名。
  * 说明：
- *   USART0 现在只承担启动日志和 SMARTFS 调试命令，不再接收 OTA 帧；
- *   默认使用 115200，便于与 BootLoader、USART1/RS485 OTA 和常用串口工具保持一致。
+ *   USART0 已删除；正式版 my_printf 默认不发送日志。若临时启用日志，该宏只会把日志发到
+ *   USART1/RS485，调试完成后必须关闭 CIMC_DEBUG_LOG_ENABLE，避免污染评分协议。
  */
-#define DEBUG_USART_BAUDRATE           115200U
+#define DEBUG_USART                    CIMC_RS485_USART
 
 /*
  * 宏作用：
- *   定义 OTA 专用串口和默认波特率。
+ *   定义 USART1/RS485 DMA 接收缓冲区长度。
  * 说明：
- *   OTA 现在通过 RS485/USART1 收发；PC 工具、App 和 BootLoader 日志终端
- *   均统一使用 115200。USART0 仍只负责日志和调试命令。
+ *   比赛协议以 ASCII 十六进制字符串收发，单帧长度远小于 512 字节；
+ *   这里保留 1KB 余量，供后续 0x0502 前的普通命令帧和异常帧处理使用。
  */
-#define UART_OTA_USART                 RS485_USART
-#define UART_OTA_USART_BAUDRATE        115200U
-
-/* 接收缓冲区长度定义。 */
-/*
- * 宏作用：
- *   定义 USART0 DMA 接收缓冲区长度。
- * 说明：
- *   USART0 只承担 SMARTFS 调试口和日志终端，不再接收 OTA 数据，因此 1KB
- *   文本命令缓冲足够覆盖当前单帧命令调试需求。
- */
-#define BSP_USART0_RX_BUFFER_SIZE      1024U
-/*
- * 宏作用：
- *   定义 USART1/RS485 OTA circular DMA 环形缓冲区长度。
- * 说明：
- *   上位机只能无停顿裸发 Project_ota.bin，接收端不能在 Flash 编程期间停 DMA
- *   或重装 DMA。32KB 在 115200 8N1 下约提供 2.8 秒输入余量，用来覆盖
- *   Flash 编程和调度抖动；下载区整区擦除必须在 ready 前完成。
- */
-#define BSP_USART1_RX_BUFFER_SIZE      (32U * 1024U)
-#define BSP_USART5_RX_BUFFER_SIZE      256U
-
-/* USART0 引脚与 DMA 映射。 */
-#define USART0_RDATA_ADDRESS           ((uint32_t)&USART_DATA(USART0))
-#define USART0_RX_DMA_PERIPH           DMA1
-#define USART0_RX_DMA_CHANNEL          DMA_CH5
-#define USART0_RX_DMA_SUBPERI          DMA_SUBPERI4
-#define USART0_TX_PORT                 GPIOA
-#define USART0_RX_PORT                 GPIOA
-#define USART0_CLK_PORT                RCU_GPIOA
-#define USART0_TX_PIN                  GPIO_PIN_9
-#define USART0_RX_PIN                  GPIO_PIN_10
-#define USART0_AF                      GPIO_AF_7
+#define BSP_USART1_RX_BUFFER_SIZE      1024U
 
 /* USART1 引脚与 DMA 映射。 */
 #define USART1_RDATA_ADDRESS           ((uint32_t)&USART_DATA(USART1))
@@ -82,7 +55,7 @@ extern "C" {
 #define USART1_AF                      GPIO_AF_7
 
 /* RS485 方向控制脚：PE8 同时控制 MAX3485 的 DE 和 RE#，高电平发送，低电平接收。 */
-#define RS485_USART                    USART1
+#define RS485_USART                    CIMC_RS485_USART
 #define RS485_DIR_PORT                 GPIOE
 #define RS485_DIR_CLK_PORT             RCU_GPIOE
 #define RS485_DIR_PIN                  GPIO_PIN_8
@@ -90,36 +63,12 @@ extern "C" {
 #define RS485_DIR_TX_LEVEL             SET
 #define RS485_DIR_RX_LEVEL             RESET
 
-/* USART5 引脚与 DMA 映射。 */
-#define USART5_RDATA_ADDRESS           ((uint32_t)&USART_DATA(USART5))
-#define USART5_RX_DMA_PERIPH           DMA1
-#define USART5_RX_DMA_CHANNEL          DMA_CH1
-#define USART5_RX_DMA_SUBPERI          DMA_SUBPERI5
-#define USART5_TX_PORT                 GPIOC
-#define USART5_RX_PORT                 GPIOC
-#define USART5_CLK_PORT                RCU_GPIOC
-#define USART5_TX_PIN                  GPIO_PIN_6
-#define USART5_RX_PIN                  GPIO_PIN_7
-#define USART5_AF                      GPIO_AF_8
-
-/* 各串口 DMA 接收缓冲区，由驱动层统一提供。 */
-extern uint8_t usart0_rxbuffer[BSP_USART0_RX_BUFFER_SIZE];
+/* USART1/RS485 DMA 接收缓冲区，由驱动层统一提供。 */
 extern uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
-extern uint8_t usart5_rxbuffer[BSP_USART5_RX_BUFFER_SIZE];
 
 /*
  * 函数作用：
- *   初始化 USART0 调试串口和 DMA 接收链路。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_usart0_init(void);
-
-/*
- * 函数作用：
- *   初始化当前默认启用的 USART0 和 USART1/RS485 资源。
+ *   初始化当前正式版唯一启用的 USART1/RS485 资源。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -136,26 +85,6 @@ void bsp_usart_init(void);
  *   无返回值。
  */
 void bsp_usart1_init(void);
-
-/*
- * 函数作用：
- *   初始化 USART5 及其 DMA 接收链路。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_usart5_init(void);
-
-/*
- * 函数作用：
- *   初始化工程中定义的全部 USART 接口。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_usart_all_init(void);
 
 /*
  * 函数作用：

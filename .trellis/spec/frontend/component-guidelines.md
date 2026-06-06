@@ -25,23 +25,22 @@ Typical structure:
 3. define any local static state
 4. expose one or two public entry points
 
-Example from `Function/btn_app.c`:
+Example from `Function/led_app.c`:
 
-- private enum for button bit masks
-- module-private static state for scan/debounce history
-- static helpers such as `prv_btn_read_mask()` and `prv_btn_dispatch()`
-- public APIs `app_btn_init()` and `btn_task()`
+- module-private static state for the system blink phase and hardware cache
+- static helpers such as `led_app_build_mask()` and `led_app_refresh()`
+- public APIs `led_task()`, `led_app_all_off()`, and `led_app_reset_cache()`
 
-This is the preferred shape for small polling-based interaction modules.
+This is the preferred shape for small scheduled app modules.
 
 ### Good pattern
 
 ```c
-static uint8_t prv_btn_read_mask(void);
-static void prv_btn_dispatch(uint8_t key_down_mask);
+static uint8_t led_app_build_mask(void);
+static void led_app_refresh(uint8_t led_mask);
 
-void app_btn_init(void);
-void btn_task(void);
+void led_task(void);
+void led_app_reset_cache(void);
 ```
 
 ---
@@ -58,7 +57,7 @@ Examples:
 
 - `oled_printf()` is public because other app modules use it
 - `uart_dma_buffer` and `rx_flag` are declared in `usart_app.h` because ISR code updates them
-- storage shell parsing helpers stay private in `usart_app.c`
+- contest frame parsing helpers stay private in `Protocol/cimc_protocol.c`
 
 ---
 
@@ -73,7 +72,8 @@ Examples:
 
 - `OLED_ShowStr()` is a low-level display primitive
 - `oled_printf()` wraps that primitive with formatting
-- `rtc_task()` uses `oled_printf()` to render time
+- `oled_task()` renders only team ID and `AutoSample` / `IDLE`
+- `rtc_task()` refreshes time cache without writing extra OLED rows
 
 This separation should be preserved.
 
@@ -85,13 +85,13 @@ For this firmware project, the closest equivalent to accessibility/usability rul
 
 - keep OLED lines short enough for the 128x32 display
 - keep periodic display refresh rates reasonable
-- ensure button actions are predictable and stable
-- avoid blocking user feedback paths for long unnecessary periods
+- keep LED semantics fixed to two formal indicators
+- avoid blocking USART1/RS485 protocol processing for long unnecessary periods
 
 The current code already follows a lightweight version of this:
 
-- `oled_task()` refreshes summary information every scheduler cycle
-- `btn_task()` uses lightweight polling plus debounced edge detection
+- `oled_task()` refreshes the formal two-line display
+- `uart_task()` consumes ISR-captured frames and defers CRC/command processing to task context
 
 ---
 
@@ -103,7 +103,7 @@ Do not push app strings or UI layout concerns into `Driver/OLED/`.
 
 ### Exposing private helpers in headers
 
-The `prv_*` pattern in `btn_app.c` is correct. Keep scan and dispatch helpers private.
+Private parsing, display-diff, and LED-cache helpers should stay `static` in their `.c` files.
 
 ### Making one module own unrelated behaviors
 

@@ -44,34 +44,29 @@
 
 /* Driver 层头文件。 */
 #include "bsp_led.h"
-#include "bsp_key.h"
 #include "bsp_oled.h"
 #include "bsp_storage.h"
 #include "bsp_usart.h"
 #include "bsp_analog.h"
 #include "bsp_rtc.h"
-#include "bsp_power.h"
 #include "bootloader_port.h"
 
 /* Component 层头文件。 */
-#include "gd25qxx.h"
-#include "smartfs_port.h"
 #include "gd30ad3344.h"
 #include "oled.h"
 
-#if !defined(SYSTEM_ALL_SKIP_UPPER_LAYERS)
 /* Protocol 层头文件。 */
-#include "ota_image_protocol.h"
+#include "cimc_protocol.h"
 
+#if !defined(SYSTEM_ALL_SKIP_UPPER_LAYERS)
 /* App 层头文件。 */
 #include "adc_app.h"
-#include "btn_app.h"
+#include "cimc_status.h"
 #include "gd30ad3344_pt100_app.h"
 #include "led_app.h"
 #include "oled_app.h"
 #include "rtc_app.h"
 #include "usart_app.h"
-#include "uart_ota_app.h"
 #endif
 
 #ifdef __cplusplus

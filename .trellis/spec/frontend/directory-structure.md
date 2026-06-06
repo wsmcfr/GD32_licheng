@@ -20,15 +20,16 @@ Each file usually represents one app concern that is either:
 ```text
 Function/
 ├── scheduler.c / scheduler.h   # Startup sequence and periodic task table
-├── led_app.c / led_app.h       # LED state presentation
-├── btn_app.c / btn_app.h       # Key event behavior and deep-sleep trigger
-├── oled_app.c / oled_app.h     # OLED text composition
-├── usart_app.c / usart_app.h   # UART frame echo / formatting utilities
-├── uart_ota_app.c / uart_ota_app.h # RS485/USART1 streaming OTA behavior
-├── adc_app.c / adc_app.h       # ADC-to-DAC or sampled data app logic
+├── led_app.c / led_app.h       # Two formal LEDs: system and auto-sample status
+├── oled_app.c / oled_app.h     # Two-line OLED text composition
+├── usart_app.c / usart_app.h   # USART1/RS485 ISR-to-task frame handoff
+├── cimc_status.c / cimc_status.h # Team ID and auto-sample status
+├── adc_app.c / adc_app.h       # ADC/DAC app logic; DAC is controlled by 0x0301
 ├── gd30ad3344_pt100_app.c / gd30ad3344_pt100_app.h # GD30AD3344 PT100 resistance/temperature conversion
-└── rtc_app.c / rtc_app.h       # RTC display formatting
+└── rtc_app.c / rtc_app.h       # RTC cache refresh without OLED side effects
 ```
+
+Legacy `btn_app.c`, `uart_ota_app.c`, and USART0/SMARTFS shell behavior have been removed from the formal source tree and must not be restored as CIMC build entries.
 
 ---
 
@@ -45,8 +46,9 @@ Create a new `*_app.c/.h` pair when the behavior is:
 Examples:
 
 - OLED formatting belongs in `oled_app`
-- button-to-action policy belongs in `btn_app`
-- storage command behavior belongs in `usart_app` while low-level SMARTFS helpers stay under `Driver/GD25QXX/`
+- contest UART frame handoff belongs in `usart_app`
+- contest frame parsing belongs in `Protocol/cimc_protocol.c`
+- PT100 conversion policy belongs in `gd30ad3344_pt100_app`
 
 ### Central scheduling stays in `scheduler.c`
 
@@ -58,9 +60,9 @@ New periodic work should be registered in the static `scheduler_task[]` table.
 App modules may read:
 
 - `adc_value`
-- key read macros
 - `rx_flag`
 - RTC state
+- status from `cimc_status`
 
 But pin definitions, DMA channels, SPI mode, and IRQ enables remain below in `Driver/` or `Library/`.
 
@@ -70,16 +72,15 @@ But pin definitions, DMA channels, SPI mode, and IRQ enables remain below in `Dr
 
 - app files use the suffix `_app`
 - periodic task entry functions usually use the suffix `_task`
-- init functions use verb-first names such as `app_btn_init`
-- app-owned global buffers or flags use descriptive names such as `uart_dma_buffer`, `rx_flag`, `ucLed`
+- init/setter functions use verb-first names such as `cimc_status_set_auto_sample`
+- app-owned global buffers or flags use descriptive names such as `uart_dma_buffer` and `rx_flag`
 
 Task naming examples:
 
 - `led_task`
-- `btn_task`
 - `oled_task`
 - `uart_task`
-- `uart_ota_task`
+- `adc_task`
 - `rtc_task`
 
 ---
@@ -89,12 +90,12 @@ Task naming examples:
 | File | Why It Is A Good Example |
 |------|--------------------------|
 | `Function/scheduler.c` | Shows centralized boot and periodic task ownership |
-| `Function/btn_app.c` | Maps low-level key state to user-visible actions through periodic polling |
-| `Function/oled_app.c` | Keeps display formatting separate from OLED driver primitives |
-| `Function/usart_app.c` | Splits ISR capture from app-level string output |
+| `Function/oled_app.c` | Keeps display formatting separate from OLED driver primitives and limits formal display to two rows |
+| `Function/usart_app.c` | Splits USART1 ISR capture from task-level contest protocol processing |
+| `Function/adc_app.c` | Keeps DAC command control separate from ADC sampling so `0x0301` is not overwritten by CH0 |
 
 ### Common Placement Mistakes
 
 - Do not put display formatting into the OLED component driver
-- Do not put button business actions into `bsp_key.c`
+- Do not put contest frame parsing or CRC work into `User/gd32f4xx_it.c`
 - Do not let ISR files become application modules

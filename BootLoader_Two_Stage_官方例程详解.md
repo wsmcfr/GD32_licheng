@@ -171,7 +171,7 @@ App 侧 USART0 配置：
 | 接收方式 | RBNE 字节接收 + IDLE 空闲中断判定一帧结束 |
 | 接收缓存 | `usart0_tmp_buf[10 * 1024]` |
 
-说明：上表描述的是官方原始 `27_1_App` 例程。当前仓库中复制并接入本工程的 App/BootLoader 副本已经统一把串口默认波特率调整为 `115200`。
+说明：上表描述的是官方原始 `27_1_App` 例程。当前仓库中复制并接入本工程的 App/BootLoader 副本已经统一改为正式赛题链路：`USART1/RS485`，默认 `19200 8N1`。
 
 中断处理逻辑：
 
@@ -212,7 +212,7 @@ DOWNLOAD_ADDR = 0x08070000
 
 随后把升级包头后面的真正 App 镜像写入 `0x08070000`。
 
-注意：官方原始 App 接收数组只有 `10 * 1024` 字节，而根目录 readme 写“升级数据内存最大 12KB”，早期地址规划又写下载缓存区 52KB。当前仓库已经改为 RS485/USART1 头部 BIN 裸流 OTA，现场文件为 `Project_ota.bin`，文件格式仍是 64 字节 OTA 头部 + 原始 `Project.bin` payload，一次性原始/直接发送完整文件；片内 Flash 则按题目要求改为 BootLoader `64KB`、参数区 `4KB`、App 运行区/备份区/缓存区各 `128KB`，缓存区地址为 `0x08051000 ~ 0x08070FFF`。
+注意：官方原始 App 接收数组只有 `10 * 1024` 字节，而根目录 readme 写“升级数据内存最大 12KB”，早期地址规划又写下载缓存区 52KB。当前正式赛题工程已经不再使用 App 侧头部 BIN 裸流 OTA，改为 App 收到 `0x0501` 后复位进入 Bootloader，由 Bootloader 在 `0x0502` 后接收大赛 bin，校验前 4 字节魔术字 `5AA5C33C`，再把魔术字后的 App payload 写入 `0x08051000 ~ 0x08070FFF` 缓存区；片内 Flash 按题目要求规划为 BootLoader `64KB`、参数区 `4KB`、App 运行区/备份区/缓存区各 `128KB`。
 
 ### 8.4 App 写参数区并复位
 
@@ -274,33 +274,14 @@ BootLoader 成功搬运后清除升级标志并复位。下一次启动时：
 
 | 项目 | 官方原始例程 | 当前仓库副本 |
 |---|---|---|
-| 升级串口默认波特率 | `115200` | `115200` |
-| App 接收方式 | 单次接收整包，依赖 `usart0_tmp_buf[10 * 1024]` | RS485/USART1 接收 `Project_ota.bin` 裸字节流，先在 `Protocol/` 解析 64 字节头部，再通过 32KB circular DMA 环形缓冲边接收边写 App 缓存区 |
-| 上位机发送方式 | 直接发送官方示例 `.bin` 文件 | 串口工具原始/直接发送 `project/output/Project_ota.bin` |
-| 上位机可见反馈 | 基本没有发送进度 | 主要通过 `USART0` 日志观察 `OTA: header ok`、`OTA: payload ok`、`OTA: ready, reset to BootLoader` |
+| 升级串口默认波特率 | `115200` | `19200`，USART1/RS485 |
+| App 接收方式 | 单次接收整包，依赖 `usart0_tmp_buf[10 * 1024]` | App 只处理 `0x0501`，回复 OK、写 Bootloader 等待标志并复位 |
+| 上位机发送方式 | 直接发送官方示例 `.bin` 文件 | `0x0501 -> Bootloader -> 0x0502 -> 大赛 bin 原始字节流 -> 0x0503` |
+| 上位机可见反馈 | 基本没有发送进度 | 全部通过 USART1/RS485 赛题应答帧确认，正式版无 USART0 日志 |
 | BootLoader 擦除策略 | 固定擦除 App 开头 `3 * 4KB` | 按 `appSize` 计算实际擦除页数 |
-| BootLoader 搬运策略 | 受原始整包缓存思路约束 | 先按 `1024B` 分块备份 `128KB` App 运行区，再从 `0x08051000` App 缓存区搬运新 App 到 `0x08011000`，并重新做 CRC32 校验 |
+| BootLoader 搬运策略 | 受原始整包缓存思路约束 | Bootloader 接收并校验大赛 bin 后，先按 `1024B` 分块备份 `128KB` App 运行区，再从 `0x08051000` App 缓存区搬运新 App 到 `0x08011000`，并重新做 CRC32 校验 |
 
-当前仓库发送升级包时，可按下面步骤操作：
-
-```powershell
-cd D:\GD32\2026706296
-tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.bin 0x00000001 0x0800D000
-```
-
-上面命令是官方旧地址示例。当前仓库实际应使用：
-
-```powershell
-tools\pack_ota_image.exe project\output\Project.bin project\output\Project_ota.bin 0x00000001 0x08011000
-```
-
-典型 App 侧日志如下：
-
-```text
-OTA: header ok size=... version=0x00000001 crc=0x...
-OTA: payload ok size=... crc=0x...
-OTA: ready, reset to BootLoader size=... version=0x00000001
-```
+当前仓库正式版不再运行 `tools\pack_ota_image.exe`，也不再发送 `project/output/Project_ota.bin`。Keil 只需要生成 `project/output/Project.bin`；现场升级时使用赛题给出的带 `5AA5C33C` 魔术字 bin，并通过 `0x0502` 后的原始字节流发送给 Bootloader。
 
 ## 9. CRC32 算法
 

@@ -156,7 +156,7 @@ void PendSV_Handler(void)
 
 /*
  * 函数作用：
- *   处理 USART0 IDLE 中断，将 DMA 接收到的一帧调试命令移交给应用层。
+ *   处理 USART1/RS485 IDLE 中断，将 DMA 接收到的一帧赛题 ASCII 协议数据移交给应用层。
  * 主要流程：
  *   1. 判断并清除 IDLE 中断标志。
  *   2. 暂停 DMA，按剩余传输计数计算本帧有效长度。
@@ -167,130 +167,43 @@ void PendSV_Handler(void)
  * 返回值说明：
  *   无返回值。
  */
-void USART0_IRQHandler(void)
+void USART1_IRQHandler(void)
 {
     uint32_t rx_len;
     uint32_t copy_len;
 
-    if(RESET != usart_interrupt_flag_get(USART0, USART_INT_FLAG_IDLE)){
-        /* 清除 IDLE 标志：先读状态再读数据寄存器是 GD32 USART 空闲中断的清除流程。 */
-        usart_data_receive(USART0);
-        dma_channel_disable(USART0_RX_DMA_PERIPH, USART0_RX_DMA_CHANNEL);
-        
+    if(RESET != usart_interrupt_flag_get(USART1, USART_INT_FLAG_IDLE)) {
+        /* 清除 IDLE 标志：读数据寄存器用于结束本次空闲中断状态。 */
+        usart_data_receive(USART1);
+        dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+
         /* 根据 DMA 剩余传输数计算本次 IDLE 前收到的字节数。 */
-        rx_len = sizeof(usart0_rxbuffer) - dma_transfer_number_get(USART0_RX_DMA_PERIPH, USART0_RX_DMA_CHANNEL);
-        if((rx_len > 0U) && (rx_len <= sizeof(usart0_rxbuffer))){
+        rx_len = sizeof(usart1_rxbuffer) -
+                 dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+        if((rx_len > 0U) && (rx_len <= sizeof(usart1_rxbuffer))) {
             copy_len = rx_len;
-            /*
-             * USART0 当前承担 SMARTFS 调试口，任务层会把本帧当作文本命令解析。
-             * 这里仍只保存一帧数据，若上位机连续灌入更长内容，则按应用层可处理
-             * 缓冲区大小截断，避免 ISR 写越界。
-             */
-            if(copy_len > sizeof(uart_dma_buffer)){
+            if(copy_len > sizeof(uart_dma_buffer)) {
                 copy_len = sizeof(uart_dma_buffer);
             }
-            if(copy_len > 0U){
-                memcpy(uart_dma_buffer, usart0_rxbuffer, copy_len);
+            if(copy_len > 0U) {
+                /*
+                 * ISR 只复制完整 ASCII 帧，不解析帧头、CRC 或命令字，保持中断路径可预测。
+                 */
+                memcpy(uart_dma_buffer, usart1_rxbuffer, copy_len);
                 uart_dma_length = (uint16_t)copy_len;
-                rx_flag = 1;
+                rx_flag = 1U;
             }
         }
 
         /*
-         * 应用层严格依赖 uart_dma_length 取有效数据，这里不再整块清空缓冲区，
-         * 以缩短中断执行时间，避免高频串口流量下的额外开销。
+         * 重新装载 DMA 计数并打开通道，准备接收下一帧。旧 OTA 的 DMA 半满/满中断已删除，
+         * 因为正式协议普通帧不再依赖 32KB circular DMA 裸流接收。
          */
-        /* 重新装载 DMA 计数并打开通道，准备接收下一帧。 */
-        dma_flag_clear(USART0_RX_DMA_PERIPH, USART0_RX_DMA_CHANNEL, DMA_FLAG_FTF);
-        dma_transfer_number_config(USART0_RX_DMA_PERIPH, USART0_RX_DMA_CHANNEL, sizeof(usart0_rxbuffer));
-        dma_channel_enable(USART0_RX_DMA_PERIPH, USART0_RX_DMA_CHANNEL);
-    }
-}
-
-/*
- * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，提示 OTA 任务从 circular DMA 环形缓冲取数。
- * 主要流程：
- *   1. 判断并清除 USART1 IDLE 中断标志。
- *   2. 记录一次接收提示，任务层随后根据 DMA 剩余计数计算硬件写指针。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void USART1_IRQHandler(void)
-{
-    uint32_t rx_len;
-
-    if(RESET != usart_interrupt_flag_get(USART1, USART_INT_FLAG_IDLE)){
-        /* 清除 IDLE 标志：读数据寄存器用于结束本次空闲中断状态。 */
-        usart_data_receive(USART1);
-        rx_len = UART_OTA_RING_BUFFER_SIZE -
-                 dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-        uart_ota_irq_count++;
-        uart_ota_last_irq_length = (uint16_t)rx_len;
-        uart_ota_rx_flag = 1U;
-    }
-}
-
-/*
- * 函数作用：
- *   处理 USART1 RX DMA 半满/满中断，提示 OTA 任务消费 circular DMA 环形缓冲。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void DMA0_Channel5_IRQHandler(void)
-{
-    uint32_t write_index;
-
-    write_index = UART_OTA_RING_BUFFER_SIZE -
-                  dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-    if(write_index >= UART_OTA_RING_BUFFER_SIZE){
-        write_index = 0U;
-    }
-
-    if(RESET != dma_interrupt_flag_get(USART1_RX_DMA_PERIPH,
-                                       USART1_RX_DMA_CHANNEL,
-                                       DMA_INT_FLAG_HTF)){
-        /*
-         * circular DMA 模式下半满中断只说明写指针越过前半区。
-         * 不能停 DMA 或重装计数，否则无停顿裸流会被硬件接收路径截断。
-         */
-        dma_interrupt_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FLAG_HTF);
-        uart_ota_irq_count++;
-        uart_ota_last_irq_length = (uint16_t)write_index;
-        uart_ota_rx_flag = 1U;
-    }
-
-    if(RESET != dma_interrupt_flag_get(USART1_RX_DMA_PERIPH,
-                                       USART1_RX_DMA_CHANNEL,
-                                       DMA_INT_FLAG_FTF)){
-        /*
-         * 满传输中断在 circular 模式下表示 DMA 即将从环尾回到环头。
-         * 这里只清标志并唤醒任务层，实际字节范围由读/写指针差值决定。
-         */
-        dma_interrupt_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_INT_FLAG_FTF);
-        uart_ota_irq_count++;
-        uart_ota_last_irq_length = (uint16_t)write_index;
-        uart_ota_rx_flag = 1U;
-    }
-}
-
-/*
- * 函数作用：
- *   处理 EXTI0 外部中断，用于唤醒按键触发后的中断标志清理。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void EXTI0_IRQHandler(void)
-{
-    if(RESET != exti_interrupt_flag_get(EXTI_0)) {
-        /* 唤醒后只清除中断标志，具体外设恢复由深度睡眠返回路径处理。 */
-        exti_interrupt_flag_clear(EXTI_0);
+        dma_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_FLAG_FTF);
+        dma_transfer_number_config(USART1_RX_DMA_PERIPH,
+                                   USART1_RX_DMA_CHANNEL,
+                                   sizeof(usart1_rxbuffer));
+        dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
     }
 }
 

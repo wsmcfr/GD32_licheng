@@ -1,6 +1,7 @@
 #include "oled_app.h"
 
-#define OLED_APP_LINE_COUNT             4U
+/* 正式版 OLED 只保留双行显示：第 1 行队伍编号，第 2 行运行状态。 */
+#define OLED_APP_LINE_COUNT             2U
 #define OLED_APP_LINE_BUFFER_SIZE       32U
 #define OLED_APP_VISIBLE_CHARS          16U
 
@@ -158,11 +159,10 @@ int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
 
 /*
  * 函数作用：
- *   周期性刷新 OLED 上的按键状态、系统运行时间和 ADC 电压值。
+ *   周期性刷新 OLED 双行状态。
  * 主要流程：
- *   1. 第 1 行显示 6 个普通按键的实时 GPIO 电平。
- *   2. 第 2 行显示系统毫秒时基，便于观察调度器是否运行。
- *   3. 第 3 行把 ADC 原始值换算成电压显示。
+ *   1. 第一行显示队伍编号。
+ *   2. 第二行根据自动采集状态显示 AutoSample 或 IDLE。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -170,8 +170,10 @@ int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
  */
 void oled_task(void)
 {
-    oled_printf(0, 0, "KEY STA: %d%d%d%d%d%d", KEY1_READ, KEY2_READ, KEY3_READ, KEY4_READ, KEY5_READ, KEY6_READ);
-    oled_printf(0, 1, "uwTick:%lld", (long long)get_system_ms());
-    oled_printf(0, 2, "A0:%.2fV V:%.2f", adc_value[0] / 4095.0f * 3.3f, adc_value[1] / 4095.0f * 3.3f);
-	
+    oled_printf(0, 0, "%s", cimc_status_get_team_id());
+    if(cimc_status_is_auto_sample_active() != 0U) {
+        oled_printf(0, 1, "AutoSample");
+    } else {
+        oled_printf(0, 1, "IDLE");
+    }
 }

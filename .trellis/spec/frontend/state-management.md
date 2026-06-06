@@ -24,7 +24,7 @@ Used when hardware-facing buffers must be visible across modules.
 Examples:
 
 - `adc_value[2]` in `bsp_analog.h`
-- `usart0_rxbuffer[]` and friends in `bsp_usart.h`
+- `usart1_rxbuffer[]` in `bsp_usart.h`
 - `oled_cmd_buf[2]` and `oled_data_buf[2]` in `bsp_oled.h`
 
 ### App-Owned Shared State
@@ -35,10 +35,8 @@ Examples:
 
 - `rx_flag`
 - `uart_dma_buffer`
-- `uart_ota_rx_flag`
-- `usart1_rxbuffer[]` as the USART1 OTA circular DMA ring
-- `uart_ota_ring_read_index`
-- `ucLed[6]` through `led_app_set()`, `led_app_toggle()`, `led_app_all_off()`, and `led_app_blank_for_sleep()`
+- `uart_dma_length`
+- formal LED state through `led_task()`, `led_app_all_off()`, and `led_app_blank_for_sleep()`
 
 ### Module-Private Cached State
 
@@ -63,9 +61,8 @@ Do **not** create global state just to avoid passing one parameter through a pri
 
 Good example:
 
-- `rx_flag` is global because it is written in `USART0_IRQHandler()` and consumed in `uart_task()`
-- `uart_ota_rx_flag` is global because it is written in `USART1_IRQHandler()` / `DMA0_Channel5_IRQHandler()` and consumed in `uart_ota_task()`
-- `uart_ota_ring_read_index` is global because the OTA task must preserve its read cursor across scheduler calls while DMA keeps writing `usart1_rxbuffer[]` in circular mode
+- `rx_flag` is global because it is written in `USART1_IRQHandler()` and consumed in `uart_task()`
+- `uart_dma_length` is global because the ISR records the ASCII HEX frame length and the task consumes it later
 
 Bad example:
 
@@ -79,9 +76,9 @@ Derived user-facing state should usually be recomputed inside the task that rend
 
 Examples:
 
-- `oled_task()` derives voltage text from `adc_value[]`
-- `led_disp()` derives a bitmask from `ucLed[]`; button and power policy code must change LEDs through the public `led_app_*` APIs so the app state and hardware cache stay aligned
-- `rtc_task()` derives display text from `rtc_initpara`
+- `oled_task()` derives the second display line from `cimc_status_is_auto_sample_active()`
+- `led_task()` derives LED1/LED2 output from the system blink timer and auto-sample state
+- `rtc_task()` refreshes `rtc_initpara` without writing OLED rows
 - `gd30ad3344_pt100_task()` derives voltage, resistance, temperature, `sample_ready`, and `range_valid` from a successful `GD30AD3344_AD_Read(..., &out_voltage_v)` call
 
 This keeps the source of truth close to the render/output path.
@@ -120,7 +117,7 @@ After consuming an ISR-produced frame, clear the app flag and reset temporary bu
 
 ### Updating hardware every cycle without change detection
 
-`led_disp()` keeps `g_led_mask_old` plus a first-run valid flag and compares the cached bitmap with the current bitmap to avoid redundant writes.
+`led_app_refresh()` keeps `g_led_mask_old` plus a first-run valid flag and compares the cached bitmap with the current bitmap to avoid redundant writes.
 Follow that idea when output hardware changes are expensive or noisy.
 
 When another layer resets GPIO output state, turns LEDs off for sleep, or reruns `bsp_led_init()`, call `led_app_reset_cache()` before normal scheduling resumes. Otherwise the app task may believe the old bitmap is still present on the pins and skip a required refresh.

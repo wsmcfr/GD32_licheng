@@ -25,7 +25,6 @@ Put public enums, macros, and `extern` declarations in the matching module heade
 Examples:
 
 - `UART_APP_DMA_BUFFER_SIZE` in `Function/usart_app.h`
-- `user_button_t` stays private in `btn_app.c` because it is not cross-module
 - `GD30AD3344_Channel_TypeDef` is public in `gd30ad3344.h`
 
 ### Use fixed-width integers for hardware-facing data
@@ -50,13 +49,13 @@ Good example:
 ```c
 typedef enum
 {
-    USER_BUTTON_0 = 0,
+    CIMC_RESULT_OK = 0,
     ...
-    USER_BUTTON_MAX,
-} user_button_t;
+    CIMC_RESULT_MAX,
+} cimc_result_t;
 ```
 
-This is clearer than scattered numeric key IDs.
+This is clearer than scattered numeric result IDs.
 
 ---
 
@@ -69,14 +68,14 @@ Required checks include:
 
 - null checks for external pointers when needed
 - length bounds before `memcpy()`
-- return-code checks after storage operations
-- byte-count checks after file read/write
+- return-code checks after Flash, sensor, or Bootloader handoff operations
+- byte-count checks before protocol frame parsing and ISR-to-task copying
 
 Examples:
 
-- `if (!cfg) return LFS_ERR_INVAL;` in `lfs_storage_init()`
-- receive-length clamp in `USART0_IRQHandler()`
-- expected-length verification in SMARTFS read/write shell paths
+- receive-length clamp in `USART1_IRQHandler()`
+- expected-length verification in `cimc_protocol_process_ascii_frame()`
+- 12-bit range validation before applying DAC command `0x0301`
 
 ---
 

@@ -34,10 +34,7 @@ static task_t scheduler_task[] =
     ,{adc_task,  50,  0}
     ,{gd30ad3344_pt100_task, 200, 0}
     ,{oled_task, 100,   0}
-    ,{btn_task,  5,    0}
     ,{uart_task, 5,    0}
-    ,{uart_ota_task, 5, 0}
-    ,{rtc_task,  500,  0}
 };
 
 /*
@@ -84,9 +81,8 @@ void scheduler_reset_runtime(void)
  *   完成系统上电后的基础外设、组件和应用任务初始化。
  * 主要流程：
  *   1. 初始化本地 SysTick timebase 和基础板级外设。
- *   2. 按依赖顺序初始化存储、串口、ADC/DAC、RTC、OLED 和按键应用层。
- *   3. 执行 SPI Flash 冒烟测试。
- *   4. 初始化调度器任务数量，进入主循环前完成任务表准备。
+ *   2. 按依赖顺序初始化 USART1/RS485、ADC/DAC、RTC、OLED 和 PT100 外部 ADC。
+ *   3. 初始化调度器任务数量，进入主循环前完成任务表准备。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -109,17 +105,16 @@ void system_init(void)
 		 */
 		boot_app_handoff_init();
 		/*
-		 * 调试串口必须尽早初始化。这样 BootLoader 跳到 App 后，哪怕后续 SPI Flash、
-		 * OLED 或 SMARTFS 初始化卡住，也能从 USART0 日志判断已经进入 App。
+		 * 正式版只初始化 USART1/RS485。USART0 调试口和 SMARTFS Shell 已删除，
+		 * my_printf() 默认丢弃日志，避免启动阶段向评分串口插入非协议文本。
 		 */
 		bsp_usart_init();
 		my_printf(DEBUG_USART, "BOOT: handoff start\r\n");
 		rcu_periph_clock_enable(RCU_PMU);
 		if(SET == pmu_flag_get(PMU_FLAG_STANDBY)) {
 			/*
-			 * Standby 唤醒会按复位流程重新启动，无法从睡前调用栈返回。
-			 * 这里在调试串口可用后尽早输出来源标记，方便区分普通上电复位和
-			 * KEYW/PMU WKUP 触发的 Standby 唤醒复位。
+			 * 旧按键 Standby 演示已从正式任务中删除。保留 PMU 标志清理，
+			 * 避免曾经进入待机后的复位标志影响后续启动判断。
 			 */
 			my_printf(DEBUG_USART, "BOOT: wake from standby\r\n");
 			pmu_flag_clear(PMU_FLAG_RESET_STANDBY);
@@ -139,13 +134,8 @@ void system_init(void)
 
 		bsp_led_init();
 		my_printf(DEBUG_USART, "BOOT: led done\r\n");
-		bsp_btn_init();
-		my_printf(DEBUG_USART, "BOOT: btn done\r\n");
 		bsp_oled_init();
 		my_printf(DEBUG_USART, "BOOT: oled bus done\r\n");
-		bsp_gd25qxx_init();
-		my_printf(DEBUG_USART, "BOOT: gd25qxx bus done\r\n");
-		uart_ota_reset_runtime();
 
 		my_printf(DEBUG_USART, "BOOT: start\r\n");
 
@@ -166,41 +156,12 @@ void system_init(void)
 		bsp_rtc_init();
 		my_printf(DEBUG_USART, "BOOT: rtc done\r\n");
 
-		app_btn_init();
-
 		my_printf(DEBUG_USART, "BOOT: oled init...\r\n");
 		OLED_Init();
 		oled_app_reset_cache();
 		my_printf(DEBUG_USART, "BOOT: oled done\r\n");
 
-#if SMART_STORAGE_BOOT_SELF_TEST_ENABLE
-		/*
-		 * SMARTFS 自检使用整片 GD25Q16 文件系统管理区。
-		 * 用户已取消末尾 4KB 裸测保留区，因此这里不会再为 test_spi_flash() 留专用扇区。
-		 */
-		if (SMART_STORAGE_ERR_OK != smart_storage_self_test()) {
-			my_printf(DEBUG_USART, "BOOT: smart_storage_self_test failed\r\n");
-		}
-#else
-		my_printf(DEBUG_USART, "BOOT: smart_storage_self_test skipped (SMART_STORAGE_BOOT_SELF_TEST_ENABLE=0)\r\n");
-#endif
-
-#if SPI_FLASH_RAW_TEST_ENABLE
-		test_spi_flash();
-#else
-		my_printf(DEBUG_USART, "BOOT: test_spi_flash skipped (SPI_FLASH_RAW_TEST_ENABLE=0)\r\n");
-#endif
-
 		scheduler_init();
-		/*
-		 * 只有在调度器完成初始化、并且下载缓存区已经预擦后，才向 RS485 口输出 ready。
-		 * 上位机看到该探测串后可能立即裸发 Project_ota.bin，因此此时必须保证
-		 * 主循环中的 uart_ota_task() 已经具备消费 circular DMA 环形缓冲的条件，
-		 * 且接收过程中只做 Flash 编程，不再执行耗时整区擦除。
-		 */
-		if(0U != uart_ota_prepare_download_area_before_ready()) {
-			uart_ota_emit_startup_probe();
-		}
 }
 /*
  * 函数作用：

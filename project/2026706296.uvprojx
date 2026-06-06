@@ -81,9 +81,9 @@
           </BeforeMake>
           <AfterMake>
             <RunUserProg1>1</RunUserProg1>
-            <RunUserProg2>1</RunUserProg2>
+            <RunUserProg2>0</RunUserProg2>
             <UserProg1Name>E:\Keil_v5\ARM\ARMCLANG\bin\fromelf.exe --bin --output=.\output\Project.bin .\output\Project.axf</UserProg1Name>
-            <UserProg2Name>..\tools\pack_ota_image.exe .\output\Project.bin .\output\Project_ota.bin 0x00000001 0x08011000</UserProg2Name>
+            <UserProg2Name></UserProg2Name>
             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
             <UserProg2Dos16Mode>0</UserProg2Dos16Mode>
             <nStopA1X>0</nStopA1X>
@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_STDPERIPH_DRIVER,GD32F470</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Library\GD32F4xx_standard_peripheral\Include;..\User;..\HeaderFiles;..\Function;..\Protocol;..\Driver\LED;..\Driver\KEY;..\Driver\USART;..\Driver\OLED;..\Driver\STORAGE;..\Driver\ANALOG;..\Driver\RTC;..\Driver\POWER;..\Driver\BOOTLOADER;..\Driver\GD25QXX;..\Driver\GD30AD3344;..\CMSIS;..\CMSIS\GD\GD32F4xx\Include</IncludePath>
+              <IncludePath>..\Library\GD32F4xx_standard_peripheral\Include;..\User;..\HeaderFiles;..\Function;..\Protocol;..\Driver\LED;..\Driver\USART;..\Driver\OLED;..\Driver\STORAGE;..\Driver\ANALOG;..\Driver\RTC;..\Driver\BOOTLOADER;..\Driver\GD30AD3344;..\CMSIS;..\CMSIS\GD\GD32F4xx\Include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -555,11 +555,6 @@
               <FilePath>..\Driver\LED\bsp_led.c</FilePath>
             </File>
             <File>
-              <FileName>bsp_key.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Driver\KEY\bsp_key.c</FilePath>
-            </File>
-            <File>
               <FileName>bsp_usart.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Driver\USART\bsp_usart.c</FilePath>
@@ -585,24 +580,9 @@
               <FilePath>..\Driver\RTC\bsp_rtc.c</FilePath>
             </File>
             <File>
-              <FileName>bsp_power.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Driver\POWER\bsp_power.c</FilePath>
-            </File>
-            <File>
               <FileName>bootloader_port.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Driver\BOOTLOADER\bootloader_port.c</FilePath>
-            </File>
-            <File>
-              <FileName>gd25qxx.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Driver\GD25QXX\gd25qxx.c</FilePath>
-            </File>
-            <File>
-              <FileName>smartfs_port.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Driver\GD25QXX\smartfs_port.c</FilePath>
             </File>
             <File>
               <FileName>oled.c</FileName>
@@ -620,20 +600,15 @@
           <GroupName>Protocol</GroupName>
           <Files>
             <File>
-              <FileName>ota_image_protocol.c</FileName>
+              <FileName>cimc_protocol.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Protocol\ota_image_protocol.c</FilePath>
+              <FilePath>..\Protocol\cimc_protocol.c</FilePath>
             </File>
           </Files>
         </Group>
         <Group>
           <GroupName>Function</GroupName>
           <Files>
-            <File>
-              <FileName>btn_app.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Function\btn_app.c</FilePath>
-            </File>
             <File>
               <FileName>led_app.c</FileName>
               <FileType>1</FileType>
@@ -648,6 +623,11 @@
               <FileName>usart_app.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Function\usart_app.c</FilePath>
+            </File>
+            <File>
+              <FileName>cimc_status.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Function\cimc_status.c</FilePath>
             </File>
             <File>
               <FileName>rtc_app.c</FileName>
@@ -668,11 +648,6 @@
               <FileName>scheduler.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Function\scheduler.c</FilePath>
-            </File>
-            <File>
-              <FileName>uart_ota_app.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Function\uart_ota_app.c</FilePath>
             </File>
           </Files>
         </Group>

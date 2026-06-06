@@ -11,7 +11,7 @@ Frontend quality in this project means:
 - predictable periodic behavior
 - clear separation between display/interaction logic and low-level drivers
 - bounded formatting and buffer usage
-- observable behavior on OLED, LEDs, buttons, UART, and storage demos
+- observable behavior on OLED, two formal LEDs, USART1/RS485, ADC/DAC, RTC, and PT100 sampling
 
 ---
 
@@ -19,12 +19,12 @@ Frontend quality in this project means:
 
 ### Do not block for long inside fast periodic tasks
 
-Tasks like `oled_task()` and `btn_task()` should stay lightweight.
+Tasks like `oled_task()` and `uart_task()` should stay lightweight.
 Heavy I/O, large retries, or long loops belong in startup tests or explicit demo flows, not in high-frequency display/input tasks.
 
 ### Do not make app tasks own hardware reconfiguration
 
-App tasks may trigger behavior such as deep sleep, but the actual peripheral shutdown/re-init logic belongs in driver-level code like `bsp_power.c`.
+App tasks may request behavior such as Bootloader upgrade entry, but the actual Flash handoff belongs in driver-level code like `bootloader_port.c`.
 
 ### Do not bypass the scheduler for periodic behavior
 
@@ -46,9 +46,10 @@ Prefer `vsnprintf()` as used by:
 One file pair should usually own one concern:
 
 - display
-- button behavior
-- UART post-processing
-- RTC display
+- LED behavior
+- UART frame handoff
+- RTC cache refresh
+- ADC/DAC command state
 
 ### Use task functions as the stable integration seam
 
@@ -60,7 +61,7 @@ If data comes from an interrupt, the app task should process it later using a fl
 
 ### Favor readable user-facing output
 
-OLED and UART strings should optimize for quick debugging and operator readability, not compact cleverness.
+OLED strings should stay within two formal lines. USART1 output must stay contest-framed, not human-readable debug text.
 
 ---
 
@@ -70,18 +71,18 @@ Validate app-facing changes through the actual visible behavior:
 
 | Area | Minimum Validation |
 |------|--------------------|
-| OLED text changes | content fits screen and updates on the expected line |
-| Button behavior | click maps to the intended LED or power action |
-| UART app behavior | received frame is copied, echoed, and cleared correctly |
+| OLED text changes | only two lines are used and content fits screen |
+| LED behavior | LED1 blinks at the formal system period; LED2 follows auto-sample state |
+| UART app behavior | USART1 frame is copied, parsed, answered, and cleared correctly |
 | Scheduler changes | new task runs at the expected period and does not starve other tasks |
-| RTC / ADC display | displayed values update and formatting remains stable |
+| RTC / ADC / DAC / PT100 | cached values update and DAC is not overwritten by ADC polling |
 
 Where possible, verify using:
 
 - OLED screen output
-- debug UART logs
 - LED state changes
-- wake/sleep manual test flow
+- USART1/RS485 protocol frames
+- Keil build logs
 
 ---
 

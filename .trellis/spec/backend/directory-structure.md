@@ -24,29 +24,25 @@ User/
 Function/
 ├── scheduler.c / scheduler.h      # Current cooperative scheduler and startup sequence
 ├── led_app.c / led_app.h
-├── btn_app.c / btn_app.h
 ├── oled_app.c / oled_app.h
 ├── usart_app.c / usart_app.h
-├── uart_ota_app.c / uart_ota_app.h
+├── cimc_status.c / cimc_status.h
 ├── adc_app.c / adc_app.h
 ├── gd30ad3344_pt100_app.c / gd30ad3344_pt100_app.h
 └── rtc_app.c / rtc_app.h
 
 Driver/
 ├── LED/
-├── KEY/
 ├── USART/
 ├── OLED/
 ├── STORAGE/
 ├── ANALOG/
 ├── RTC/
-├── POWER/
 ├── BOOTLOADER/
-├── GD25QXX/
 └── GD30AD3344/
 
 Protocol/
-└── ota_image_protocol.c / .h       # OTA header-bin protocol parsing, CRC, and metadata validation
+└── cimc_protocol.c / .h            # CIMC ASCII HEX protocol parsing, CRC16, and command dispatch
 
 HeaderFiles/
 └── system_all.h                   # Shared aggregation header
@@ -71,34 +67,38 @@ Use `Driver/` for board-specific resource ownership:
 - DMA channel mapping
 - IRQ enable/disable
 - peripheral clock enable
-- one-shot initialization and low-power reconfiguration
+- one-shot initialization and formal runtime reconfiguration
 
 Example:
 
-- `Driver/USART/bsp_usart.c` owns USART pin mapping, DMA setup, and IDLE interrupt enable
-- `Driver/POWER/bsp_power.c` owns deep-sleep resource shutdown and wakeup re-init order
+- `Driver/USART/bsp_usart.c` owns USART1/RS485 pin mapping, DMA setup, direction GPIO, and IDLE interrupt enable
+- `Driver/BOOTLOADER/bootloader_port.c` owns App-to-Bootloader parameter-area handoff
+
+Legacy `Driver/POWER/bsp_power.c`, `Driver/KEY/bsp_key.c`, and `Driver/GD25QXX/*`
+have been physically removed from the formal source tree and must not be restored
+as CIMC build entries.
+If contest `0x03AA` sleep is implemented later, create a new RTC-10s wake path
+instead of reusing the button low-power demo unchanged.
 
 ### Component Layer
 
 Use `Driver/<device>/` for reusable device logic:
 
 - SSD1306 display primitives in `Driver/OLED/`
-- GD25Qxx SPI Flash and SMARTFS operations in `Driver/GD25QXX/`
 - GD30AD3344 command/data protocol in `Driver/GD30AD3344/`
 
 ### Protocol Layer
 
 Use `Protocol/` for packet/file-format contracts that are consumed by app tasks but do not own hardware:
 
-- OTA header parsing and CRC helpers in `Protocol/ota_image_protocol.c`
-- metadata validation for magic, header size, load address, payload size, and vector-table fields
+- CIMC ASCII HEX frame parsing, CRC-16-Modbus, response/error frame construction, and contest command dispatch in `Protocol/cimc_protocol.c`
 - no DMA, UART, Flash erase/write, scheduler, or BootLoader parameter writes in this layer
 
 Component code may depend on driver-provided buses, but it should not become the place that owns board-level pin maps.
 
 Keil project display should keep all low-level source entries under a single
 `Driver` group. Do not create separate uVision groups such as
-`Driver/OLED` or `Driver/GD25QXX`; the physical
+`Driver/OLED` or `Driver/GD30AD3344`; the physical
 subdirectories still carry ownership boundaries, while the IDE tree stays
 compact and consistent with the top-level firmware layer.
 
@@ -150,8 +150,8 @@ Example from `Driver/STORAGE/bsp_storage.h`:
 |------|--------------------------|
 | `HeaderFiles/system_all.h` | Shows the real include order: standard headers, common components, drivers, components, then apps |
 | `Driver/USART/bsp_usart.h` | Keeps all USART pin/DMA macros and shared buffers in the public header |
-| `Driver/POWER/bsp_power.c` | Groups power-state transitions and wakeup recovery in one ownership unit |
-| `Protocol/ota_image_protocol.c` | Keeps OTA file-format parsing and CRC checks out of the app task state machine |
+| `Driver/BOOTLOADER/bootloader_port.c` | Keeps App upgrade-request handoff separate from protocol parsing |
+| `Protocol/cimc_protocol.c` | Keeps contest frame parsing, CRC checks, and command dispatch out of the ISR path |
 | `Function/scheduler.c` | Keeps app task registration centralized instead of scattering scheduling logic |
 
 ### Common Placement Mistakes
