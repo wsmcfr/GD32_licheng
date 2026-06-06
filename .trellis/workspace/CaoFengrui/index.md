@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 37
+- **Total Sessions**: 38
 - **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1766 | Active |
+| `journal-1.md` | ~1808 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 38 | 2026-06-06 | Remove formal debug output | `757aa3f` | `feature/streaming-raw-ota` |
 | 37 | 2026-06-06 | CIMC formal contest firmware cleanup | `f2cb083` | `feature/streaming-raw-ota` |
 | 36 | 2026-06-05 | Align Driver layout and OTA partitions | `5e90b38` | `feature/streaming-raw-ota` |
 | 35 | 2026-06-05 | PT100 two-point calibration and interpolation | `dc810a2` | `feature/streaming-raw-ota` |

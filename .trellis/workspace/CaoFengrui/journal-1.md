@@ -1764,3 +1764,50 @@ Updated GD30AD3344 PT100 conversion to use firmware-Vout two-point resistance ca
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: Remove formal debug output
+
+**Date**: 2026-06-06
+**Task**: Remove formal debug output
+**Branch**: `feature/streaming-raw-ota`
+
+### Summary
+
+Formal App debug output was removed instead of being stubbed behind a silent helper. The commit also deleted the old header-BIN OTA packer and its static test so the formal tree only carries the CIMC `0x0501/0x0502/0x0503` workflow.
+
+### Main Changes
+
+| 项目 | 内容 |
+|---|---|
+| 目标 | 按正式赛题要求删除 App 调试输出链和旧头部 OTA 工具残留 |
+| 提交 | 757aa3f refactor(cimc): remove formal debug output |
+| 代码裁剪 | 删除 app_debug_usart_putc、fputc、__io_putchar、my_printf、DEBUG_USART、CIMC_DEBUG_LOG_ENABLE、启动 BOOT 日志、PT100/GD30 调试日志 |
+| 保留项 | 保留 ARMCLANG no-semihosting 所需 _sys_open/_sys_write/_sys_read/_sys_exit/_ttywrch 空桩，输出直接丢弃且不访问 USART1/RS485 |
+| 旧工具删除 | 删除 tools/pack_ota_image.c、tools/pack_ota_image.exe、tools/test_header_bin_ota_static.py |
+| 文档同步 | 更新正式无日志、旧头部 BIN OTA 删除、静态裁剪契约相关仓库文档和 .trellis/spec |
+| 验证 | python tools/test_static_optimizations.py；App Keil build 0 Error(s), 0 Warning(s)；Bootloader Keil build 0 Error(s), 0 Warning(s)；Project.bin 24904 bytes；git diff --check 通过；旧串口/调试/旧 OTA 工程项检索无命中 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `757aa3f` | (see git log) |
+
+### Testing
+
+- [OK] `python tools/test_static_optimizations.py`
+- [OK] App Keil build: `project/output/Project.build_log.htm` reports `0 Error(s), 0 Warning(s)`
+- [OK] Bootloader Keil build: `project/Objects/2026706296.build_log.htm` reports `0 Error(s), 0 Warning(s)`
+- [OK] `project/output/Project.bin` exists and is 24904 bytes
+- [OK] `git diff --check`
+- [OK] Removed UART/debug/old OTA source and Keil-entry searches returned no formal-path matches
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
