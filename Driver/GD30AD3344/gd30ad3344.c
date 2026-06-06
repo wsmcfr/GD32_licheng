@@ -353,7 +353,6 @@ void GD30AD3344_Init(void)
     GD30AD3344_InitStruct.RESERVED   = 1;        //保留:写的时候写1，读的时候返回0或1 
 
     (void)prv_gd30ad3344_apply_config(&GD30AD3344_InitStruct);
-    my_printf(DEBUG_USART, "0x%4X", GD30AD3344_InitStruct_Value);
 }
 
 /*

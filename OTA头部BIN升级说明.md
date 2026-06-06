@@ -8,7 +8,8 @@
 |---|---|
 | `Project_ota.bin` | 不再生成、不再发送 |
 | 64 字节 OTA 头部 | 不再解析 |
-| `tools/pack_ota_image.exe` | 已从 Keil After Build 移除 |
+| `tools/pack_ota_image.c/.exe` | 已从正式仓库删除 |
+| `tools/test_header_bin_ota_static.py` | 已删除；旧头部 BIN 方案不再作为回归目标 |
 | App 侧 `uart_ota_app` 裸流接收 | 已从 Keil 编译项移除 |
 | `Protocol/ota_image_protocol` | 已从 Keil 编译项移除 |
 
@@ -34,4 +35,4 @@
 | `project/output/Project.bin` | 原始 App 镜像，可作为生成赛题 bin 的 payload 来源 |
 | `project/output/Project_ota.bin` | 旧方案文件，正式版不再需要 |
 
-正式版构建只需要确认 `Project.bin` 存在，不要求 `Project_ota.bin` 存在。
+正式版构建只需要确认 `Project.bin` 存在，不要求 `Project_ota.bin` 存在，也不再使用旧打包工具生成它。

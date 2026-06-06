@@ -35,7 +35,6 @@ If logic is intended to run every few milliseconds, register it in `scheduler_ta
 Prefer `vsnprintf()` as used by:
 
 - `oled_printf()`
-- `my_printf()`
 
 ---
 

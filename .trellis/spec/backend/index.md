@@ -25,8 +25,8 @@ It maps to hardware-near firmware code:
 | Backend | Drivers, interrupts, storage, peripheral initialization, low-level resource management |
 | API | Public C functions declared in module headers |
 | Database | Persistent storage; formal CIMC build currently uses internal Flash parameter area, not SMARTFS |
-| Logging | Debug output through `my_printf()` or `printf` retargeting; formal builds drop logs by default |
-| Error response | Return code, contest error frame, debug log, assert trap, or fail-stop loop |
+| Logging | Formal App has no debug output API; C-library retarget stubs directly discard output |
+| Error response | Return code, contest error frame, assert trap, or fail-stop loop |
 
 ---
 

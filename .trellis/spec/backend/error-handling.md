@@ -10,8 +10,8 @@ This project does not use exceptions or a centralized error framework.
 Error handling is done with a small set of concrete mechanisms:
 
 - **fatal CPU faults**: enter an infinite loop
-- **assertion failures**: print a debug message, then stop
-- **library or driver failures**: check the return code immediately, log it, and usually return from the demo path
+- **assertion failures**: stop in a fail-stop loop
+- **library or driver failures**: check the return code immediately and return from the current path with invalid-state flags or a contest error frame
 - **ISR handoff validation**: reject invalid lengths before copying shared buffers
 
 ---
@@ -21,7 +21,7 @@ Error handling is done with a small set of concrete mechanisms:
 | Error Surface | Where It Appears | Handling Style |
 |---------------|------------------|----------------|
 | CPU fault handlers | `User/gd32f4xx_it.c` | Infinite loop for fail-stop debugging |
-| Assertion backend | `User/main.c` retarget/assert support | UART log + infinite loop |
+| Assertion backend | `User/main.c` retarget/assert support | No UART output; fail-stop loop only |
 | Bootloader handoff status | `bootloader_port_status_t` | Send contest error frame or stay in App |
 | Internal Flash / FMC status | `fmc_state_enum` or wrapper status | Abort destructive operation and preserve current App when possible |
 | GD30AD3344 sampling | `GD30AD3344_AD_Read(..., &out_voltage_v)` returns `0/-1`; `GD30AD3344_GetLastError()` exposes the last DMA/parameter error | Do not use the output value when the read failed |
@@ -36,16 +36,6 @@ void HardFault_Handler(void)
     }
 }
 ```
-
-Example assert behavior:
-
-```c
-my_printf(DEBUG_USART, "ASSERT: %s, file: %s, line: %d\r\n", ...);
-while (1) {
-}
-```
-
----
 
 ## Error Handling Patterns
 
@@ -70,8 +60,6 @@ Example GD30AD3344 sampling behavior:
 if (0 != GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_voltage_v)) {
     s_pt100_latest.sample_ready = 0U;
     s_pt100_latest.range_valid = 0U;
-    my_printf(DEBUG_USART, "PT100: sample failed err=%u\r\n",
-              (unsigned int)GD30AD3344_GetLastError());
     return;
 }
 ```
@@ -135,10 +123,11 @@ fails. Send a contest error frame and remain in App.
 Always validate the DMA-derived length before `memcpy()`.
 `User/gd32f4xx_it.c` is the reference implementation.
 
-### Logging from the wrong place
+### Reintroducing debug output
 
-Do not add verbose logging inside hot ISR paths.
-Capture data in the ISR and log from the scheduled task instead.
+Do not add `my_printf`, `DEBUG_USART`, boot-progress strings, or PT100 diagnostic
+text back to the formal App path. Errors should be reflected through return
+codes, validity flags, or contest protocol error frames.
 
 ### Using fail-stop loops for recoverable demo failures
 

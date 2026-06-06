@@ -25,22 +25,6 @@ __asm(".global __use_no_semihosting\n");
 
 /*
  * 函数作用：
- *   处理 C 库 retarget 的单字符输出。
- * 参数说明：
- *   ch：待输出字符，正式版直接丢弃。
- * 返回值说明：
- *   无返回值。
- * 说明：
- *   USART0 已按正式版要求删除。printf/my_printf 调试输出默认不能落到 USART1/RS485，
- *   否则会污染赛题协议帧，因此这里保留 retarget 桩但不访问任何串口寄存器。
- */
-static void app_debug_usart_putc(uint8_t ch)
-{
-    (void)ch;
-}
-
-/*
- * 函数作用：
  *   判断 Arm C 库传入的文件名是否为标准流名称。
  * 主要流程：
  *   通过与 C 库暴露的 __stdin_name / __stdout_name / __stderr_name 比较，
@@ -119,18 +103,17 @@ int _sys_close(FILEHANDLE fh)
  */
 int _sys_write(FILEHANDLE fh, const unsigned char *buf, unsigned len, int mode)
 {
-    unsigned i;
-
     (void)mode;
+    (void)buf;
 
     if((fh != APP_STDOUT_HANDLE) && (fh != APP_STDERR_HANDLE)) {
         return (int)len;
     }
 
-    for(i = 0U; i < len; i++) {
-        app_debug_usart_putc(buf[i]);
-    }
-
+    /*
+     * 正式版不绑定任何调试串口。stdout/stderr 数据在这里直接丢弃，
+     * 既满足 C 库 retarget 合约，又避免向 USART1/RS485 写入非赛题协议文本。
+     */
     return 0;
 }
 
@@ -261,7 +244,7 @@ char *_sys_command_string(char *cmd, int len)
  */
 void _ttywrch(int ch)
 {
-    app_debug_usart_putc((uint8_t)ch);
+    (void)ch;
 }
 
 /*
@@ -297,35 +280,3 @@ int main(void)
         scheduler_run();
     }
 }
-
-#ifdef GD_ECLIPSE_GCC
-/*
- * 函数作用：
- *   在 Eclipse GCC 环境下处理 C 库 printf 的单字符输出。
- * 参数说明：
- *   ch：待输出的单个字符，正式版直接丢弃。
- * 返回值说明：
- *   返回已经写入的字符值。
- */
-int __io_putchar(int ch)
-{
-    app_debug_usart_putc((uint8_t)ch);
-    return ch;
-}
-#else
-/*
- * 函数作用：
- *   处理 C 库 printf/fputc 的单字符输出。
- * 参数说明：
- *   ch：待输出的单个字符，正式版直接丢弃。
- *   f：C 标准库传入的文件流指针，本工程不区分具体流。
- * 返回值说明：
- *   返回已经写入的字符值。
- */
-int fputc(int ch, FILE *f)
-{
-    (void)f;
-    app_debug_usart_putc((uint8_t)ch);
-    return ch;
-}
-#endif /* GD_ECLIPSE_GCC */

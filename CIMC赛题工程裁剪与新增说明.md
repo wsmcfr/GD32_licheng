@@ -40,7 +40,7 @@
 |---|---|---|---|
 | USART0 SMARTFS 文本命令壳 | `Function/usart_app.c`、`Function/usart_app.h` | 已改写为 USART1/RS485 赛题协议入口 | 赛题不使用 `help/gettime/settime/ls/cat/write/mkdir/rm/df` 文本命令；评分协议必须走 USART1/RS485 的 ASCII 十六进制帧 |
 | USART0 DMA 接收 | `Driver/USART/bsp_usart.c`、`User/gd32f4xx_it.c` | 正式版删除或用宏关闭 | USART0 不是评分通道，接收中断和 DMA 会增加复杂度 |
-| USART0 调试输出 | `DEBUG_USART`、`my_printf()` 调用点 | USART0 已删除；`my_printf()` 默认只格式化后丢弃，不输出到任何串口 | 避免非协议文本污染 USART1/RS485 评分链路 |
+| USART0 调试输出 | `DEBUG_USART`、`my_printf()` 调用点 | 已删除；App 不再提供调试输出 API，C 库输出桩直接丢弃 | 避免非协议文本污染 USART1/RS485 评分链路 |
 | USART5 | `Driver/USART/bsp_usart.*` 中 USART5 宏、缓冲区、初始化函数 | 删除 | 赛题没有 USART5 需求 |
 | USART1 当前 OTA 裸流接收 | `Function/uart_ota_app.c`、`User/gd32f4xx_it.c` | 已从 App 编译项移除，USART1 改为比赛协议帧接收 | 当前逻辑只识别自定义 `Project_ota.bin` 裸流，不符合 `A5B6...B6A5` 协议 |
 
@@ -49,7 +49,7 @@
 | 串口 | 用途 | 默认波特率 | 是否必须 |
 |---|---|---:|---|
 | USART1 + RS485 | 上位机自动评分、升级、命令收发 | 19200 | 必须 |
-| USART0 | 已从正式业务删除，调试日志默认不输出 | 无 | 不参与评分 |
+| USART0 | 已从正式业务删除，无调试输出 API | 无 | 不参与评分 |
 | USART5 | 无 | 无 | 删除 |
 
 ### 2.2 OTA 和协议相关
@@ -58,7 +58,7 @@
 |---|---|---|---|
 | 自定义 OTA 应用层 | `Function/uart_ota_app.c`、`Function/uart_ota_app.h` | 已从 Keil 编译项移除 | 赛题升级流程是 `0x0501/0x0502/0x0503`，不是 App 启动后发 `OTA485: ready` 再裸发自定义包 |
 | 自定义 OTA 镜像协议 | `Protocol/ota_image_protocol.c`、`Protocol/ota_image_protocol.h` | 删除 | 当前魔术字和 64 字节头部不符合大赛 bin 格式 |
-| OTA 打包工具 | `tools/pack_ota_image.c`、`tools/pack_ota_image.exe` | 从正式构建流程移除 | 大赛下发固件包，不需要本工程自定义头部包 |
+| OTA 打包工具 | `tools/pack_ota_image.c`、`tools/pack_ota_image.exe`、`tools/test_header_bin_ota_static.py` | 已从正式仓库删除 | 大赛下发固件包，不需要本工程自定义头部包，也不再保留旧方案静态测试 |
 | Keil After Build 打包命令 | `project/2026706296.uvprojx` | 删除 `pack_ota_image.exe` 调用 | 避免生成和提交误导性 `Project_ota.bin` |
 
 当前新增的比赛协议链路：
@@ -143,7 +143,7 @@ Bootloader 区显示规则：
 | ADC0 双通道 DMA | `Driver/ANALOG/bsp_analog.*` | 保留 | CH0 电位器、CH1 DAC 回读需要 |
 | DAC 初始化 | `Driver/ANALOG/bsp_analog.*` | 保留 | `0x0301` 设置 DAC 输出需要 |
 | PT100 采样换算 | `Function/gd30ad3344_pt100_app.*`、`Driver/GD30AD3344/*` | 保留并接入协议查询 | CH2 外部 ADC/PT100 必须测 |
-| PT100 调试日志 | `gd30ad3344_pt100_task()` 中 `my_printf()` | 正式版关闭 | 自动评分不需要串口调试日志 |
+| PT100 调试日志 | `gd30ad3344_pt100_task()` 中调试文本 | 已删除 | 自动评分不需要串口调试日志 |
 
 正式版应新增统一采样接口：
 
@@ -294,7 +294,7 @@ Bootloader 当前已有的搬运和校验逻辑可以继续复用：
 | Protocol | `Protocol/boot_cimc_protocol.c` | 新增并编译，用于 0x0502/0x0503 |
 | Library | USB 相关库 | 未编译可从提交包删除 |
 | Library | FatFS 相关库 | 未编译可从提交包删除 |
-| USART | USART0 调试输出 | 已删除；正式版只初始化 USART1/RS485，`printf` 默认丢弃 |
+| USART | USART0 调试输出 | 已删除；正式版只初始化 USART1/RS485，C 库输出桩直接丢弃 |
 
 ## 7. 推荐最终 App 任务表
 

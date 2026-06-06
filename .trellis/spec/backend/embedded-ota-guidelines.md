@@ -20,7 +20,7 @@ Use this guideline whenever changing:
 | Flash partition constants | App/Bootloader parameter layout, App run/backup/download addresses, CRC logic |
 | Keil after-build | App `project/2026706296.uvprojx` BIN output settings |
 
-The old App-side header-BIN OTA is not the active contract. Do not reintroduce `Project_ota.bin`, `Function/uart_ota_app.c`, `Protocol/ota_image_protocol.c`, or `tools/pack_ota_image.exe` into the formal Keil build unless the contest protocol is intentionally replaced again.
+The old App-side header-BIN OTA is not the active contract. Do not reintroduce `Project_ota.bin`, `Function/uart_ota_app.c`, `Protocol/ota_image_protocol.c`, `tools/pack_ota_image.c`, `tools/pack_ota_image.exe`, or `tools/test_header_bin_ota_static.py` into the formal tree unless the contest protocol is intentionally replaced again.
 
 ### 2. Signatures
 
@@ -124,7 +124,7 @@ Required assertions:
 | Bootloader build | Bootloader build log reports `0 Error(s), 0 Warning(s)` |
 | Raw App output | `project/output/Project.bin` exists and is non-empty |
 | No old formal OTA | App `*.uvprojx` does not compile `uart_ota_app.c` or `ota_image_protocol.c` |
-| No old packer | App `AfterMake` does not run `pack_ota_image.exe` |
+| No old packer | App `AfterMake` does not run `pack_ota_image.exe`, and the formal tree does not keep `tools/pack_ota_image.c/.exe` or the old header-BIN static test |
 | Baud contract | App and Bootloader USART1/RS485 defaults are `19200` |
 
 ### 9. Operator Procedure
@@ -177,7 +177,7 @@ Use this scenario whenever the device boots through Bootloader and does not reac
 | App vector table | App image starts at `0x08011000`, first word is SRAM MSP, second word is Thumb Reset_Handler inside App flash |
 | Bootloader cleanup | Disable SysTick, clear pending interrupts, set `SCB->VTOR`, set MSP, then branch to App Reset_Handler |
 | App runtime | ARMCLANG builds must provide `__use_no_semihosting` |
-| Retarget stubs | `User/main.c` owns `_sys_open`, `_sys_write`, `_sys_read`, `_sys_exit`, `_ttywrch`, and `fputc` |
+| Retarget stubs | `User/main.c` owns `_sys_open`, `_sys_write`, `_sys_read`, `_sys_exit`, and `_ttywrch` |
 | Early output | Formal firmware drops `printf()` output by default so USART1/RS485 is not polluted |
 
 Validation:

@@ -52,15 +52,6 @@
     (sizeof(s_pt100_temperature_table) / sizeof(s_pt100_temperature_table[0]))
 
 /*
- * 宏作用：
- *   定义 PT100 调试日志最小输出间隔，单位毫秒。
- * 说明：
- *   采样仍保持 200ms 周期，但调试日志降到 1s 一次；正式版 my_printf 默认丢弃日志，
- *   避免任何非协议文本污染 USART1/RS485 评分链路。
- */
-#define PT100_DEBUG_LOG_PERIOD_MS      1000U
-
-/*
  * 结构体作用：
  *   描述测试板一个已知电阻点和它对应的标称温度。
  * 成员说明：
@@ -110,14 +101,6 @@ static pt100_measurement_t s_pt100_latest;
  *   丢弃一次，避免上电初始化过程中的旧数据直接参与温度显示。
  */
 static uint8_t s_pt100_discard_next_sample = 1U;
-
-/*
- * 变量作用：
- *   记录上一次输出 PT100 调试日志的 32 位毫秒 tick。
- * 说明：
- *   使用 unsigned 差值判断间隔，天然兼容 32 位毫秒 tick 回绕。
- */
-static uint32_t s_pt100_last_log_ms;
 
 /*
  * 函数作用：
@@ -200,31 +183,6 @@ static float prv_pt100_clamp_temperature(float temperature_c, uint8_t *range_val
 
 /*
  * 函数作用：
- *   判断本轮 PT100 采样是否允许输出串口调试日志。
- * 主要流程：
- *   1. 读取当前 32 位毫秒 tick。
- *   2. 使用 unsigned 差值判断是否达到 PT100_DEBUG_LOG_PERIOD_MS。
- *   3. 到期后更新日志基线，未到期则让调用方跳过本轮日志。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   1：允许本轮输出 PT100 调试日志。
- *   0：距离上次日志不足节流周期，本轮不输出。
- */
-static uint8_t prv_pt100_should_log(void)
-{
-    uint32_t now_ms = timebase_get_ms32();
-
-    if((uint32_t)(now_ms - s_pt100_last_log_ms) < PT100_DEBUG_LOG_PERIOD_MS) {
-        return 0U;
-    }
-
-    s_pt100_last_log_ms = now_ms;
-    return 1U;
-}
-
-/*
- * 函数作用：
  *   初始化 GD30AD3344 PT100 应用层缓存和首帧丢弃状态。
  * 参数说明：
  *   无参数。
@@ -260,11 +218,6 @@ void gd30ad3344_pt100_task(void)
          */
         s_pt100_latest.sample_ready = 0U;
         s_pt100_latest.range_valid = 0U;
-        if(prv_pt100_should_log()) {
-            my_printf(DEBUG_USART,
-                      "PT100: sample failed err=%u\r\n",
-                      (unsigned int)GD30AD3344_GetLastError());
-        }
         return;
     }
 
@@ -291,19 +244,6 @@ void gd30ad3344_pt100_task(void)
     s_pt100_latest.range_valid = range_valid;
     s_pt100_latest.sample_ready = 1U;
 
-    /*
-     * 任务末尾保留一条可关闭调试日志，便于现场临时观察商业版模块标定公式的输出效果；
-     * 正式评测默认不输出，valid=0 表示温度已经被限制到应用边界。
-     */
-    if(prv_pt100_should_log()) {
-        my_printf(DEBUG_USART,
-                  "PT100: Vout=%.4fV signal=%.4fV R=%.2fohm T=%.2fC valid=%u\r\n",
-                  s_pt100_latest.adc_voltage_v,
-                  s_pt100_latest.pt100_voltage_v,
-                  s_pt100_latest.resistance_ohm,
-                  s_pt100_latest.temperature_c,
-                  s_pt100_latest.range_valid);
-    }
 }
 
 /*

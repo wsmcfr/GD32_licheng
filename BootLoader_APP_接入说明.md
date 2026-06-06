@@ -57,7 +57,7 @@
 | `Project_ota.bin` 64 字节头部包 | 已废弃，不再生成，不再发送 |
 | `Function/uart_ota_app.c/.h` | 已从源码树和 Keil 编译项移除 |
 | `Protocol/ota_image_protocol.c/.h` | 已从源码树和 Keil 编译项移除 |
-| USART0 调试 Shell | 已从正式业务删除，`printf/my_printf` 默认不输出 |
+| USART0 调试 Shell | 已从正式业务删除；App 不再提供 `my_printf` 调试输出，C 库输出桩直接丢弃 |
 | SMARTFS/littlefs/GD25QXX 文件系统 | 已从源码树和正式 Keil 编译链路移除 |
 | 按键和低功耗按键演示 | 已从源码树和正式 Keil 编译链路移除 |
 

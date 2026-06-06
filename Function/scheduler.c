@@ -104,62 +104,41 @@ void system_init(void)
 		 * 3. 全局中断状态已经从 BootLoader 关闭态恢复。
 		 */
 		boot_app_handoff_init();
-		/*
-		 * 正式版只初始化 USART1/RS485。USART0 调试口和 SMARTFS Shell 已删除，
-		 * my_printf() 默认丢弃日志，避免启动阶段向评分串口插入非协议文本。
-		 */
+		/* 正式版只初始化 USART1/RS485。USART0 调试口和 SMARTFS Shell 已删除。 */
 		bsp_usart_init();
-		my_printf(DEBUG_USART, "BOOT: handoff start\r\n");
 		rcu_periph_clock_enable(RCU_PMU);
 		if(SET == pmu_flag_get(PMU_FLAG_STANDBY)) {
 			/*
 			 * 旧按键 Standby 演示已从正式任务中删除。保留 PMU 标志清理，
 			 * 避免曾经进入待机后的复位标志影响后续启动判断。
 			 */
-			my_printf(DEBUG_USART, "BOOT: wake from standby\r\n");
 			pmu_flag_clear(PMU_FLAG_RESET_STANDBY);
 			pmu_flag_clear(PMU_FLAG_RESET_WAKEUP);
 		}
 
 		systick_config();
-		my_printf(DEBUG_USART, "BOOT: systick/timebase done\r\n");
 
 		/* 上电后保留短延时，给下载器和调试器重新连接 SWIO 留出窗口。 */
 		delay_ms(200);
-		my_printf(DEBUG_USART, "BOOT: delay done\r\n");
 
 	#ifdef __FIRMWARE_VERSION_DEFINE
 		fw_ver = gd32f4xx_firmware_version_get();
 	#endif /* __FIRMWARE_VERSION_DEFINE */
 
 		bsp_led_init();
-		my_printf(DEBUG_USART, "BOOT: led done\r\n");
 		bsp_oled_init();
-		my_printf(DEBUG_USART, "BOOT: oled bus done\r\n");
 
-		my_printf(DEBUG_USART, "BOOT: start\r\n");
-
-		my_printf(DEBUG_USART, "BOOT: gd30 init...\r\n");
 		bsp_gd30ad3344_init();
 		gd30ad3344_pt100_app_init();
-		my_printf(DEBUG_USART, "BOOT: gd30 done\r\n");
 
-		my_printf(DEBUG_USART, "BOOT: adc init...\r\n");
 		bsp_adc_init();
-		my_printf(DEBUG_USART, "BOOT: adc done\r\n");
 
-		my_printf(DEBUG_USART, "BOOT: dac init...\r\n");
 		bsp_dac_init();
-		my_printf(DEBUG_USART, "BOOT: dac done\r\n");
 
-		my_printf(DEBUG_USART, "BOOT: rtc init...\r\n");
 		bsp_rtc_init();
-		my_printf(DEBUG_USART, "BOOT: rtc done\r\n");
 
-		my_printf(DEBUG_USART, "BOOT: oled init...\r\n");
 		OLED_Init();
 		oled_app_reset_cache();
-		my_printf(DEBUG_USART, "BOOT: oled done\r\n");
 
 		scheduler_init();
 }

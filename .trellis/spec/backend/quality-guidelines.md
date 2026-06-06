@@ -28,7 +28,7 @@ The formal Keil target must not compile these legacy entries:
 | Button low-power demo | `Driver/POWER/bsp_power.c` |
 | Old App-side OTA | `Function/uart_ota_app.c`, `Protocol/ota_image_protocol.c` |
 | External file systems | `Driver/GD25QXX/smartfs_port.c`, `lfs.c`, `lfs_util.c` |
-| Old header BIN packer | `tools/pack_ota_image.exe`, `Project_ota.bin` after-build flow |
+| Old header BIN packer | `tools/pack_ota_image.c`, `tools/pack_ota_image.exe`, `tools/test_header_bin_ota_static.py`, `Project_ota.bin` after-build flow |
 
 The formal source tree physically removes these legacy modules. If any of them
 reappears, treat it as a regression unless a new requirement explicitly restores
@@ -45,7 +45,7 @@ that capability.
 | CRC | CRC-16-Modbus over binary bytes from frame header through payload, sent big-endian |
 | ISR work | `USART1_IRQHandler()` only captures length, copies bounded bytes, sets `rx_flag`, and re-arms DMA |
 | Protocol work | `uart_task()` calls `cimc_protocol_process_ascii_frame()` in task context |
-| Logging | `my_printf()` and retarget output drop bytes by default; do not pollute RS485 |
+| Logging | No App debug output API; retarget stubs directly discard bytes and never touch USART1/RS485 |
 | OLED | Formal App display is two lines: team ID and `AutoSample` / `IDLE` |
 | LED | Formal App uses two LEDs: LED1 system blink, LED2 auto-sample status |
 | DAC | `0x0301` exclusively controls DAC0 OUT0; ADC periodic logic must not overwrite it |

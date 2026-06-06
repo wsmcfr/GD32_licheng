@@ -26,15 +26,6 @@ extern "C" {
 
 /*
  * 宏作用：
- *   兼容旧代码中 my_printf(DEBUG_USART, ...) 的调用签名。
- * 说明：
- *   USART0 已删除；正式版 my_printf 默认不发送日志。若临时启用日志，该宏只会把日志发到
- *   USART1/RS485，调试完成后必须关闭 CIMC_DEBUG_LOG_ENABLE，避免污染评分协议。
- */
-#define DEBUG_USART                    CIMC_RS485_USART
-
-/*
- * 宏作用：
  *   定义 USART1/RS485 DMA 接收缓冲区长度。
  * 说明：
  *   比赛协议以 ASCII 十六进制字符串收发，单帧长度远小于 512 字节；
