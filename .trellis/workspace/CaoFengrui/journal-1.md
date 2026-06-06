@@ -739,7 +739,7 @@ Completed the firmware optimization pass requested for OLED, RS485/USART1 OTA re
 
 ### Summary
 
-(Add summary)
+重新读取 CIMC 初赛题目后，新增正式开发顺序与自动测评对应说明文档；本地已提交文档变更，并记录 GitHub 推送因 HTTPS 连接超时/重置暂未完成。
 
 ### Main Changes
 
@@ -766,7 +766,8 @@ Completed the firmware optimization pass requested for OLED, RS485/USART1 OTA re
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python tools\test_static_optimizations.py`
+- [OK] `git diff --check`
 
 ### Status
 
@@ -1803,6 +1804,52 @@ Formal App debug output was removed instead of being stubbed behind a silent hel
 - [OK] `project/output/Project.bin` exists and is 24904 bytes
 - [OK] `git diff --check`
 - [OK] Removed UART/debug/old OTA source and Keil-entry searches returned no formal-path matches
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 39: 记录 CIMC 开发顺序文档与推送状态
+
+**Date**: 2026-06-06
+**Task**: 记录 CIMC 开发顺序文档与推送状态
+**Branch**: `feature/streaming-raw-ota`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 记录 |
+|------|------|
+| 本次目标 | 重新读取 2026 年 CIMC 工业嵌入式系统开发初赛 PDF 后，补充正式开发顺序与自动测评对应说明，并按用户要求尝试上传 GitHub。 |
+| 新增文档 | `CIMC赛题开发顺序与自动测评对应说明.md` |
+| 关键结论 | 开发顺序不建议机械按自动测评 A~N 编写，应先完成协议底座、参数持久化、系统命令、RTC、采样/DAC/变比、阈值告警、自动上报、睡眠、异常帧，最后做 Bootloader；最终验收再按自动测评顺序逐项跑。 |
+| 验证结果 | `python tools\test_static_optimizations.py` 通过；`git diff --check` 通过。 |
+| GitHub 状态 | 文档提交已生成，本地分支 `feature/streaming-raw-ota` 相对远端 ahead；推送时 GitHub HTTPS 连接多次超时或重置，需网络恢复后继续推送。 |
+
+**涉及提交**：
+- `69d82c0 docs(cimc): add development order guide`
+
+**后续建议**：
+- 网络恢复后执行 `git push`，将文档提交和本会话记录提交一起上传到 `origin/feature/streaming-raw-ota`。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `69d82c0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
 
 ### Status
 
