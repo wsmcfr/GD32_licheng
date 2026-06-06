@@ -1721,3 +1721,46 @@ Updated GD30AD3344 PT100 conversion to use firmware-Vout two-point resistance ca
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: CIMC formal contest firmware cleanup
+
+**Date**: 2026-06-06
+**Task**: CIMC formal contest firmware cleanup
+**Branch**: `feature/streaming-raw-ota`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 记录 |
+|---|---|
+| 目标 | 按 2026 CIMC 工业嵌入式初赛题裁剪正式 App 工程，并同步正式 USART1/RS485 协议、DAC 控制和 OTA 说明 |
+| 资源裁剪 | 物理删除按键、低功耗按键演示、USART 旧 OTA、外部 GD25QXX/SMARTFS/littlefs 文件系统源码；正式版只保留 LED1/LED2、USART1/RS485、双行 OLED、内部 Flash 参数区 |
+| 协议改造 | App 侧新增 `Protocol/cimc_protocol.*` 和 `Function/cimc_status.*`；USART1/RS485 默认 `19200 8N1`；DAC `0x0301` 直接控制 DAC0 OUT0，ADC 不再覆盖 DAC |
+| OTA 口径 | 旧 `Project_ota.bin`/`pack_ota_image`/App 裸流 OTA 废弃；文档改为 App `0x0501` 复位进 Bootloader，Bootloader 处理 `0x0502/0x0503` 和 `5AA5C33C` 大赛 bin 魔术字 |
+| 文档同步 | 更新 `CIMC赛题工程裁剪与新增说明.md`、`工程文档.md`、BootLoader/Flash/OTA 说明，以及 `.trellis/spec` 中正式版约束 |
+| 验证 | App Keil 构建 `0 Error(s), 0 Warning(s)`；Bootloader Keil 构建 `0 Error(s), 0 Warning(s)`；`git diff --check` 无空白错误，仅 LF/CRLF 提示 |
+
+**注意**: `D:\GD32\2026706296_bootloader` 当前不是 Git 仓库，本次 GitHub 推送只覆盖 `D:\GD32\2026706296` 仓库内容。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f2cb083` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
