@@ -30,11 +30,13 @@ typedef struct {
  */
 static task_t scheduler_task[] =
 {
-     {led_task,  20,    0}
-    ,{adc_task,  50,  0}
-    ,{gd30ad3344_pt100_task, 200, 0}
-    ,{oled_task, 100,   0}
-    ,{uart_task, 5,    0}
+     {led_task,                      20,   0}
+    ,{adc_task,                      50,   0}
+    ,{gd30ad3344_pt100_task,         200,  0}
+    ,{oled_task,                     100,  0}
+    ,{uart_task,                     5,    0}
+    ,{rtc_task,                      1000, 0}  /* 每秒更新 RTC 共享缓存 */
+    ,{cimc_protocol_auto_report_tick, 100,  0}  /* 自动上报心跳，内部自管理间隔 */
 };
 
 /*
@@ -104,8 +106,27 @@ void system_init(void)
 		 * 3. 全局中断状态已经从 BootLoader 关闭态恢复。
 		 */
 		boot_app_handoff_init();
-		/* 正式版只初始化 USART1/RS485。USART0 调试口和 SMARTFS Shell 已删除。 */
+		/* 正式版只初始化 USART1/RS485，起始波特率固定 19200，后续根据 Flash 参数切换。 */
 		bsp_usart_init();
+
+		/*
+		 * 从 Flash user_config 区加载持久化参数（设备 ID、波特率、变比、阈值等）。
+		 * 必须在任何需要参数的模块初始化前调用，尤其是 USART 波特率切换和心跳发送。
+		 */
+		cimc_params_load();
+		cimc_alarm_init();
+		cimc_alarm_load();  /* 从 Flash 恢复历史告警记录，必须在 init 之后调用 */
+
+		/*
+		 * 若 Flash 中保存的波特率不是出厂默认值（19200），则原地切换 USART1 波特率。
+		 * 典型场景：上位机通过 0x01A2 切到 115200 并触发重启后，下次上电在此处恢复。
+		 */
+		{
+		    uint32_t saved_baud = cimc_params_get_baud_rate();
+		    if(saved_baud != CIMC_RS485_BAUDRATE) {
+		        bsp_usart_change_baudrate(saved_baud);
+		    }
+		}
 		rcu_periph_clock_enable(RCU_PMU);
 		if(SET == pmu_flag_get(PMU_FLAG_STANDBY)) {
 			/*
@@ -141,6 +162,13 @@ void system_init(void)
 		oled_app_reset_cache();
 
 		scheduler_init();
+
+		/*
+		 * 上电/重启后主动发送心跳帧（帧类型 0x05，命令字 0x8888）。
+		 * 自动测评 A-02 发送重启命令后，A-03 要求在 15s 内收到心跳且 ID 一致。
+		 * 必须在 scheduler_init() 后调用，确保此时 USART1/RS485 已完全就绪。
+		 */
+		cimc_protocol_send_heartbeat();
 }
 /*
  * 函数作用：

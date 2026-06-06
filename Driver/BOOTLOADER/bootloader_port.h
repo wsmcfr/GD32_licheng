@@ -38,6 +38,8 @@ extern "C" {
 #define BOOTLOADER_PORT_APP_MAX_SIZE       0x00020000UL
 #define BOOTLOADER_PORT_MAGIC_WORD         0xC0DEF47AUL
 #define BOOTLOADER_PORT_TAIL_MAGIC         0xA5A5C3C3UL
+/* user_config 段容量，App 参数存储区不超过此值。 */
+#define BOOTLOADER_PORT_USER_CONFIG_SIZE   512U
 
 /*
  * 枚举作用：
@@ -174,6 +176,33 @@ bootloader_port_status_t bootloader_port_request_bootloader_upgrade(void);
  *   无返回值；正常情况下不会返回。
  */
 void bootloader_port_request_upgrade_reset(void);
+
+/*
+ * 函数作用：
+ *   从参数区 user_config 段读取指定字节数到 RAM 缓冲区。
+ *   Flash 为内存映射，读取无需解锁。
+ * 参数说明：
+ *   buf：接收数据的 RAM 缓冲区。
+ *   size：读取字节数，不超过 BOOTLOADER_PORT_USER_CONFIG_SIZE。
+ * 返回值说明：
+ *   BOOTLOADER_PORT_STATUS_OK：读取成功。
+ *   BOOTLOADER_PORT_STATUS_BAD_PARAM：buf 为空或 size 越界。
+ */
+bootloader_port_status_t bootloader_port_read_user_config(uint8_t *buf, uint16_t size);
+
+/*
+ * 函数作用：
+ *   将 RAM 缓冲区中指定字节数写入参数区 user_config 段。
+ *   内部执行整页（4KB）读-改-写，不影响参数区其他字段（如升级控制字段）。
+ * 参数说明：
+ *   buf：待写入数据的 RAM 缓冲区。
+ *   size：写入字节数，不超过 BOOTLOADER_PORT_USER_CONFIG_SIZE。
+ * 返回值说明：
+ *   BOOTLOADER_PORT_STATUS_OK：写入成功。
+ *   BOOTLOADER_PORT_STATUS_BAD_PARAM：buf 为空或 size 越界。
+ *   BOOTLOADER_PORT_STATUS_FLASH_ERROR：Flash 擦写失败。
+ */
+bootloader_port_status_t bootloader_port_write_user_config(const uint8_t *buf, uint16_t size);
 
 #ifdef __cplusplus
 }

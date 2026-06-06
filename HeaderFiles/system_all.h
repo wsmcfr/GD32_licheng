@@ -61,6 +61,9 @@
 #if !defined(SYSTEM_ALL_SKIP_UPPER_LAYERS)
 /* App 层头文件。 */
 #include "adc_app.h"
+#include "cimc_alarm.h"
+#include "cimc_params.h"
+#include "cimc_power_app.h"
 #include "cimc_status.h"
 #include "gd30ad3344_pt100_app.h"
 #include "led_app.h"

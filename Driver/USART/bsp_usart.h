@@ -109,6 +109,23 @@ void bsp_rs485_direction_receive(void);
  */
 void bsp_rs485_direction_transmit(void);
 
+/*
+ * 函数作用：
+ *   在不重新初始化 GPIO 和 DMA 通道配置的前提下，原地切换 USART1 的波特率。
+ *   用于赛题 0x01A2 命令：先回 OK，然后本函数切换波特率；
+ *   配合重启使 App 下次从 Flash 参数读到新波特率后以新速率启动。
+ * 主要流程：
+ *   1. 等待 TC 标志确认当前 TX 已完全移出移位寄存器。
+ *   2. 禁用 DMA RX 通道（避免波特率切换期间 DMA 收到乱码）。
+ *   3. 禁用 USART1，修改波特率寄存器，重新使能 USART1。
+ *   4. 清零 RX 缓冲区并重置 DMA 传输计数，重新使能 DMA。
+ * 参数说明：
+ *   baudrate：新波特率数值，例如 115200；为 0 时直接返回不做任何操作。
+ * 返回值说明：
+ *   无返回值。
+ */
+void bsp_usart_change_baudrate(uint32_t baudrate);
+
 #ifdef __cplusplus
 }
 #endif

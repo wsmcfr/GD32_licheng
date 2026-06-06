@@ -208,3 +208,46 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
 
     return length;
 }
+
+/*
+ * 函数作用：
+ *   原地切换 USART1 波特率，不重新初始化 GPIO 或 NVIC。
+ * 主要流程：
+ *   1. 等待 TC 确认当前 TX 完全结束，避免最后一帧末尾数据损坏。
+ *   2. 先关 DMA RX 通道，再关 USART1，修改波特率寄存器，重开 USART1。
+ *   3. 清零 RX 缓冲区（清除旧波特率下收到的任何乱码）并重置 DMA 传输计数。
+ *   4. 重新使能 DMA RX 通道，恢复正常接收。
+ * 参数说明：
+ *   baudrate：新波特率数值；为 0 时直接返回，不做任何操作。
+ * 返回值说明：
+ *   无返回值。
+ */
+void bsp_usart_change_baudrate(uint32_t baudrate)
+{
+    if(0U == baudrate) {
+        return;
+    }
+
+    /* 等待当前最后一帧完全移出 USART 移位寄存器，再改波特率。 */
+    (void)prv_bsp_usart_wait_flag_set(USART1, USART_FLAG_TC);
+
+    /* 先停 DMA，避免波特率过渡期间 DMA 把乱码写入接收缓冲。 */
+    dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+
+    usart_disable(USART1);
+    usart_baudrate_set(USART1, baudrate);
+    usart_enable(USART1);
+
+    /*
+     * 清零接收缓冲区，确保旧波特率下的残留字节不会被 usart_app 当作新帧解析。
+     * 然后重置 DMA CNT 寄存器（需在通道关闭状态下写入），重新使能。
+     */
+    memset(usart1_rxbuffer, 0U, sizeof(usart1_rxbuffer));
+    /*
+     * DMA 通道关闭状态下调用 dma_transfer_number_config() 重置传输计数，
+     * 恢复为满缓冲容量，避免下次 IDLE 中断误判有效长度。
+     */
+    dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL,
+                                sizeof(usart1_rxbuffer));
+    dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+}

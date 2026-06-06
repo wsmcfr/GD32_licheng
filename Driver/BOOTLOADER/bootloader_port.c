@@ -591,3 +591,86 @@ void bootloader_port_request_upgrade_reset(void)
     __set_FAULTMASK(1);
     NVIC_SystemReset();
 }
+
+/*
+ * 函数作用：
+ *   从参数区 user_config 段读取指定字节数到 RAM 缓冲区。
+ * 主要流程：
+ *   Flash 是内存映射的，可以直接按结构体字段偏移读取；无需解锁控制器。
+ * 参数说明：
+ *   buf：接收数据的 RAM 缓冲区，长度至少为 size 字节。
+ *   size：读取字节数，不超过 BOOTLOADER_PORT_USER_CONFIG_SIZE（512）。
+ * 返回值说明：
+ *   BOOTLOADER_PORT_STATUS_OK：读取成功。
+ *   BOOTLOADER_PORT_STATUS_BAD_PARAM：buf 为空或 size 越界。
+ */
+bootloader_port_status_t bootloader_port_read_user_config(uint8_t *buf, uint16_t size)
+{
+    const bootloader_port_parameter_t *flash_map;
+    uint16_t index;
+
+    if((NULL == buf) || (0U == size) || (size > BOOTLOADER_PORT_USER_CONFIG_SIZE)) {
+        return BOOTLOADER_PORT_STATUS_BAD_PARAM;
+    }
+
+    /*
+     * 直接把参数区起始地址强转为结构体指针，利用编译器计算好的字段偏移
+     * 定位到 user_config 段，无需手动计算偏移量。
+     */
+    flash_map = (const bootloader_port_parameter_t *)BOOTLOADER_PORT_PARAM_ADDR;
+    for(index = 0U; index < size; index++) {
+        buf[index] = flash_map->user_config[index];
+    }
+
+    return BOOTLOADER_PORT_STATUS_OK;
+}
+
+/*
+ * 函数作用：
+ *   将 RAM 缓冲区写入参数区 user_config 段，内部执行整页读-改-写。
+ * 主要流程：
+ *   1. 把整个 4KB 参数区读入已有的 g_bootloader_port_param_buffer。
+ *   2. 只修改其中 user_config 偏移处的 size 字节。
+ *   3. 擦除整页后把修改后的缓冲区完整回写，保留其他字段（升级控制、设备信息等）。
+ * 参数说明：
+ *   buf：待写入数据的 RAM 缓冲区，长度至少为 size 字节。
+ *   size：写入字节数，不超过 BOOTLOADER_PORT_USER_CONFIG_SIZE（512）。
+ * 返回值说明：
+ *   BOOTLOADER_PORT_STATUS_OK：写入成功。
+ *   BOOTLOADER_PORT_STATUS_BAD_PARAM：buf 为空或 size 越界。
+ *   BOOTLOADER_PORT_STATUS_FLASH_ERROR：Flash 擦写失败。
+ */
+bootloader_port_status_t bootloader_port_write_user_config(const uint8_t *buf, uint16_t size)
+{
+    uint32_t index;
+    bootloader_port_status_t status;
+    bootloader_port_parameter_t *parameter;
+
+    if((NULL == buf) || (0U == size) || (size > BOOTLOADER_PORT_USER_CONFIG_SIZE)) {
+        return BOOTLOADER_PORT_STATUS_BAD_PARAM;
+    }
+
+    /* 把整个 4KB 参数页先读到 RAM，避免回写时清除 BootLoader 升级控制字段。 */
+    for(index = 0U; index < BOOTLOADER_PORT_PARAM_SIZE; index++) {
+        g_bootloader_port_param_buffer[index] =
+            *(volatile uint8_t *)(BOOTLOADER_PORT_PARAM_ADDR + index);
+    }
+
+    /* 在 RAM 镜像中只覆盖 user_config 段，其余字段保持原值。 */
+    parameter = (bootloader_port_parameter_t *)g_bootloader_port_param_buffer;
+    for(index = 0U; index < (uint32_t)size; index++) {
+        parameter->user_config[index] = buf[index];
+    }
+
+    fmc_unlock();
+    status = prv_bootloader_port_flash_erase_pages(BOOTLOADER_PORT_PARAM_ADDR,
+                                                   BOOTLOADER_PORT_PARAM_SIZE);
+    if(BOOTLOADER_PORT_STATUS_OK == status) {
+        status = prv_bootloader_port_flash_write_bytes(BOOTLOADER_PORT_PARAM_ADDR,
+                                                       g_bootloader_port_param_buffer,
+                                                       BOOTLOADER_PORT_PARAM_SIZE);
+    }
+    fmc_lock();
+
+    return status;
+}

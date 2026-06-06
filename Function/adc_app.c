@@ -1,7 +1,14 @@
 #include "adc_app.h"
 
+#include "cimc_alarm.h"
+#include "cimc_params.h"
+#include "rtc_app.h"
+
 /* DAC 为 12 位右对齐输出，赛题 0x0301 命令内容范围是 0x0000~0x0FFF。 */
-#define ADC_APP_DAC_RAW_MAX            4095U
+#define ADC_APP_DAC_RAW_MAX    4095U
+/* ADC 参考电压：GD32F470 VDDA = 3.3V。 */
+#define ADC_APP_VREF_V         3.3f
+#define ADC_APP_FULL_SCALE     4095.0f
 
 /*
  * 变量作用：
@@ -63,7 +70,44 @@ uint16_t adc_app_get_dac_raw(void)
  *   adc_app_set_dac_raw() 设置。这里不能再把 adc_value[0] 写入 convertarr[0]，
  *   否则电位器会覆盖上位机设置的 DAC 输出，导致 G-01 DAC 联动评分失败。
  */
+/*
+ * 函数作用：
+ *   获取 CH0（电位器）原始电压浮点值（未乘变比）。
+ * 返回值：0~3.3V 范围浮点数。
+ */
+float adc_app_get_ch0_raw_float(void)
+{
+    return (float)adc_value[0] / ADC_APP_FULL_SCALE * ADC_APP_VREF_V;
+}
+
+/*
+ * 函数作用：
+ *   获取 CH1（DAC 回读）原始电压浮点值（未乘变比）。
+ * 返回值：0~3.3V 范围浮点数。
+ */
+float adc_app_get_ch1_raw_float(void)
+{
+    return (float)adc_value[1] / ADC_APP_FULL_SCALE * ADC_APP_VREF_V;
+}
+
+/*
+ * 函数作用：
+ *   周期性维护 ADC 应用层状态：计算变比后的 CH0/CH1 值并执行阈值告警检查。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
 void adc_task(void)
 {
-    /* 当前无周期性动作；保留任务入口用于后续采样、阈值和变比逻辑接入。 */
+    const cimc_params_t *p = cimc_params_get();
+    float ch0 = adc_app_get_ch0_raw_float() * p->ch0_ratio;
+    float ch1 = adc_app_get_ch1_raw_float() * p->ch1_ratio;
+
+    /*
+     * 每次采集后判断是否超过阈值，由 cimc_alarm 模块决定是否记录和主动上报。
+     * 0 = CH0（电位器），1 = CH1（DAC 回读）。
+     */
+    cimc_alarm_check(0U, p->ch0_threshold, ch0);
+    cimc_alarm_check(1U, p->ch1_threshold, ch1);
 }

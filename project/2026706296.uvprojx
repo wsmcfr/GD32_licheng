@@ -649,6 +649,21 @@
               <FileType>1</FileType>
               <FilePath>..\Function\scheduler.c</FilePath>
             </File>
+            <File>
+              <FileName>cimc_params.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Function\cimc_params.c</FilePath>
+            </File>
+            <File>
+              <FileName>cimc_alarm.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Function\cimc_alarm.c</FilePath>
+            </File>
+            <File>
+              <FileName>cimc_power_app.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Function\cimc_power_app.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

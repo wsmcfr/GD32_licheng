@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f4xx_it.h"
+#include "system_all.h"
 
 /*
  * 函数作用：
@@ -221,4 +222,20 @@ void USART1_IRQHandler(void)
 void SysTick_Handler(void)
 {
     systick_tick_inc();
+}
+
+/*
+ * 函数作用：
+ *   RTC 自动唤醒定时器中断服务函数（EXTI_22 路由）。
+ *   深度睡眠期间由 RTC 10s 定时触发，清除 EXTI 挂起标志后 WFI 自动返回。
+ *   cimc_power_sleep_10s() 在 WFI 返回后统一清除 RTC 唤醒标志和禁用定时器。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void RTC_WKUP_IRQHandler(void)
+{
+    /* 清除 EXTI_22 挂起标志，使能 WFI 正常退出深度睡眠。 */
+    exti_flag_clear(EXTI_22);
 }

@@ -176,6 +176,7 @@ Use this scenario whenever the device boots through Bootloader and does not reac
 |----------|----------|
 | App vector table | App image starts at `0x08011000`, first word is SRAM MSP, second word is Thumb Reset_Handler inside App flash |
 | Bootloader cleanup | Disable SysTick, clear pending interrupts, set `SCB->VTOR`, set MSP, then branch to App Reset_Handler |
+| Bootloader timebase | `User/systick.c` must export both `delay_ms(uint32_t)` and `delay_1ms(uint32_t)`; `delay_1ms()` delegates to `delay_ms()`, while `SysTick_Handler()` keeps decrementing the shared delay counter |
 | App runtime | ARMCLANG builds must provide `__use_no_semihosting` |
 | Retarget stubs | `User/main.c` owns `_sys_open`, `_sys_write`, `_sys_read`, `_sys_exit`, and `_ttywrch` |
 | Early output | Formal firmware drops `printf()` output by default so USART1/RS485 is not polluted |
@@ -184,6 +185,8 @@ Validation:
 
 ```powershell
 Select-String -Path 'project\Listings\Project.map' -Pattern '__use_no_semihosting|_sys_open|_sys_write|_sys_exit|_ttywrch'
+Select-String -Path 'project\Listings\2026706296.map' -Pattern 'oled\.o.*delay_ms|systick\.o\(i\.delay_1ms\).*delay_ms'
 ```
 
 If a debugger stops at `BKPT 0xAB` before `main()`, treat it as semihosting leakage, not a Bootloader address problem.
+If Bootloader linking reports `L6218E: Undefined symbol delay_ms`, treat it as a Bootloader timebase interface mismatch before changing OLED, I2C, or OTA logic.
