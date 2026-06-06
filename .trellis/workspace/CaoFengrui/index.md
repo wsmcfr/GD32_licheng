@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 39
-- **Last Active**: 2026-06-06
+- **Total Sessions**: 40
+- **Last Active**: 2026-06-07
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1859 | Active |
+| `journal-1.md` | ~1949 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 40 | 2026-06-07 | CIMC 评测结果分析与修复 | `afd95ee` | `snapshot/current-project-20260606-2308` |
 | 39 | 2026-06-06 | 记录 CIMC 开发顺序文档与推送状态 | `69d82c0` | `feature/streaming-raw-ota` |
 | 38 | 2026-06-06 | Remove formal debug output | `757aa3f` | `feature/streaming-raw-ota` |
 | 37 | 2026-06-06 | CIMC formal contest firmware cleanup | `f2cb083` | `feature/streaming-raw-ota` |

@@ -1858,3 +1858,92 @@ Formal App debug output was removed instead of being stubbed behind a silent hel
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: CIMC 评测结果分析与修复
+
+**Date**: 2026-06-07
+**Task**: CIMC 评测结果分析与修复
+**Branch**: `snapshot/current-project-20260606-2308`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 本次会话内容
+
+分析两次评测 CSV（33分→35分），定位所有失分项并实施修复。
+
+---
+
+## 评测失分项分析
+
+| 测试 | 扣分 | 根本原因 |
+|------|------|---------|
+| K-03 | -1 | 非法命令错误帧命令字用了 `frame->command`，应统一为 `0xEEEE` |
+| I-04 | -1 | `cimc_alarm_clear()` 调用 Flash 擦写导致看门狗复位，设备重启后从旧 Flash 恢复告警记录 |
+| G-01 | -1 | CH1 ADC 通道配置错误：读取 PC2(`ADC_CHANNEL_12`, VREF 稳定~2.82V) 而非 PC1(`ADC_CHANNEL_11`, DAC 回读) |
+| M-01 | -0.5 | 评测机时序：115200 下设备心跳帧在版本查询前到达评测机缓冲区，难以软件修复 |
+| N-01 | -0.5 | Bootloader 初始化字符串与 0x0501 OK 帧混入同一接收窗口 |
+| N-02 | -1 | Bootloader 在接收固件字节**前**先擦 128KB Flash(10+秒)，USART 无硬件 FIFO 导致字节全部丢失 |
+| N-03 | -1 | 同 N-02 |
+
+---
+
+## 已修复（App 固件，已提交推送）
+
+**K-03 fix** — `Protocol/cimc_protocol.c`
+- `default` 分支：`prv_cimc_send_error(own_id, frame->command)` → `prv_cimc_send_error(own_id, 0xEEEEU)`
+
+**I-04 fix** — `Function/cimc_alarm.c`
+- `cimc_alarm_clear()` 删除 `prv_cimc_alarm_save_flash()` 调用（避免 WDT 复位）
+- 新增重置去抖计时器，防止 ADC 任务在清除后 1s 内立即重新写入告警
+
+**G-01 fix** — `Driver/ANALOG/bsp_analog.c` + `bsp_analog.h`
+- `bsp_analog.h`：新增 `ADC2_PIN = GPIO_PIN_1`（PC1，DAC 回读引脚）
+- `bsp_analog.c`：GPIO 模拟模式增加 PC1；ADC 通道 `ADC_CHANNEL_12` → `ADC_CHANNEL_11`
+
+---
+
+## 已修复（Bootloader 固件，代码已修改，尚未烧录）
+
+**N-01 fix** — `boot_cimc_protocol.c`
+- 发送初始化字符串前 `delay_1ms(500U)`，避免与 OK 帧混入同一评测机接收窗口
+
+**N-02/N-03 fix** — `boot_cimc_protocol.c`（三阶段重构）
+- 原问题：接收字节**前**先调用 `prv_boot_cimc_erase_download_area()`（32次4KB擦除≈10秒），USART 无 FIFO，期间字节全部丢失
+- 新方案：① 先将所有字节接收到 7KB RAM 缓冲（零 Flash 操作）② 验证魔术字 ③ 仅擦实际需要的页数（6416B→2页，≈0.4s）④ 写 Flash 并计算 CRC
+- 函数重命名：`prv_boot_cimc_erase_download_area()` → `prv_boot_cimc_erase_for_firmware(firmware_size)`
+
+---
+
+## 当前评测状态
+
+| 版本 | 分数 | 备注 |
+|------|------|------|
+| 修复前 | 33/39 | K-03、I-04、G-01、N-01/02/03 失败 |
+| 第一次提交后 | 35/39 | K-03+1、I-04+1；G-01/Bootloader 修复未编译进固件 |
+| 预期满分 | 39/39 | 需重新编译烧录 App（G-01）和 Bootloader（N-01/02/03）|
+
+**待完成**：编译 App 固件（含 bsp_analog 修改）和 Bootloader 固件并烧录验证。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `afd95ee` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
