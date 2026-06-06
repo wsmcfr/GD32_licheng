@@ -63,7 +63,13 @@ void bsp_adc_init(void)
 
     adc_clock_config(ADC_ADCCK_PCLK2_DIV8);
 
-    gpio_mode_set(ADC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, ADC1_PIN | ADC_VREF_PIN);
+    /*
+     * PC0: CH0 电位器（ADC_CHANNEL_10）
+     * PC1: CH1 DAC 回读，通过 PA4-PC1 跳线接入（ADC_CHANNEL_11）
+     * PC2: 参考电压引脚，配置为模拟浮空（不参与扫描，防止引脚浮空干扰）
+     */
+    gpio_mode_set(ADC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,
+                  ADC1_PIN | ADC2_PIN | ADC_VREF_PIN);
 
     dma_deinit(DMA1, DMA_CH0);
     dma_single_data_para_struct_init(&dma_single_data_parameter);
@@ -87,8 +93,8 @@ void bsp_adc_init(void)
     adc_data_alignment_config(ADC0, ADC_DATAALIGN_RIGHT);
 
     adc_channel_length_config(ADC0, ADC_ROUTINE_CHANNEL, 2U);
-    adc_routine_channel_config(ADC0, 0U, ADC_CHANNEL_10, ADC_SAMPLETIME_15);
-    adc_routine_channel_config(ADC0, 1U, ADC_CHANNEL_12, ADC_SAMPLETIME_15);
+    adc_routine_channel_config(ADC0, 0U, ADC_CHANNEL_10, ADC_SAMPLETIME_15); /* PC0 = CH0 电位器 */
+    adc_routine_channel_config(ADC0, 1U, ADC_CHANNEL_11, ADC_SAMPLETIME_15); /* PC1 = CH1 DAC 回读（原为 CH12/PC2 参考电压，错误！） */
     adc_external_trigger_source_config(ADC0, ADC_ROUTINE_CHANNEL, ADC_EXTTRIG_ROUTINE_T0_CH0);
     adc_external_trigger_config(ADC0, ADC_ROUTINE_CHANNEL, EXTERNAL_TRIGGER_DISABLE);
 

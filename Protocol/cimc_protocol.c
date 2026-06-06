@@ -447,6 +447,8 @@ static uint8_t prv_cimc_dispatch_command(const cimc_protocol_frame_t *frame)
             return 1U;
         }
         (void)prv_cimc_send_ok(own_id, frame->command);
+        /* 重启前持久化告警记录，确保重启后能恢复。 */
+        cimc_alarm_save();
         delay_ms(20U);
         __set_FAULTMASK(1U);
         NVIC_SystemReset();
@@ -557,11 +559,8 @@ static uint8_t prv_cimc_dispatch_command(const cimc_protocol_frame_t *frame)
             return 1U;
         }
         (void)prv_cimc_send_ok(own_id, frame->command);
-        /*
-         * 赛题要求先回 OK，再切换波特率。
-         * 这里选择重启：App 重新执行 system_init() 时会从 Flash 读到新波特率，
-         * 再调用 bsp_usart_change_baudrate() 以新速率初始化 USART1。
-         */
+        /* 重启前持久化告警记录，确保重启后能恢复。 */
+        cimc_alarm_save();
         delay_ms(20U);
         __set_FAULTMASK(1U);
         NVIC_SystemReset();
@@ -620,6 +619,8 @@ static uint8_t prv_cimc_dispatch_command(const cimc_protocol_frame_t *frame)
             return 1U;
         }
         (void)prv_cimc_send_ok(own_id, frame->command);
+        /* 升级复位前持久化告警记录。 */
+        cimc_alarm_save();
         delay_ms(20U);
         bootloader_port_request_upgrade_reset();
         return 1U;
@@ -829,8 +830,12 @@ static uint8_t prv_cimc_dispatch_command(const cimc_protocol_frame_t *frame)
         return 1U;
 
     default:
-        /* 命令字不在已实现范围内，回错误帧（K-03 非法命令字）。 */
-        (void)prv_cimc_send_error(own_id, frame->command);
+        /*
+         * 命令字不在已实现范围内，回错误帧（K-03 非法命令字）。
+         * 赛题要求：未知命令字的错误应答统一使用 0xEEEE，与 CRC/长度错误保持一致。
+         * 不能使用 frame->command（如 0x0FFF），否则评测机收到 CMD=0x0FFF 判为不符。
+         */
+        (void)prv_cimc_send_error(own_id, 0xEEEEU);
         return 1U;
     }
 }

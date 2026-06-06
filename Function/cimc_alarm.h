@@ -101,6 +101,18 @@ void cimc_alarm_query(char *buf, uint16_t size);
  */
 void cimc_alarm_clear(void);
 
+/*
+ * 函数作用：
+ *   将当前 RAM 告警记录持久化到 Flash user_config 区。
+ *   应在设备重启前（重启命令、波特率切换、OTA 升级请求）调用，
+ *   不应在 cimc_alarm_check() 热路径中调用（Flash 整页擦写最长 1.5s，会阻塞 CPU）。
+ * 参数说明：
+ *   无参数。
+ * 返回值说明：
+ *   无返回值。
+ */
+void cimc_alarm_save(void);
+
 #ifdef __cplusplus
 }
 #endif
