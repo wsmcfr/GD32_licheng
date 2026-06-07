@@ -18,7 +18,6 @@ extern "C" {
 
 /* DAC 引脚定义。 */
 #define CONVERT_NUM                     1U
-#define DAC0_R12DH_ADDRESS              0x40007408U
 #define DAC1_PORT                       GPIOA
 #define DAC1_CLK_PORT                   RCU_GPIOA
 #define DAC1_PIN                        GPIO_PIN_4

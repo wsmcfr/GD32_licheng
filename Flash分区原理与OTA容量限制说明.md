@@ -111,7 +111,7 @@
 
 | 文件 | 必须保持一致的内容 |
 |---|---|
-| [User/boot_app_config.h](D:/GD32/2026706296/User/boot_app_config.h:1) | `BOOT_APP_START_ADDRESS = 0x08011000`，`BOOT_APP_FLASH_SIZE = 0x00020000` |
+| [User/boot_app_config.h](D:/GD32/2026706296/User/boot_app_config.h:1) | `BOOT_APP_START_ADDRESS = 0x08011000`；App 大小以 Keil IROM 配置和 Bootloader 分区表为准 |
 | [Driver/BOOTLOADER/bootloader_port.h](D:/GD32/2026706296/Driver/BOOTLOADER/bootloader_port.h:1) | 参数区、备份区、缓存区和 128KB 上限 |
 | [Protocol/cimc_protocol.c](D:/GD32/2026706296/Protocol/cimc_protocol.c:1) | `0x0501` 升级请求入口 |
 | [project/2026706296.uvprojx](D:/GD32/2026706296/project/2026706296.uvprojx:1) | IROM 和 `Project.bin` 输出设置 |

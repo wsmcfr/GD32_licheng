@@ -1,11 +1,11 @@
 #include "led_app.h"
 
-static uint8_t  g_old_mask = 0x00U; /* 上次同步到硬件的LED位图 */
-static uint8_t  g_cached   = 0;    /* 缓存是否有效，0=强制刷新 */
-static uint32_t g_sys_ms   = 0;    /* LED1上次翻转时刻 */
-static uint8_t  g_sys_st   = 0;    /* LED1当前电平 */
+static uint8_t  g_old_mask = 0x00U; /* 上次位图 */
+static uint8_t  g_cached   = 0;     /* 缓存有效 */
+static uint32_t g_sys_ms   = 0;     /* LED1计时 */
+static uint8_t  g_sys_st   = 0;     /* LED1状态 */
 
-/* 按位图写两路LED硬件，changed_mask中置1的位才操作GPIO */
+/* 按变化位写LED。 */
 static void write_leds(uint8_t mask, uint8_t changed)
 {
     if((changed & 0x01U) != 0) 
@@ -19,7 +19,7 @@ static void write_leds(uint8_t mask, uint8_t changed)
     }
 }
 
-/* 构造LED目标位图：bit0=LED1系统灯，bit1=LED2采集灯 */
+/* 生成LED位图。 */
 static uint8_t build_mask(void)
 {
     uint8_t mask = 0;
@@ -37,14 +37,14 @@ static uint8_t build_mask(void)
     return mask;
 }
 
-/* 将LED位图同步到硬件，仅变化的位写GPIO */
+/* 同步LED位图。 */
 static void led_refresh(uint8_t mask)
 {
     uint8_t changed;
 
     if(g_cached == 0) 
 	{
-        /* 首次刷新无可信历史，强制写两路 */
+        /* 首次强制写两路。 */
         changed = 0x03U;
         g_cached = 1;
     } 
@@ -62,14 +62,7 @@ static void led_refresh(uint8_t mask)
     g_old_mask = mask;
 }
 
-/* 低功耗或复位前关闭两路LED */
-void led_app_all_off(void)
-{
-    g_sys_st = 0;
-    led_refresh(0);
-}
-
-/* 低功耗入口熄灯，并复位刷新缓存，唤醒后首次led_task强制刷新 */
+/* 睡眠前熄灯并复位缓存。 */
 void led_app_blank_for_sleep(void)
 {
     g_sys_st = 0;
@@ -77,14 +70,14 @@ void led_app_blank_for_sleep(void)
     led_app_reset_cache();
 }
 
-/* 复位LED缓存，下次led_task强制刷新两路 */
+/* 复位LED缓存。 */
 void led_app_reset_cache(void)
 {
     g_old_mask = 0;
     g_cached   = 0;
 }
 
-/* 调度器20ms周期：LED1每1s翻转，LED2跟随采集状态，仅变化时写GPIO */
+/* LED周期任务。 */
 void led_task(void)
 {
     uint32_t now = timebase_get_ms32();

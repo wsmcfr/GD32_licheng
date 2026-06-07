@@ -257,17 +257,8 @@ static const uint8_t initcmd1[] = {
     0xAF,        /* 初始化完成后打开显示。 */
 };
 
-// 向 SSD1306 发送单字节命令。
-uint8_t OLED_Write_cmd(uint8_t cmd)
-{
-    return OLED_Write_cmd_buf(&cmd, 1);
-}
-
-/*
- * 向 SSD1306 连续发送多字节命令，内部按 DMA 缓冲区容量（128B）自动分块，
- * 每块在首字节填充控制字 0x00 后通过一次 I2C 事务发送。
- */
-uint8_t OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length)
+/* 连续发送SSD1306命令，按DMA缓冲自动分块。 */
+static uint8_t oled_write_cmd_buf(const uint8_t *cmds, uint16_t length)
 {
     uint16_t offset = 0;
     uint16_t chunk_len;
@@ -307,17 +298,8 @@ uint8_t OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length)
     return 1;
 }
 
-// 向 OLED 显存写入单字节数据（旧接口兼容）。
-uint8_t OLED_Write_data(uint8_t data)
-{
-    return OLED_Write_data_buf(&data, 1);
-}
-
-/*
- * 向 OLED 连续写入一段显存数据，按 DMA 缓冲区容量自动分块，
- * 每块首字节填充控制字 0x40 后通过一次 I2C 事务发送。
- */
-uint8_t OLED_Write_data_buf(const uint8_t *data, uint16_t length)
+/* 连续写OLED显存，按DMA缓冲自动分块。 */
+static uint8_t oled_write_data_buf(const uint8_t *data, uint16_t length)
 {
     uint16_t offset = 0;
     uint16_t chunk_len;
@@ -370,214 +352,11 @@ static uint8_t oled_set_position_buf(uint8_t x, uint8_t y)
     pos_cmds[0] = (uint8_t)(0xB0U + y);
     pos_cmds[1] = (uint8_t)(((x & 0xF0U) >> 4) | 0x10U);
     pos_cmds[2] = (uint8_t)(x & 0x0FU);
-    return OLED_Write_cmd_buf(pos_cmds, sizeof(pos_cmds));
+    return oled_write_cmd_buf(pos_cmds, sizeof(pos_cmds));
 }
 
-// 在指定页范围内显示一幅按页连续排列的位图数据。
-void OLED_ShowPic(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t BMP[])
-{
-    uint16_t i = 0;
-    uint8_t y;
-    uint8_t width;
-
-    if(!BMP || (x1 <= x0) || (x0 >= OLED_WIDTH) || (y0 >= (OLED_HEIGHT / 8)))
-	{
-        return;
-    }
-
-    if(x1 > OLED_WIDTH)
-	{
-        x1 = OLED_WIDTH;
-    }
-    if(y1 > (OLED_HEIGHT / 8))
-	{
-        y1 = (OLED_HEIGHT / 8);
-    }
-
-    width = (uint8_t)(x1 - x0);
-    for (y = y0; y < y1; y++)
-    {
-        OLED_Set_Position(x0, y);
-        OLED_Write_data_buf(&BMP[i], width);
-        i = (uint16_t)(i + width);
-    }
-}
-
-// 在 OLED 指定位置显示一个 16x16 汉字字模（2页高）。
-void OLED_ShowHanzi(uint8_t x, uint8_t y, uint8_t no)
-{
-    OLED_Set_Position(x, y);
-    OLED_Write_data_buf(Hzk[2 * no], 16);
-    OLED_Set_Position(x, y + 1);
-    OLED_Write_data_buf(Hzk[(2 * no) + 1], 16);
-}
-
-// 在 OLED 指定位置显示一个 32x32 大号汉字字模（4页高）。
-void OLED_ShowHzbig(uint8_t x, uint8_t y, uint8_t n)
-{
-    OLED_Set_Position(x, y);
-    OLED_Write_data_buf(Hzb[4 * n], 32);
-    OLED_Set_Position(x, y + 1);
-    OLED_Write_data_buf(Hzb[(4 * n) + 1], 32);
-
-    OLED_Set_Position(x, y + 2);
-    OLED_Write_data_buf(Hzb[(4 * n) + 2], 32);
-    OLED_Set_Position(x, y + 3);
-    OLED_Write_data_buf(Hzb[(4 * n) + 3], 32);
-}
-
-void OLED_ShowFloat(uint8_t x, uint8_t y, float num, uint8_t accuracy, uint8_t fontsize)
-{
-    uint8_t i = 0;
-    uint8_t j = 0;
-    uint8_t t = 0;
-    uint8_t temp = 0;
-    uint16_t numel = 0;
-    uint32_t integer = 0;
-    float decimals = 0;
-
-    if (num < 0)
-    {
-        OLED_ShowChar(x, y, '-', fontsize);
-        num = 0 - num;
-        i++;
-    }
-
-    integer = (uint32_t)num;
-    decimals = num - integer;
-
-    if (integer)
-    {
-        numel = integer;
-
-        while (numel)
-        {
-            numel /= 10;
-            j++;
-        }
-        i += (j - 1);
-        for (temp = 0; temp < j; temp++)
-        {
-            OLED_ShowChar(x + 8 * (i - temp), y, integer % 10 + '0', fontsize);
-            integer /= 10;
-        }
-    }
-    else
-    {
-        OLED_ShowChar(x + 8 * i, y, temp + '0', fontsize);
-    }
-    i++;
-    if (accuracy)
-    {
-        OLED_ShowChar(x + 8 * i, y, '.', fontsize);
-
-        i++;
-        for (t = 0; t < accuracy; t++)
-        {
-            decimals *= 10;
-            temp = (uint8_t)decimals;
-            OLED_ShowChar(x + 8 * (i + t), y, temp + '0', fontsize);
-            decimals -= temp;
-        }
-    }
-}
-
-static uint32_t OLED_Pow(uint8_t a, uint8_t n)
-{
-    uint32_t result = 1;
-    while (n--)
-    {
-        result *= a;
-    }
-    return result;
-}
-
-void OLED_ShowNum(uint8_t x, uint8_t y, uint32_t num, uint8_t length, uint8_t fontsize)
-{
-    uint8_t t, temp;
-    uint8_t enshow = 0;
-    for (t = 0; t < length; t++)
-    {
-        temp = (num / OLED_Pow(10, length - t - 1)) % 10;
-        if (enshow == 0 && t < (length - 1))
-        {
-            if (temp == 0)
-            {
-                OLED_ShowChar(x + (fontsize / 2) * t, y, ' ', fontsize);
-                continue;
-            }
-            else
-                enshow = 1;
-        }
-        OLED_ShowChar(x + (fontsize / 2) * t, y, temp + '0', fontsize);
-    }
-}
-
-/*
- * 按 6x8 字库把 ASCII 字符串批量打包写入 OLED，每字符补 2 列空白保持 8 像素步进，
- * 超宽自动换到下一行（y+=2）。
- */
-static uint8_t oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
-{
-    uint8_t row_buf[OLED_TX_DATA_MAX_SIZE];
-    uint8_t row_len = 0;
-    uint8_t current_x = x;
-    uint8_t c;
-    uint8_t i;
-
-    if(!ch || (x >= OLED_WIDTH) || (y >= (OLED_HEIGHT / 8)))
-	{
-        return 0;
-    }
-
-    while((*ch != '\0') && (y < (OLED_HEIGHT / 8)))
-	{
-        row_len = 0;
-        current_x = x;
-        while((*ch != '\0') && (current_x <= (OLED_WIDTH - 8)) && ((uint16_t)row_len + 8 <= OLED_TX_DATA_MAX_SIZE))
-		{
-            c = (uint8_t)(*ch);
-            if((c < ' ') || (c > '~'))
-			{
-                c = ' ';
-            }
-            c = (uint8_t)(c - ' ');
-
-            for(i = 0; i < 6; i++)
-			{
-                row_buf[row_len + i] = F6X8[c][i];
-            }
-
-            row_buf[row_len + 6] = 0x00U;
-            row_buf[row_len + 7] = 0x00U;
-            row_len = (uint8_t)(row_len + 8);
-            current_x = (uint8_t)(current_x + 8);
-            ch++;
-        }
-
-        if(row_len > 0)
-		{
-            if(!OLED_Set_Position(x, y) || !OLED_Write_data_buf(row_buf, row_len))
-			{
-                return 0;
-            }
-        }
-
-        if(*ch != '\0')
-		{
-            x = 0;
-            y = (uint8_t)(y + 2);
-        }
-    }
-
-    return 1;
-}
-
-/*
- * 按 8x16 字库把 ASCII 字符串的上下两页分别打包写入 OLED，
- * 超宽自动换行（y+=2）。
- */
-static uint8_t oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
+/* 按8x16字库写ASCII字符串，超宽自动换到下一逻辑行（y+=2）。 */
+static uint8_t oled_show_ascii_16(uint8_t x, uint8_t y, const char *ch)
 {
     uint8_t upper_buf[OLED_TX_DATA_MAX_SIZE];
     uint8_t lower_buf[OLED_TX_DATA_MAX_SIZE];
@@ -617,11 +396,11 @@ static uint8_t oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
 
         if(row_len > 0)
 		{
-            if(!OLED_Set_Position(x, y) || !OLED_Write_data_buf(upper_buf, row_len))
+            if(!oled_set_position_buf(x, y) || !oled_write_data_buf(upper_buf, row_len))
 			{
                 return 0;
             }
-            if(!OLED_Set_Position(x, (uint8_t)(y + 1)) || !OLED_Write_data_buf(lower_buf, row_len))
+            if(!oled_set_position_buf(x, (uint8_t)(y + 1)) || !oled_write_data_buf(lower_buf, row_len))
 			{
                 return 0;
             }
@@ -638,84 +417,19 @@ static uint8_t oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
 }
 
 
-// 在 OLED 指定位置显示字符串，fontsize=16 用 8x16 字库，其余用 6x8 字库。
-uint8_t OLED_ShowStr(uint8_t x, uint8_t y, char *ch, uint8_t fontsize)
+// 在OLED指定位置显示16px ASCII字符串。
+uint8_t OLED_ShowStr(uint8_t x, uint8_t y, char *ch)
 {
     if(!ch)
 	{
         return 0;
     }
 
-    if(fontsize == 16)
-	{
-        return oled_show_str_16x8(x, y, ch);
-    }
-
-    return oled_show_str_8x6(x, y, ch);
+    return oled_show_ascii_16(x, y, ch);
 }
 
-/*
- * 显示单个 ASCII 字符：fontsize=16 用 8x16 字库占两页，其余用 6x8 字库占一页。
- * 超出 0x20~0x7E 范围的字符按空格处理。
- */
-void OLED_ShowChar(uint8_t x, uint8_t y, uint8_t ch, uint8_t fontsize)
-{
-    uint8_t c;
-
-    if((ch < ' ') || (ch > '~'))
-	{
-        ch = ' ';
-    }
-    c = (uint8_t)(ch - ' ');
-
-    if (x > 127)
-    {
-        x = 0;
-        y++;
-    }
-
-    if (fontsize == 16)
-    {
-        OLED_Set_Position(x, y);
-        OLED_Write_data_buf(&F8X16[c * 16], 8);
-        OLED_Set_Position(x, y + 1);
-        OLED_Write_data_buf(&F8X16[(c * 16) + 8], 8);
-    }
-    else
-    {
-        OLED_Set_Position(x, y);
-        OLED_Write_data_buf(F6X8[c], 6);
-    }
-}
-
-
-// 将 OLED 全屏填充为亮点状态（手动测试用）。
-void OLED_Allfill(void)
-{
-    uint8_t fill[OLED_TX_DATA_MAX_SIZE];
-    uint8_t pos_cmds[3];
-    uint8_t i;
-
-    memset(fill, 0xFF, sizeof(fill));
-
-    for (i = 0; i < 4; i++)
-    {
-        pos_cmds[0] = (uint8_t)(0xB0U + i);
-        pos_cmds[1] = 0x10U;
-        pos_cmds[2] = 0x00U;
-        OLED_Write_cmd_buf(pos_cmds, sizeof(pos_cmds));
-        OLED_Write_data_buf(fill, OLED_TX_DATA_MAX_SIZE);
-    }
-}
-
-// 设置 OLED 后续写入的页地址和列地址（公开包装）。
-uint8_t OLED_Set_Position(uint8_t x, uint8_t y)
-{
-    return oled_set_position_buf(x, y);
-}
-
-// 清空 OLED 全屏显存。
-void OLED_Clear(void)
+/* 清空OLED显存。 */
+static void oled_clear(void)
 {
     static const uint8_t zeros[OLED_TX_DATA_MAX_SIZE] = {0};
     uint8_t pos_cmds[3];
@@ -726,39 +440,23 @@ void OLED_Clear(void)
         pos_cmds[0] = (uint8_t)(0xB0U + i);
         pos_cmds[1] = 0x10U;
         pos_cmds[2] = 0x00U;
-        OLED_Write_cmd_buf(pos_cmds, sizeof(pos_cmds));
-        OLED_Write_data_buf(zeros, OLED_TX_DATA_MAX_SIZE);
+        oled_write_cmd_buf(pos_cmds, sizeof(pos_cmds));
+        oled_write_data_buf(zeros, OLED_TX_DATA_MAX_SIZE);
     }
 }
 
-// 打开 OLED 电荷泵和显示输出。
-void OLED_Display_On(void)
-{
-    static const uint8_t display_on_cmds[] = {0x8DU, 0x14U, 0xAFU};
-
-    OLED_Write_cmd_buf(display_on_cmds, sizeof(display_on_cmds));
-}
-
-// 关闭 OLED 电荷泵和显示输出（先关泵再发 0xAE 息屏）。
-void OLED_Display_Off(void)
-{
-    static const uint8_t display_off_cmds[] = {0x8DU, 0x10U, 0xAEU};
-
-    OLED_Write_cmd_buf(display_off_cmds, sizeof(display_off_cmds));
-}
-
-// 初始化 SSD1306 控制器：发送初始化序列、清屏、复位光标到左上角。
+/* 初始化SSD1306。 */
 void OLED_Init(void)
 {
     delay_ms(100);
     s_oled_available = 1;
 
-    OLED_Write_cmd_buf(initcmd1, sizeof(initcmd1));
+    oled_write_cmd_buf(initcmd1, sizeof(initcmd1));
     if (!s_oled_available)
 	{
         return;
     }
 
-    OLED_Clear();
-    OLED_Set_Position(0, 0);
+    oled_clear();
+    oled_set_position_buf(0, 0);
 }

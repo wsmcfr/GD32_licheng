@@ -33,10 +33,9 @@ Used when both ISR and app logic need a shared runtime bridge, or when several a
 
 Examples:
 
-- `rx_flag`
-- `uart_dma_buffer`
-- `uart_dma_length`
-- formal LED state through `led_task()`, `led_app_all_off()`, and `led_app_blank_for_sleep()`
+- `g_idle_ms`
+- `g_idle_pend`
+- formal LED state through `led_task()` and `led_app_blank_for_sleep()`
 
 ### Module-Private Cached State
 
@@ -61,8 +60,8 @@ Do **not** create global state just to avoid passing one parameter through a pri
 
 Good example:
 
-- `rx_flag` is global because it is written in `USART1_IRQHandler()` and consumed in `uart_task()`
-- `uart_dma_length` is global because the ISR records the ASCII HEX frame length and the task consumes it later
+- `g_idle_pend` is global because it is written in `USART1_IRQHandler()` and consumed in `uart_task()`
+- `g_idle_ms` is global because the ISR records the latest IDLE time and the task uses it for 3ms debounce
 
 Bad example:
 

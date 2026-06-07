@@ -302,7 +302,7 @@ Bootloader 当前已有的搬运和校验逻辑可以继续复用：
 
 | 任务 | 周期 | 作用 |
 |---|---:|---|
-| `uart_task` + `cimc_protocol_process_ascii_frame` | 5ms | 处理 USART1/RS485 接收帧和命令分发 |
+| `uart_task` + `proto_rx` | 5ms | 处理 USART1/RS485 接收帧和命令分发 |
 | `cimc_sample_task` | 50ms~200ms | 更新 CH0/CH1/CH2 缓存，检查阈值 |
 | `cimc_auto_report_task` | 100ms | 判断是否到达 1s/3s/5s 上报时间 |
 | `cimc_led_task` | 20ms | 系统 LED 1s 闪烁，采集 LED 状态输出 |

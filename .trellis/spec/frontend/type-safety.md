@@ -73,8 +73,8 @@ Required checks include:
 
 Examples:
 
-- receive-length clamp in `USART1_IRQHandler()`
-- expected-length verification in `cimc_protocol_process_ascii_frame()`
+- receive-length clamp in `uart_task()` after DMA is stopped
+- expected-length verification in `proto_rx()`
 - 12-bit range validation before applying DAC command `0x0301`
 
 ---
@@ -90,7 +90,7 @@ Good examples:
 
 - `GD30AD3344` bitfield struct in `gd30ad3344.h`
 - buffer-size macros in `bsp_usart.h`
-- `CONVERT_NUM` and `DAC0_R12DH_ADDRESS` in `bsp_analog.h`
+- `CONVERT_NUM` and `DAC1_PIN` in `bsp_analog.h`
 
 ---
 

@@ -90,8 +90,8 @@ Keep this managed block so 'trellis update' can refresh the instructions.
 推荐风格示例如下：
 
 ```c
-/* 先切到发送态，再写串口数据，避免 485 收发器仍停留在接收模式。 */
-bsp_rs485_direction_transmit();
+/* 通过统一发送接口自动切换 485 方向，避免协议层直接操作方向脚。 */
+bsp_usart_send_buffer(RS485_USART, data, len);
 
 /* 这里只短暂关闭中断，确保复制共享缓冲区时不会被 ISR 改写。 */
 __disable_irq();

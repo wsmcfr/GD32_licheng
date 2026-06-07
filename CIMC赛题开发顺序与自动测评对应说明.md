@@ -153,7 +153,7 @@
 | `0x0105` | 设置时间 | 接收 UTC 秒级时间戳，转换成 RTC 年月日时分秒后写入 |
 | `0x0106` | 查询时间 | 读取 RTC，返回 UTC 秒级时间戳 |
 
-当前 `Driver/RTC/bsp_rtc.c` 已有 `bsp_rtc_set_datetime()`、`bsp_rtc_get_datetime()`、`bsp_rtc_get_epoch_seconds()`，可以复用。若题目使用 Unix UTC 秒，建议新增明确的 Unix epoch 转换 helper，不要混用当前 2000 年起算的内部 sleep 计数。
+当前 `Driver/RTC/bsp_rtc.c` 提供 `bsp_rtc_set_datetime()`、`bsp_rtc_get_datetime()`；Unix UTC 秒转换由 `Function/rtc_app.c` 的 `rtc_app_set_unix_epoch()`、`rtc_app_get_unix_epoch()` 负责，避免和 RTC 驱动内部年月日接口混用。
 
 ### 第 5 步：采样、变比、DAC
 

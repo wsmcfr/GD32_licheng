@@ -5,8 +5,6 @@
 
 #define BOOT_APP_START_ADDRESS          (0x08011000UL)
 
-#define BOOT_APP_FLASH_SIZE             (0x00020000UL)
-
 #ifdef __cplusplus
 extern "C" {
 #endif

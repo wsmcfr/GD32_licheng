@@ -7,24 +7,27 @@
 
 #include "gd30ad3344.h"
 
-// SPI DMA 等待超时上限；异常硬件或时钟未恢复时跳出等待，避免低功耗入口永久卡死。
+// SPI DMA等待超时，避免硬件异常时卡死。
 #define GD30AD3344_SPI_WAIT_TIMEOUT     0x00FFFFFFUL
 
-/* GD30AD3344 DMA 临时发送缓冲区。 */
+/* DMA发送缓冲。 */
 static uint8_t spi3_send_array[GD30AD3344_DMA_BUFFER_SIZE];
 
-/* GD30AD3344 DMA 临时接收缓冲区。 */
+/* DMA接收缓冲。 */
 static uint8_t spi3_receive_array[GD30AD3344_DMA_BUFFER_SIZE];
 
-// 记录最近一次 SPI DMA 传输是否超时。
-// SPI 同步回读的 0xFFFF 可能是器件数据本身，不能作为唯一失败哨兵，需要此标志位判断真实 DMA 错误。
+// 最近一次SPI/DMA错误标志。
 static uint8_t s_gd30ad3344_dma_error;
 
-// 前置声明：SPI3 半字 DMA 发送函数，避免静态 helper 先使用后定义时被 ArmClang 按隐式声明报错。
-uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word);
+static GD30AD3344 s_adc_cfg;
 
-// 等待 GD30AD3344 SPI DMA RX 通道传输完成，带超时保护。
-// 返回 0 表示完成，-1 表示超时（调用方应放弃本次读写）。
+// 打包当前GD30AD3344配置寄存器。
+static uint16_t gd30ad3344_cfg_value(const GD30AD3344 *cfg)
+{
+    return (uint16_t)((cfg->SS << 15) | (cfg->MUX << 12) | (cfg->PGA << 9) | (cfg->MODE << 8) | (cfg->DR << 5) | (cfg->RESERVED_1 << 4) | (cfg->PULL_UP_EN << 3) | (cfg->NOP << 1) | (cfg->RESERVED << 0));
+}
+
+// 等DMA完成，0成功，-1超时。
 static int prv_gd30ad3344_wait_dma_done(void)
 {
     uint32_t timeout = GD30AD3344_SPI_WAIT_TIMEOUT;
@@ -45,88 +48,7 @@ static int prv_gd30ad3344_wait_dma_done(void)
     return 0;
 }
 
-// 将配置结构体写入 GD30AD3344 配置寄存器。
-// 低功耗模式依赖 MODE/NOP 切换，独立封装便于初始化和深睡前待机复用同一路径。
-// 返回 0 成功，-1 表示参数为空或 SPI DMA 超时。
-static int prv_gd30ad3344_apply_config(const GD30AD3344 *config)
-{
-    uint16_t config_value;
-    uint16_t rx_value;
-
-    if(!config)
-	{
-        return -1;
-    }
-
-    config_value = (uint16_t)((config->SS << 15) | (config->MUX << 12) | (config->PGA << 9) | (config->MODE << 8) | (config->DR << 5) | (config->RESERVED_1 << 4) | (config->PULL_UP_EN << 3) | (config->NOP << 1) | (config->RESERVED << 0));
-
-    spi_enable(SPI_GD30AD3344);
-    rx_value = spi_gd30ad3344_send_halfword_dma(config_value);
-    (void)rx_value;
-    if(0 != s_gd30ad3344_dma_error)
-	{
-        return -1;
-    }
-
-    return 0;
-}
-
-uint8_t spi_gd30ad3344_send_byte_dma(uint8_t byte)
-{
-    dma_single_data_parameter_struct dma_init_struct;
-
-    s_gd30ad3344_dma_error = 0;
-
-    spi3_send_array[0] = byte;
-
-    dma_deinit(DMA1, DMA_CH4);
-    dma_single_data_para_struct_init(&dma_init_struct);
-    dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
-    dma_init_struct.memory0_addr        = (uint32_t)spi3_send_array;
-    dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
-    dma_init_struct.periph_memory_width = DMA_PERIPH_WIDTH_8BIT;
-    dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_init_struct.number              = 1;
-    dma_init_struct.periph_inc          = DMA_PERIPH_INCREASE_DISABLE;
-    dma_init_struct.memory_inc          = DMA_MEMORY_INCREASE_ENABLE;
-    dma_init_struct.circular_mode       = DMA_CIRCULAR_MODE_DISABLE;
-    dma_single_data_mode_init(DMA1, DMA_CH4, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH4, DMA_SUBPERI5);
-
-    dma_deinit(DMA1, DMA_CH3);
-    dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
-    dma_init_struct.memory0_addr        = (uint32_t)spi3_receive_array;
-    dma_init_struct.direction           = DMA_PERIPH_TO_MEMORY;
-    dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_single_data_mode_init(DMA1, DMA_CH3, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH3, DMA_SUBPERI5);
-
-    dma_channel_enable(DMA1, DMA_CH3);
-    dma_channel_enable(DMA1, DMA_CH4);
-
-    spi_dma_enable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
-    spi_dma_enable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
-
-    if(0 != prv_gd30ad3344_wait_dma_done())
-	{
-        spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
-        spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
-        dma_channel_disable(DMA1, DMA_CH3);
-        dma_channel_disable(DMA1, DMA_CH4);
-        s_gd30ad3344_dma_error = 1;
-        return 0xFFU;
-    }
-
-    spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
-    spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
-    dma_channel_disable(DMA1, DMA_CH3);
-    dma_channel_disable(DMA1, DMA_CH4);
-
-    s_gd30ad3344_dma_error = 0;
-    return spi3_receive_array[0];
-}
-
-uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
+static uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
 {
     uint16_t rx_data;
     dma_single_data_parameter_struct dma_init_struct;
@@ -189,174 +111,74 @@ uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
     return rx_data;
 }
 
-void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer, uint16_t size)
+
+// 写GD30AD3344配置寄存器。
+static int prv_gd30ad3344_apply_config(const GD30AD3344 *config)
 {
-    uint16_t i;
-    dma_single_data_parameter_struct dma_init_struct;
+    uint16_t config_value;
+    uint16_t rx_value;
 
-    s_gd30ad3344_dma_error = 0;
-
-    if (size > GD30AD3344_DMA_BUFFER_SIZE)
+    if(!config)
 	{
-        size = GD30AD3344_DMA_BUFFER_SIZE;
+        return -1;
     }
 
-    for (i = 0; i < size; i++)
+    config_value = gd30ad3344_cfg_value(config);
+
+    spi_enable(SPI_GD30AD3344);
+    rx_value = spi_gd30ad3344_send_halfword_dma(config_value);
+    (void)rx_value;
+    if(0 != s_gd30ad3344_dma_error)
 	{
-        spi3_send_array[i] = tx_buffer[i];
+        return -1;
     }
 
-    dma_deinit(DMA1, DMA_CH4);
-    dma_single_data_para_struct_init(&dma_init_struct);
-    dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
-    dma_init_struct.memory0_addr        = (uint32_t)spi3_send_array;
-    dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
-    dma_init_struct.periph_memory_width = DMA_PERIPH_WIDTH_8BIT;
-    dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_init_struct.number              = size;
-    dma_init_struct.periph_inc          = DMA_PERIPH_INCREASE_DISABLE;
-    dma_init_struct.memory_inc          = DMA_MEMORY_INCREASE_ENABLE;
-    dma_init_struct.circular_mode       = DMA_CIRCULAR_MODE_DISABLE;
-    dma_single_data_mode_init(DMA1, DMA_CH4, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH4, DMA_SUBPERI5);
-
-    dma_deinit(DMA1, DMA_CH3);
-    dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
-    dma_init_struct.memory0_addr        = (uint32_t)spi3_receive_array;
-    dma_init_struct.direction           = DMA_PERIPH_TO_MEMORY;
-    dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_single_data_mode_init(DMA1, DMA_CH3, &dma_init_struct);
-    dma_channel_subperipheral_select(DMA1, DMA_CH3, DMA_SUBPERI5);
-
-    dma_channel_enable(DMA1, DMA_CH3);
-    dma_channel_enable(DMA1, DMA_CH4);
-
-    spi_dma_enable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
-    spi_dma_enable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
-
-    if(0 != prv_gd30ad3344_wait_dma_done())
-	{
-        spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
-        spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
-        dma_channel_disable(DMA1, DMA_CH3);
-        dma_channel_disable(DMA1, DMA_CH4);
-        s_gd30ad3344_dma_error = 1;
-        return;
-    }
-
-    spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
-    spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
-    dma_channel_disable(DMA1, DMA_CH3);
-    dma_channel_disable(DMA1, DMA_CH4);
-
-    for (i = 0; i < size; i++)
-	{
-        rx_buffer[i] = spi3_receive_array[i];
-    }
-    s_gd30ad3344_dma_error = 0;
+    return 0;
 }
 
-void spi_gd30ad3344_wait_for_dma_end(void)
-{
-    (void)prv_gd30ad3344_wait_dma_done();
-}
-
-
-GD30AD3344 GD30AD3344_InitStruct;
 
 void GD30AD3344_Init(void)
 {
-    GD30AD3344_InitStruct.SS         = 0;        //写状态:0无作用 1开始单次转换（默认） 读的时候总是返回0
-    GD30AD3344_InitStruct.MUX        = 4;        // 0(默认)      1         2         3         4         5         6         7
+    s_adc_cfg.SS         = 0;        //写状态:0无作用 1开始单次转换（默认） 读的时候总是返回0
+    s_adc_cfg.MUX        = 4;        // 0(默认)      1         2         3         4         5         6         7
                                                 //AIN0~AIN1 AIN0~AIN3 AIN1~AIN3 AIN2~AIN3 AIN0~GND  AIN1~GND  AIN2~GND  AIN3~GND
-    GD30AD3344_InitStruct.PGA        = 1;       //    0         1       2(默认)     3         4         5         6         7
+    s_adc_cfg.PGA        = 1;       //    0         1       2(默认)     3         4         5         6         7
                                                 // ±6.144V   ±4.096V   ±2.048V   ±1.024V   ±0.512V   ±0.256V   ±0.256V  ±0.256V
-    GD30AD3344_InitStruct.MODE       = 0;        //0:连续转换模式    1:掉电，单次转换模式（默认）
-    GD30AD3344_InitStruct.DR         = 1;        //    0         1         2         3         4         5         6         7
+    s_adc_cfg.MODE       = 0;        //0:连续转换模式    1:掉电，单次转换模式（默认）
+    s_adc_cfg.DR         = 1;        //    0         1         2         3         4         5         6         7
                                                 //  6.25SPS     12.5SPS   25SPS     50SPS     100SPS    250SPS    500SPS    1000SPS
-    GD30AD3344_InitStruct.RESERVED_1 = 0;        //保留:写的时候写1，读的时候返回0或1
-    GD30AD3344_InitStruct.PULL_UP_EN = 0;        //0:关闭DOUT引脚上拉电阻(默认)    1:开启DOUT引脚上拉电阻
-    GD30AD3344_InitStruct.NOP        = 1;        //0:不更新配置寄存器的数据  1:更新配置寄存器的数据(默认)  2:无效数据，且不更新配置寄存器数据
-    GD30AD3344_InitStruct.RESERVED   = 1;        //保留:写的时候写1，读的时候返回0或1
+    s_adc_cfg.RESERVED_1 = 0;        //保留:写的时候写1，读的时候返回0或1
+    s_adc_cfg.PULL_UP_EN = 0;        //0:关闭DOUT引脚上拉电阻(默认)    1:开启DOUT引脚上拉电阻
+    s_adc_cfg.NOP        = 1;        //0:不更新配置寄存器的数据  1:更新配置寄存器的数据(默认)  2:无效数据，且不更新配置寄存器数据
+    s_adc_cfg.RESERVED   = 1;        //保留:写的时候写1，读的时候返回0或1
 
-    (void)prv_gd30ad3344_apply_config(&GD30AD3344_InitStruct);
+    (void)prv_gd30ad3344_apply_config(&s_adc_cfg);
 }
 
-// 切换到掉电/单次转换模式，降低 MCU 深睡期间 ADC 芯片待机电流。
-// 硬件无独立电源开关，故利用 MODE=1 作为芯片级待机手段。
-// 返回 0 成功，-1 表示配置下发失败。
-int GD30AD3344_Enter_LowPower(void)
-{
-    GD30AD3344 sleep_config = GD30AD3344_InitStruct;
-
-    sleep_config.SS = 0;
-    sleep_config.MODE = 1;
-    sleep_config.NOP = 1;
-
-    return prv_gd30ad3344_apply_config(&sleep_config);
-}
-
-// 退出低功耗配置，恢复工程默认运行态。
-// 返回 0 成功，-1 表示配置下发失败。
-int GD30AD3344_Exit_LowPower(void)
-{
-    GD30AD3344_InitStruct.SS         = 0;
-    GD30AD3344_InitStruct.MUX        = 4;
-    GD30AD3344_InitStruct.PGA        = 1;
-    GD30AD3344_InitStruct.MODE       = 0;
-    GD30AD3344_InitStruct.DR         = 1;
-    GD30AD3344_InitStruct.RESERVED_1 = 0;
-    GD30AD3344_InitStruct.PULL_UP_EN = 0;
-    GD30AD3344_InitStruct.NOP        = 1;
-    GD30AD3344_InitStruct.RESERVED   = 1;
-
-    return prv_gd30ad3344_apply_config(&GD30AD3344_InitStruct);
-}
-
-static float PGA_DATA = 0.0f;
-float ADS118_PGA_SET(GD30AD3344_PGA_TypeDef PGA)
+static float gd30ad3344_pga_v(GD30AD3344_PGA_TypeDef PGA)
 {
     switch(PGA) {
     case GD30AD3344_PGA_6V144:
-        PGA_DATA = 6.144f;
-        break;
+        return 6.144f;
     case GD30AD3344_PGA_4V096:
-        PGA_DATA = 4.096f;
-        break;
+        return 4.096f;
     case GD30AD3344_PGA_2V048:
-        PGA_DATA = 2.048f;
-        break;
+        return 2.048f;
     case GD30AD3344_PGA_1V024:
-        PGA_DATA = 1.024f;
-        break;
+        return 1.024f;
     case GD30AD3344_PGA_0V512:
-        PGA_DATA = 0.512f;
-        break;
+        return 0.512f;
     case GD30AD3344_PGA_0V256:
-        PGA_DATA = 0.256f;
-        break;
+        return 0.256f;
     case GD30AD3344_PGA_0V064:
-        PGA_DATA = 0.064f;
-        break;
+        return 0.064f;
     default:
-        /* 未知量程按最保守的小量程处理，避免返回沿用上一轮 PGA_DATA 的陈旧值。 */
-        PGA_DATA = 0.064f;
-        break;
+        /* 未知量程按最小量程处理。 */
+        return 0.064f;
     }
-
-    return PGA_DATA;
-
 }
 
-// 查询最近一次 SPI/DMA 操作是否失败。
-// 返回 0 表示无错误，非 0 表示发生 DMA 超时或参数错误。
-uint8_t GD30AD3344_GetLastError(void)
-{
-    return s_gd30ad3344_dma_error;
-}
-
-// 读取指定通道并换算为电压，SPI/DMA 错误显式返回给调用者。
-// 返回 0 且 out_voltage_v 已更新；-1 表示参数无效或 DMA 失败，电压值不可用。
+// 读取通道电压，0成功，-1失败。
 int GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH, GD30AD3344_PGA_TypeDef Ref, float *out_voltage_v)
 {
     uint16_t raw_data;
@@ -368,16 +190,16 @@ int GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH, GD30AD3344_PGA_TypeDef Ref
         return -1;
     }
 
-    GD30AD3344_InitStruct.MUX = CH;
-    GD30AD3344_InitStruct.PGA = Ref;
+    s_adc_cfg.MUX = CH;
+    s_adc_cfg.PGA = Ref;
 
-    raw_data = spi_gd30ad3344_send_halfword_dma(GD30AD3344_InitStruct_Value);
+    raw_data = spi_gd30ad3344_send_halfword_dma(gd30ad3344_cfg_value(&s_adc_cfg));
     if(0 != s_gd30ad3344_dma_error)
 	{
         return -1;
     }
 
-    result = (float)raw_data * ADS118_PGA_SET(Ref) / 32768;
+    result = (float)raw_data * gd30ad3344_pga_v(Ref) / 32768;
     *out_voltage_v = result;
     return 0;
 }

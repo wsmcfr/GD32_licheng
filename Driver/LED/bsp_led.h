@@ -44,12 +44,6 @@ extern "C" {
 #define LED1_SET(state)         do { LED_WRITE(LED1_PIN, ((state) != 0U)); } while (0)
 #define LED2_SET(state)         do { LED_WRITE(LED2_PIN, ((state) != 0U)); } while (0)
 
-#define LED1_TOGGLE             do { GPIO_TG(LED_PORT) = LED1_PIN; } while (0)
-#define LED2_TOGGLE             do { GPIO_TG(LED_PORT) = LED2_PIN; } while (0)
-
-#define LED1_ON                 do { LED_WRITE(LED1_PIN, 1U); } while (0)
-#define LED2_ON                 do { LED_WRITE(LED2_PIN, 1U); } while (0)
-
 #define LED1_OFF                do { LED_WRITE(LED1_PIN, 0U); } while (0)
 #define LED2_OFF                do { LED_WRITE(LED2_PIN, 0U); } while (0)
 

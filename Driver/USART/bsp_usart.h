@@ -24,7 +24,6 @@ extern "C" {
 #define USART1_RX_DMA_CHANNEL          DMA_CH5
 #define USART1_RX_DMA_SUBPERI          DMA_SUBPERI4
 #define USART1_TX_PORT                 GPIOD
-#define USART1_RX_PORT                 GPIOD
 #define USART1_CLK_PORT                RCU_GPIOD
 #define USART1_TX_PIN                  GPIO_PIN_5
 #define USART1_RX_PIN                  GPIO_PIN_6
@@ -41,9 +40,6 @@ extern "C" {
 extern uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
 
 void     bsp_usart_init(void);          /* 初始化USART1/RS485 */
-void     bsp_usart1_init(void);         /* 初始化USART1及RS485方向控制GPIO */
-void     bsp_rs485_direction_receive(void);   /* RS485切换到接收态 */
-void     bsp_rs485_direction_transmit(void);  /* RS485切换到发送态 */
 
 /* 阻塞发送字节流，RS485自动管理方向脚，超时返回已发字节数 */
 uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint16_t length);

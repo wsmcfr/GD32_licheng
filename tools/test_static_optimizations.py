@@ -102,16 +102,16 @@ def main() -> None:
     require("_sys_open" in main_c and "_sys_write" in main_c and "_sys_exit" in main_c, "main.c 缺少 C 库 retarget 空桩")
     require("_ttywrch" in main_c and "return 0;" in main_c, "main.c 缺少直接丢弃输出的 _ttywrch/_sys_write 行为")
 
-    require("CIMC_RS485_USART               USART1" in usart_h, "USART 正式接口不是 USART1")
-    require("CIMC_RS485_BAUDRATE            19200U" in usart_h, "USART1/RS485 默认波特率不是 19200")
+    require("RS485_PORT               USART1" in usart_h, "USART 正式接口不是 USART1")
+    require("RS485_BAUD            19200U" in usart_h, "USART1/RS485 默认波特率不是 19200")
     require("RS485_DIR_PIN                  GPIO_PIN_8" in usart_h, "RS485 方向控制脚 PE8 契约缺失")
-    require("bsp_usart1_init();" in usart_c, "USART 初始化未收敛到 USART1")
-    require("cimc_protocol_process_ascii_frame" in usart_app, "USART App 未接入 CIMC 协议解析入口")
+    require("usart_baudrate_set(USART1, RS485_BAUD)" in usart_c, "USART 初始化未收敛到 USART1/RS485 默认波特率")
+    require("proto_rx(fbuf, clen)" in usart_app, "USART App 未接入 CIMC 协议解析入口")
 
-    require("PT100_COMMERCIAL_OFFSET_V" in pt100_app, "PT100 app 缺少商业版模块 Vout 零点偏置")
-    require("PT100_COMMERCIAL_RESISTANCE_SLOPE_V_PER_OHM" in pt100_app, "PT100 app 缺少商业版模块 Vout-电阻斜率")
-    require("prv_pt100_resistance_to_temperature" in pt100_app, "PT100 app 未通过分段线性插值换算温度")
-    require("GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_voltage_v)" in pt100_app, "PT100 app 未检查 GD30AD3344 采样返回状态")
+    require("PT100_OFFSET_V" in pt100_app, "PT100 app 缺少模块 Vout 零点偏置")
+    require("PT100_SLOPE_V_OHM" in pt100_app, "PT100 app 缺少模块 Vout-电阻斜率")
+    require("resistance_to_temp" in pt100_app, "PT100 app 未通过分段线性插值换算温度")
+    require("GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_v)" in pt100_app, "PT100 app 未检查 GD30AD3344 采样返回状态")
 
     require("adc_app_set_dac_raw" in adc_app and "dac_data_set" in adc_app, "DAC 0x0301 控制入口缺失")
     for forbidden_dac_pattern in (

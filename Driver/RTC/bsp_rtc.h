@@ -37,29 +37,12 @@ typedef struct
     uint8_t day_of_week;
 } bsp_rtc_datetime_t;
 
-typedef struct
-{
-    uint8_t clock_ready;
-    uint8_t backup_valid;
-    uint8_t lxtal_recovered;
-    bsp_rtc_clock_source_t clock_source;
-    uint16_t prescaler_a;
-    uint16_t prescaler_s;
-    uint32_t bdctl;
-    uint32_t hrfc;
-    uint32_t cosc;
-} bsp_rtc_status_t;
-
-/* rtc_task 需要复用这个结构读取当前时间，因此在头文件中导出。 */
+/* rtc_task复用的当前时间缓存。 */
 extern rtc_parameter_struct rtc_initpara;
 
 int bsp_rtc_init(void);
 
 int bsp_rtc_get_datetime(bsp_rtc_datetime_t *datetime);
-
-int bsp_rtc_get_epoch_seconds(uint32_t *epoch_seconds);
-
-int bsp_rtc_get_status(bsp_rtc_status_t *status);
 
 int bsp_rtc_set_datetime(const bsp_rtc_datetime_t *datetime);
 

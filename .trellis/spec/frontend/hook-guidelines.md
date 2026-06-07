@@ -78,7 +78,7 @@ Examples:
 
 - `adc_task()` consumes `adc_value[]`
 - `rtc_task()` reads current RTC data and formats it for display
-- `uart_task()` consumes `uart_dma_buffer` after ISR handoff
+- `uart_task()` consumes `g_idle_pend`, debounces IDLE, and copies DMA data into a local frame buffer
 - `gd30ad3344_pt100_task()` consumes GD30AD3344 samples and publishes the latest PT100 measurement cache
 
 ---
@@ -88,7 +88,7 @@ Examples:
 - periodic entries: `<feature>_task`
 - app init entries: `app_<feature>_init`
 - private callbacks/helpers: `prv_<name>`
-- shared event flags: short descriptive nouns such as `rx_flag`
+- shared event flags: short descriptive names such as `g_idle_pend`
 
 ---
 

@@ -11,7 +11,6 @@ extern "C" {
 
 /* OLED I2C 硬件资源定义。 */
 #define I2C0_OWN_ADDRESS7              0x72U
-#define I2C0_SLAVE_ADDRESS7            0x82U
 #define I2C0_DATA_ADDRESS              ((uint32_t)&I2C_DATA(I2C0))
 
 /* OLED 批量 DMA 发送缓冲区定义：

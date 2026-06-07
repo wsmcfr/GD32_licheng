@@ -24,8 +24,8 @@ Error handling is done with a small set of concrete mechanisms:
 | Assertion backend | `User/main.c` retarget/assert support | No UART output; fail-stop loop only |
 | Bootloader handoff status | `bootloader_port_status_t` | Send contest error frame or stay in App |
 | Internal Flash / FMC status | `fmc_state_enum` or wrapper status | Abort destructive operation and preserve current App when possible |
-| GD30AD3344 sampling | `GD30AD3344_AD_Read(..., &out_voltage_v)` returns `0/-1`; `GD30AD3344_GetLastError()` exposes the last DMA/parameter error | Do not use the output value when the read failed |
-| Soft runtime flags | `rx_flag` in UART flow | Set/clear flag and return early |
+| GD30AD3344 sampling | `GD30AD3344_AD_Read(..., &out_voltage_v)` returns `0/-1` | Do not use the output value when the read failed |
+| Soft runtime flags | `g_idle_pend` in UART flow | Set/clear flag and return early |
 
 Example fatal handler from `User/gd32f4xx_it.c`:
 
@@ -66,13 +66,13 @@ if (0 != GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_voltage_v)) {
 
 ### 2. Bound-check before copying cross-layer buffers
 
-ISR code must validate received length before copying into an app-owned buffer:
+Task code must validate the DMA-derived length before copying into a local protocol buffer:
 
 ```c
 if((rx_len > 0U) && (rx_len <= sizeof(usart1_rxbuffer))){
     copy_len = rx_len;
-    if(copy_len >= sizeof(uart_dma_buffer)){
-        copy_len = sizeof(uart_dma_buffer) - 1U;
+    if(copy_len >= sizeof(fbuf)){
+        copy_len = sizeof(fbuf) - 1U;
     }
 ```
 
@@ -107,7 +107,7 @@ Interrupt handlers should:
 | Internal Flash erase/write | wrapper return code or FMC status | Abort upgrade/copy flow and preserve current App when possible |
 | GD30AD3344 ADC read | `-1` from `GD30AD3344_AD_Read()` | Clear app-visible sample validity and do not convert the failed raw value into voltage, resistance, or temperature |
 | Timebase setup | implicit fatal loop | Treat as unrecoverable startup failure |
-| UART receive handoff | `rx_flag` stays `0` | Task returns immediately without processing |
+| UART receive handoff | `g_idle_pend` stays `0` | Task returns immediately without processing |
 
 ---
 

@@ -63,7 +63,7 @@ int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
         memcpy(diff_buf, &buf[ds], dlen);
         diff_buf[dlen] = '\0';
         /* 16px字体，逻辑行0→物理页0，逻辑行1→物理页2 */
-        if(OLED_ShowStr(seg_x, (uint8_t)(y * 2), diff_buf, 16)) 
+        if(OLED_ShowStr(seg_x, (uint8_t)(y * 2), diff_buf))
 		{
             memcpy(&g_cache[y][ds], &buf[ds], dlen);
             g_cache[y][VISIBLE_CHARS] = '\0';

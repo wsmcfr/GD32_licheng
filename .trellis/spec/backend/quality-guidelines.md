@@ -43,8 +43,8 @@ that capability.
 | Official communication | USART1/RS485 only, default `19200 8N1` |
 | Frame format | ASCII HEX text encoding binary `A5B6 ... B6A5` frames |
 | CRC | CRC-16-Modbus over binary bytes from frame header through payload, sent big-endian |
-| ISR work | `USART1_IRQHandler()` only captures length, copies bounded bytes, sets `rx_flag`, and re-arms DMA |
-| Protocol work | `uart_task()` calls `cimc_protocol_process_ascii_frame()` in task context |
+| ISR work | `USART1_IRQHandler()` only clears IDLE, records `g_idle_ms`, and sets `g_idle_pend` |
+| Protocol work | `uart_task()` debounces IDLE, copies bounded DMA data to a local frame buffer, and calls `proto_rx()` in task context |
 | Logging | No App debug output API; retarget stubs directly discard bytes and never touch USART1/RS485 |
 | OLED | Formal App display is two lines: team ID and `AutoSample` / `IDLE` |
 | LED | Formal App uses two LEDs: LED1 system blink, LED2 auto-sample status |

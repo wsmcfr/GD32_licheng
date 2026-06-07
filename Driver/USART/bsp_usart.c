@@ -4,6 +4,8 @@
 /* USART1/RS485 DMA 接收缓冲区，IDLE 中断按有效长度转交应用层 */
 uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
 
+static void rs485_direction_receive(void);
+
 /* 等待 USART 标志置位，递减计数超时返回 0，避免异常串口卡死主循环 */
 static uint8_t wait_flag(uint32_t usart_periph, usart_flag_enum flag)
 {
@@ -30,33 +32,23 @@ static void rs485_init_gpio(void)
     rcu_periph_clock_enable(RS485_DIR_CLK_PORT);
     gpio_mode_set(RS485_DIR_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, RS485_DIR_PIN);
     gpio_output_options_set(RS485_DIR_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, RS485_DIR_PIN);
-    bsp_rs485_direction_receive();
+    rs485_direction_receive();
 }
 
 // RS485 切换到接收状态
-void bsp_rs485_direction_receive(void)
+static void rs485_direction_receive(void)
 {
     gpio_bit_write(RS485_DIR_PORT, RS485_DIR_PIN, RS485_DIR_RX_LEVEL);
 }
 
 // RS485 切换到发送状态
-void bsp_rs485_direction_transmit(void)
+static void rs485_direction_transmit(void)
 {
     gpio_bit_write(RS485_DIR_PORT, RS485_DIR_PIN, RS485_DIR_TX_LEVEL);
 }
 
 // 初始化当前正式版唯一需要的串口资源（USART1/RS485）
 void bsp_usart_init(void)
-{
-    bsp_usart1_init();
-}
-
-/*
- * 初始化 USART1 及 RS485 方向控制脚。
- * 配置 PD5/PD6 为 USART1 TX/RX 复用，PE8 为 RS485 方向控制，
- * USART1 为 19200-8N1，RX DMA 普通模式，IDLE 中断标记帧结束。
- */
-void bsp_usart1_init(void)
 {
     dma_single_data_parameter_struct dma_init_struct;
 
@@ -113,7 +105,7 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
 
     if(RS485_USART == usart_periph) 
 	{
-        bsp_rs485_direction_transmit();
+        rs485_direction_transmit();
         delay_us(10);
     }
 
@@ -123,7 +115,7 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
 		{
             if(RS485_USART == usart_periph) 
 			{
-                bsp_rs485_direction_receive();
+                rs485_direction_receive();
             }
             return i;
         }
@@ -134,14 +126,14 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
 	{
         if(RS485_USART == usart_periph) 
 		{
-            bsp_rs485_direction_receive();
+            rs485_direction_receive();
         }
         return i;
     }
 
     if(RS485_USART == usart_periph) 
 	{
-        bsp_rs485_direction_receive();
+        rs485_direction_receive();
     }
 
     return length;

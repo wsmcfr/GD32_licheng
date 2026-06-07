@@ -60,7 +60,7 @@ New periodic work should be registered in the static `scheduler_task[]` table.
 App modules may read:
 
 - `adc_value`
-- `rx_flag`
+- `g_idle_pend`
 - RTC state
 - status from `cimc_status`
 
@@ -73,7 +73,7 @@ But pin definitions, DMA channels, SPI mode, and IRQ enables remain below in `Dr
 - app files use the suffix `_app`
 - periodic task entry functions usually use the suffix `_task`
 - init/setter functions use verb-first names such as `cimc_status_set_auto_sample`
-- app-owned global buffers or flags use descriptive names such as `uart_dma_buffer` and `rx_flag`
+- app-owned shared flags use descriptive names such as `g_idle_pend`
 
 Task naming examples:
 

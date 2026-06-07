@@ -7,27 +7,20 @@ static __IO uint32_t prescaler_a = 0;
 static __IO uint32_t prescaler_s = 0;
 static uint32_t rtcsrc_flag = 0;
 static int rtc_clock_ready = 0;
-static uint8_t rtc_lxtal_recovered = 0;
 
-// 从 RCU_BDCTL 的 RTCSRC 位解码 RTC 当前时钟源，返回 bsp_rtc_clock_source_t 枚举。
-static bsp_rtc_clock_source_t bsp_rtc_decode_clock_source(uint32_t bdctl)
-{
-    return (bsp_rtc_clock_source_t)GET_BITS(bdctl, 8, 9);
-}
-
-// 将十进制数值转换成 GD32 RTC 期望的 BCD 编码格式，高 4 位为十位，低 4 位为个位。
+// 十进制转BCD。
 static uint8_t bsp_rtc_decimal_to_bcd(uint8_t value)
 {
     return (uint8_t)(((value / 10) << 4) | (value % 10));
 }
 
-// 将 GD32 RTC 读出的 BCD 编码数值转换成十进制。
+// BCD转十进制。
 static uint8_t bsp_rtc_bcd_to_decimal(uint8_t value)
 {
     return (uint8_t)((((value >> 4) & 0x0FU) * 10) + (value & 0x0FU));
 }
 
-// 判断指定年份是否为公历闰年，返回 1 表示闰年，0 表示平年。
+// 判断闰年。
 static uint8_t bsp_rtc_is_leap_year(uint16_t year)
 {
     if((0 == (year % 400)) || ((0 == (year % 4)) && (0 != (year % 100))))
@@ -38,7 +31,7 @@ static uint8_t bsp_rtc_is_leap_year(uint16_t year)
     return 0;
 }
 
-// 获取指定年月对应的最大天数，月份超出 1~12 时返回 0。
+// 获取月天数。
 static uint8_t bsp_rtc_get_days_in_month(uint16_t year, uint8_t month)
 {
     static const uint8_t days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
@@ -56,7 +49,7 @@ static uint8_t bsp_rtc_get_days_in_month(uint16_t year, uint8_t month)
     return days_in_month[month - 1];
 }
 
-// 等待 RCU 振荡器稳定，库自带超时，失败时向上返回 -1。
+// 等振荡器稳定。
 static int bsp_rtc_wait_osci_stable(rcu_osci_type_enum osci)
 {
     if(SUCCESS == rcu_osci_stab_wait(osci))
@@ -67,7 +60,7 @@ static int bsp_rtc_wait_osci_stable(rcu_osci_type_enum osci)
     return -1;
 }
 
-// 校验十进制年月日时分秒是否都在合法范围内，空指针或非法字段均返回 0。
+// 校验日期时间范围。
 static uint8_t bsp_rtc_is_valid_datetime(const bsp_rtc_datetime_t *datetime)
 {
     uint8_t max_day;
@@ -106,7 +99,7 @@ static uint8_t bsp_rtc_is_valid_datetime(const bsp_rtc_datetime_t *datetime)
     return 1;
 }
 
-// 用 Sakamoto 算法根据公历年月日计算星期，返回 RTC_MONDAY~RTC_SUNDAY。
+// Sakamoto算法算星期。
 static uint8_t bsp_rtc_calculate_day_of_week(uint16_t year, uint8_t month, uint8_t date)
 {
     static const uint8_t month_offset[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
@@ -128,10 +121,7 @@ static uint8_t bsp_rtc_calculate_day_of_week(uint16_t year, uint8_t month, uint8
     return weekday_index;
 }
 
-/*
- * 备份域无效时写入默认时间作为冷启动起始值；成功后写入 BKP_VALUE 标记备份域。
- * 所有分频参数从 prescaler_a / prescaler_s 全局变量读取，避免重复硬编码。
- */
+/* 冷启动写默认RTC时间。 */
 static int bsp_rtc_setup(void)
 {
     int ret = 0;
@@ -165,7 +155,7 @@ static int bsp_rtc_setup(void)
     return ret;
 }
 
-// 检查 RTC_BKP0 是否已写入本工程约定的有效标记，主电掉电但 VBAT 仍在时该标记保持。
+// 检查备份域标记。
 static uint8_t bsp_rtc_has_valid_backup(void)
 {
     if(RTC_BKP0 == BKP_VALUE)
@@ -176,7 +166,7 @@ static uint8_t bsp_rtc_has_valid_backup(void)
     return 0;
 }
 
-// 备份域有效时同步 RTC 阴影寄存器到 rtc_initpara，阴影同步失败返回 -1。
+// 从备份域恢复当前RTC时间。
 static int bsp_rtc_restore_from_backup(void)
 {
     if(ERROR == rtc_register_sync_wait())
@@ -189,10 +179,7 @@ static int bsp_rtc_restore_from_backup(void)
 }
 
 /*
- * 若备份域中 RTCSRC 已经 fallback 到 IRC32K，则尝试自动迁回 LXTAL。
- * 仅在 LXTAL 当前已可稳定后才执行备份域复位；复位前先读出 IRC32K RTC 的时间快照，
- * 切源成功后以 LXTAL 分频参数写回快照，尽量保留 VBAT 保存的时间上下文。
- * 若 LXTAL 仍不可用则保守地继续沿用 IRC32K，避免破坏现有 RTC 计时。
+ * IRC32K备份域尝试迁回LXTAL，保留原时间快照。
  */
 static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
 {
@@ -265,15 +252,11 @@ static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
     }
 
     rtcsrc_flag = GET_BITS(RCU_BDCTL, 8, 9);
-    rtc_lxtal_recovered = 1;
     return 0;
 }
 
 /*
- * 预配置 RTC 时钟源并等待振荡器稳定，同时设置全局分频参数 prescaler_s / prescaler_a。
- * 若备份域已选过 RTCSRC，只等待对应振荡器稳定，不强制改写时钟源，以免在主电掉电
- * 但 VBAT 仍供电时破坏"断电续时"预期；冷启动首选 LXTAL 失败时视编译配置决定是否
- * fallback 到 IRC32K，已有 RTCSRC 时不允许 fallback（强切需复位备份域）。
+ * 配置RTC时钟源和分频；已有备份域时不强切RTCSRC。
  */
 static int bsp_rtc_pre_cfg(uint8_t *has_valid_backup)
 {
@@ -371,8 +354,7 @@ static int bsp_rtc_pre_cfg(uint8_t *has_valid_backup)
 }
 
 /*
- * 初始化 RTC 外设：打开备份域写权限，配置时钟源，备份域有效时恢复现有时间，
- * 否则写入默认时间并建立备份域标记，最后清除所有复位标志位。
+ * 初始化RTC：备份域有效则恢复，否则写默认时间。
  */
 int bsp_rtc_init(void)
 {
@@ -383,8 +365,6 @@ int bsp_rtc_init(void)
     pmu_backup_write_enable();
 
     has_valid_backup = bsp_rtc_has_valid_backup();
-
-    rtc_lxtal_recovered = 0;
 
     if(0 != bsp_rtc_pre_cfg(&has_valid_backup))
 	{
@@ -406,8 +386,7 @@ int bsp_rtc_init(void)
 }
 
 /*
- * 读取当前 RTC 完整年月日时分秒，先等待阴影寄存器同步避免跨秒读取不一致，
- * 再将寄存器 BCD 字段统一转换成十进制写入输出结构体。
+ * 读取当前RTC日期时间。
  */
 int bsp_rtc_get_datetime(bsp_rtc_datetime_t *datetime)
 {
@@ -439,78 +418,7 @@ int bsp_rtc_get_datetime(bsp_rtc_datetime_t *datetime)
 }
 
 /*
- * 把当前 RTC 时间转为 2000-01-01 起算的秒级计数，仅用于深睡前后 RTC 秒差计算，
- * 不与 Unix 1970 epoch 对齐。
- */
-int bsp_rtc_get_epoch_seconds(uint32_t *epoch_seconds)
-{
-    bsp_rtc_datetime_t datetime;
-    uint16_t year;
-    uint8_t month;
-    uint32_t days;
-
-    if(!epoch_seconds)
-	{
-        return -1;
-    }
-
-    if(0 != bsp_rtc_get_datetime(&datetime))
-	{
-        return -1;
-    }
-
-    if(0 == bsp_rtc_is_valid_datetime(&datetime))
-	{
-        return -1;
-    }
-
-    days = 0;
-    for(year = 2000; year < datetime.year; year++)
-	{
-        days += (0 != bsp_rtc_is_leap_year(year)) ? 366 : 365;
-    }
-
-    for(month = 1; month < datetime.month; month++)
-	{
-        days += bsp_rtc_get_days_in_month(datetime.year, month);
-    }
-
-    days += (uint32_t)(datetime.date - 1);
-    *epoch_seconds = (days * 86400) + ((uint32_t)datetime.hour * 3600) + ((uint32_t)datetime.minute * 60) + (uint32_t)datetime.second;
-    return 0;
-}
-
-// 读取 RTC 当前诊断状态，包含时钟源、备份域标记、分频寄存器和校准寄存器快照。
-int bsp_rtc_get_status(bsp_rtc_status_t *status)
-{
-    uint32_t bdctl;
-    uint32_t psc;
-
-    if(!status)
-	{
-        return -1;
-    }
-
-    bdctl = RCU_BDCTL;
-    psc = RTC_PSC;
-
-    status->clock_ready = (0 != rtc_clock_ready) ? 1 : 0;
-    status->backup_valid = bsp_rtc_has_valid_backup();
-    status->lxtal_recovered = rtc_lxtal_recovered;
-    status->clock_source = bsp_rtc_decode_clock_source(bdctl);
-    status->prescaler_a = (uint16_t)GET_BITS(psc, 16, 22);
-    status->prescaler_s = (uint16_t)GET_BITS(psc, 0, 14);
-    status->bdctl = bdctl;
-    status->hrfc = RTC_HRFC;
-    status->cosc = RTC_COSC;
-    return 0;
-}
-
-/*
- * 按十进制年月日时分秒设置 RTC，自动推算星期字段后写入寄存器。
- * 驱动层在写入前重新校验时间范围，防止上层绕过串口解析直接传入非法值；
- * 写入前先同步阴影寄存器、读出当前分频，避免改时间时误改时钟基准；
- * 成功后写回 BKP_VALUE 并刷新 rtc_initpara 供显示任务直接复用。
+ * 设置RTC日期时间，成功后刷新rtc_initpara。
  */
 int bsp_rtc_set_datetime(const bsp_rtc_datetime_t *datetime)
 {

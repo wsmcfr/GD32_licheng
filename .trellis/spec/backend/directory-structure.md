@@ -115,7 +115,7 @@ Use `Function/` for scheduled application behavior and user-visible policy:
 Keep global runtime infrastructure outside feature folders:
 
 - `User/main.c` contains the entry loop and `printf` retarget
-- `User/systick.c` contains the project-owned SysTick/DWT timebase, blocking delay implementation, and clock-change/deep-sleep reconfiguration hooks
+- `User/systick.c` contains the project-owned SysTick/DWT timebase and blocking delay implementation
 - `User/gd32f4xx_it.c` contains ISR entry points
 - `HeaderFiles/system_all.h` centralizes shared includes and layer ordering
 

@@ -43,22 +43,10 @@ void systick_tick_inc(void);
 
 uint32_t timebase_get_ms32(void);
 
-int64_t get_system_ms(void);
-
-int64_t get_system_us(void);
-
 void delay_ms(uint32_t ms);
 
 void delay_us(uint32_t us);
 
 void delay_1ms(uint32_t count);
-
-void delay_decrement(void);
-
-void timebase_prepare_reconfiguration(void);
-
-void timebase_update_after_clock_change(void);
-
-void timebase_adjust_ms(uint32_t elapsed_ms);
 
 #endif /* SYS_TICK_H */

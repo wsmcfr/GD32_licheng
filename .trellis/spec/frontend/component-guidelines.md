@@ -29,7 +29,7 @@ Example from `Function/led_app.c`:
 
 - module-private static state for the system blink phase and hardware cache
 - static helpers such as `led_app_build_mask()` and `led_app_refresh()`
-- public APIs `led_task()`, `led_app_all_off()`, and `led_app_reset_cache()`
+- public APIs `led_task()`, `led_app_blank_for_sleep()`, and `led_app_reset_cache()`
 
 This is the preferred shape for small scheduled app modules.
 
@@ -56,7 +56,7 @@ Since there are no props, the equivalent convention is **small public C interfac
 Examples:
 
 - `oled_printf()` is public because other app modules use it
-- `uart_dma_buffer` and `rx_flag` are declared in `usart_app.h` because ISR code updates them
+- `g_idle_ms` and `g_idle_pend` are declared in `usart_app.h` because ISR code updates the IDLE debounce state
 - contest frame parsing helpers stay private in `Protocol/cimc_protocol.c`
 
 ---

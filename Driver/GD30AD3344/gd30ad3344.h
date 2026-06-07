@@ -73,20 +73,8 @@ typedef enum
     GD30AD3344_Channel_7      = 7,		//AIN3~GND
 } GD30AD3344_Channel_TypeDef;
 
-#define GD30AD3344_InitStruct_Value ((uint16_t)((GD30AD3344_InitStruct.SS         <<15)| (GD30AD3344_InitStruct.MUX        <<12)| (GD30AD3344_InitStruct.PGA        << 9)| (GD30AD3344_InitStruct.MODE       << 8)| (GD30AD3344_InitStruct.DR         << 5)| (GD30AD3344_InitStruct.RESERVED_1 << 4)|\
-                                                (GD30AD3344_InitStruct.PULL_UP_EN << 3)| (GD30AD3344_InitStruct.NOP        << 1)| (GD30AD3344_InitStruct.RESERVED   << 0)))
-
-extern GD30AD3344 GD30AD3344_InitStruct;
-
 void GD30AD3344_Init(void);
-
-int GD30AD3344_Enter_LowPower(void);
-
-int GD30AD3344_Exit_LowPower(void);
-
 int GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH,GD30AD3344_PGA_TypeDef Ref,float *out_voltage_v);
-
-uint8_t GD30AD3344_GetLastError(void);
 
 #ifdef __cplusplus
 }
