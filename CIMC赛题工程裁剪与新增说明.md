@@ -282,7 +282,7 @@ Bootloader 当前已有的搬运和校验逻辑可以继续复用：
 |---|---|
 | `Driver/GD25QXX/gd25qxx.c`、`gd25qxx.h` | 移除 |
 | `Driver/GD25QXX/*` 全目录 | 移除 |
-| `Driver/STORAGE/bsp_storage.c`、`bsp_storage.h` | 仅保留 GD30AD3344 初始化，不能再包含 GD25QXX 初始化 |
+| `Driver/STORAGE/bsp_storage.c`、`bsp_storage.h` | 已删除；GD30AD3344 初始化回到 `Driver/GD30AD3344/gd30ad3344.c` |
 
 如果后续确实要用外部 Flash 裸扇区保存告警，需要重新评审容量、掉电一致性和评分收益，再只引入最小裸读写驱动；不得恢复 SMARTFS/littlefs 文件系统。
 
@@ -307,7 +307,7 @@ Bootloader 当前已有的搬运和校验逻辑可以继续复用：
 | `cimc_auto_report_task` | 100ms | 判断是否到达 1s/3s/5s 上报时间 |
 | `cimc_led_task` | 20ms | 系统 LED 1s 闪烁，采集 LED 状态输出 |
 | `cimc_display_task` | 100ms | OLED 双行显示 |
-| `rtc_task` | 可并入采样或协议 | 只提供时间读取，不再单独显示第 4 行 |
+| RTC 时间接口 | 协议按需调用 | 只保留 `rtc_app_set_unix_epoch()` / `rtc_app_get_unix_epoch()`，不再注册独立周期任务 |
 
 应删除的任务：
 

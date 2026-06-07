@@ -175,7 +175,7 @@ static void write_u32_be(uint8_t *buf, uint32_t value)
     buf[3] = (uint8_t)(value  & 0xFFU);
 }
 
-/* 将IEEE 754单精度浮点以大端序写入4字节，CH0/CH1/阈值/变比均用此格式 */
+/* 将IEEE 754单精度浮点以大端序写入4字节 */
 static void write_float_be(uint8_t *buf, float value)
 {
     uint32_t raw;
@@ -211,10 +211,7 @@ static uint8_t append_hex_byte(char *output, uint16_t output_size,
     return 1;
 }
 
-/*
- * 组装协议帧（二进制→ASCII十六进制）并通过RS485发送。
- * payload为NULL时plen须为0；帧格式：帧头+设备ID+帧类型+命令+长度+版本+内容+CRC+帧尾。
- */
+/* 组装协议帧（二进制→ASCII十六进制）并通过RS485发送。*/
 static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,uint16_t command,const uint8_t *payload, uint8_t plen)
 {
     uint8_t  binary[BIN_BUF_SIZE];
@@ -257,20 +254,20 @@ static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,uint16_t comman
     return 1;
 }
 
-/* 发送OK应答帧（内容区=0xFF） */
+/* 发送OK应答帧 */
 static uint8_t send_ok(uint16_t device_id, uint16_t command)
 {
     uint8_t ok = RSP_OK;
     return send_frame(device_id, FT_RSP, command, &ok, 1);
 }
 
-/* 发送错误应答帧（帧类型0xFF），CRC/长度/非法帧类型时回复 */
+/* 发送错误应答帧*/
 static uint8_t send_error(uint16_t device_id, uint16_t command)
 {
     return send_frame(device_id, FT_ERR, command, NULL, 0);
 }
 
-/* 采集UTC+CH0+CH1组装12字节payload，发送一帧自动上报数据帧 */
+/* 发送一帧自动上报数据帧 */
 static void send_auto_report(uint16_t own_id)
 {
     const params_t *params = params_get();
@@ -289,7 +286,7 @@ static void send_auto_report(uint16_t own_id)
     send_frame(own_id, FT_RSP,CMD_SAMPLE_ON, payload, 12);
 }
 
-/* 校验并解析一帧二进制协议数据，合法返回1，否则返回0 */
+/* 校验并解析一帧二进制协议数据 */
 static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,frame_t *frame)
 {
     uint8_t  plen;
@@ -323,11 +320,7 @@ static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,frame_t *f
     return 1;
 }
 
-/*
- * 执行已校验帧对应的命令。
- * 设备ID过滤：0xFFFF=广播，等于本机ID=正常响应，其他静默丢弃。
- * 自动上报激活期间只允许停止命令（0x0303），其他命令静默丢弃。
- */
+/*执行已校验帧对应的命令。*/
 static uint8_t dispatch_command(const frame_t *frame)
 {
     const params_t *params;
@@ -385,7 +378,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         send_frame(own_id, FT_RSP,frame->command, s_fw_ver, 4);
         return 1;
 
-    case CMD_SET_TIME:  /* 0x0105 设置设备时间（4字节UTC秒，大端） */
+    case CMD_SET_TIME:  /* 0x0105 设置设备时间 */
         if((frame->length != 4) || (!frame->payload)) 
 		{
             send_error(own_id, frame->command); return 1;
@@ -400,7 +393,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         send_ok(own_id, frame->command);
         return 1;
 
-    case CMD_GET_TIME:  /* 0x0106 查询设备时间（回4字节UTC秒） */
+    case CMD_GET_TIME:  /* 0x0106 查询设备时间 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint32_t ts;
@@ -414,7 +407,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         }
         return 1;
 
-    case CMD_GET_ID:  /* 0x0111 查询设备ID（广播下发，回本机2字节ID） */
+    case CMD_GET_ID:  /* 0x0111 查询设备ID */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[2];
@@ -424,7 +417,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         }
         return 1;
 
-    case CMD_GET_BAUD:  /* 0x0112 查询波特率（回1字节映射码） */
+    case CMD_GET_BAUD:  /* 0x0112 查询波特率 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t baud_code = params->baud_code;
@@ -432,7 +425,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         }
         return 1;
 
-    case CMD_SET_ID:  /* 0x01A1 设置设备ID（应答帧用新ID） */
+    case CMD_SET_ID:  /* 0x01A1 设置设备ID */
         if((frame->length != 2) || (!frame->payload)) 
 		{
             send_error(own_id, frame->command); return 1;
@@ -447,7 +440,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         }
         return 1;
 
-    case CMD_SET_BAUD:  /* 0x01A2 设置波特率：先回OK（旧波特率），再在线切换 */
+    case CMD_SET_BAUD:  /* 0x01A2 设置波特率 */
         if((frame->length != 1) || (!frame->payload)) 
 		{
             send_error(own_id, frame->command); return 1;
@@ -457,15 +450,11 @@ static uint8_t dispatch_command(const frame_t *frame)
             send_error(own_id, frame->command); return 1;
         }
         send_ok(own_id, frame->command);
-        /*
-         * OK帧以旧波特率发完后，在线切换到新波特率，不重启。
-         * 波特率码已由params_set_baud()持久化到Flash。
-         */
         delay_ms(20);
         bsp_usart_change_baudrate(params_baud());
         return 1;
 
-    case CMD_SET_DAC:  /* 0x0301 设置DAC输出（0~4095） */
+    case CMD_SET_DAC:  /* 0x0301 设置DAC输出 */
         if((frame->length != 2) || (!frame->payload)) 
 		{
             send_error(own_id, frame->command); return 1;
@@ -478,7 +467,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         }
         return 1;
 
-    case CMD_SAMPLE_ON:  /* 0x0302 开始定时自动上报，首次响应直接发数据帧 */
+    case CMD_SAMPLE_ON:  /* 0x0302 定时自动上报 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         sts_set_sample(1);
         send_auto_report(own_id);
@@ -503,7 +492,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         bootloader_port_request_upgrade_reset();
         return 1;
 
-    case CMD_GET_CH0:  /* 0x0201 查询CH0（原始电压×变比，float大端） */
+    case CMD_GET_CH0:  /* 0x0201 查询CH0 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[4];
@@ -513,7 +502,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         }
         return 1;
 
-    case CMD_GET_CH1:  /* 0x0202 查询CH1（原始电压×变比，float大端） */
+    case CMD_GET_CH1:  /* 0x0202 查询CH1 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[4];
@@ -523,7 +512,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         }
         return 1;
 
-    case CMD_GET_CH2:  /* 0x0221 查询CH2（PT100温度，float大端） */
+    case CMD_GET_CH2:  /* 0x0221 查询CH2 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t          buf[4];
@@ -551,7 +540,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         send_ok(own_id, frame->command);
         return 1;
 
-    case CMD_SET_INTV:  /* 0x0261 设置自动上报间隔（01=1s/02=3s/03=5s） */
+    case CMD_SET_INTV:  /* 0x0261 设置自动上报间隔 */
         if((frame->length != 1) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
@@ -568,7 +557,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         power_sleep();
         return 1;
 
-    case CMD_GET_THRA:  /* 0x0400 批量读取CH0+CH1阈值（各float大端，共8字节） */
+    case CMD_GET_THRA:  /* 0x0400 批量读取CH0+CH1阈值 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[8];
@@ -614,7 +603,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         send_ok(own_id, frame->command);
         return 1;
 
-    case CMD_SET_ALM:  /* 0x0601 设置告警上报模式（01=主动/02=仅记录） */
+    case CMD_SET_ALM:  /* 0x0601 设置告警上报模式 */
         if((frame->length != 1) || (!frame->payload)) 
 		{
             send_error(own_id, frame->command); return 1;
@@ -627,7 +616,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         send_ok(own_id, frame->command);
         return 1;
 
-    case CMD_GET_ALM:  /* 0x0602 查询告警记录（ASCII直接回复，非帧封装） */
+    case CMD_GET_ALM:  /* 0x0602 查询告警记录*/
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             char buf[560]; /* 10条×55字符+终止符 */
@@ -645,21 +634,12 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     default:
-        /*
-         * 命令字不在实现范围内，回错误帧。
-         * 未知命令字统一用0xEEEE，与CRC/长度错误保持一致。
-         */
         send_error(own_id, 0xEEEEU);
         return 1;
     }
 }
 
-/*
- * 处理RS485收到的一帧ASCII十六进制协议数据。
- * 1. ASCII→二进制解码；失败时静默丢弃。
- * 2. 校验帧头/帧尾/长度/版本/CRC-16-Modbus；失败时回错误帧。
- * 3. 通过校验后交由分发器处理。
- */
+/*处理RS485收到的一帧ASCII十六进制协议数据。*/
 uint8_t proto_rx(const uint8_t *frame, uint16_t length)
 {
     uint8_t      binary[BIN_BUF_SIZE];
@@ -681,7 +661,7 @@ uint8_t proto_rx(const uint8_t *frame, uint16_t length)
     return dispatch_command(&parsed_frame);
 }
 
-/* 发送开机心跳帧（类型0x05，命令字0x8888），通知上位机本机在线 */
+/* 发送开机心跳帧，通知上位机本机在线 */
 void proto_hb(void)
 {
     uint16_t own_id = params_get()->device_id;

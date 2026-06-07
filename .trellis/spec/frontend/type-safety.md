@@ -90,7 +90,7 @@ Good examples:
 
 - `GD30AD3344` bitfield struct in `gd30ad3344.h`
 - buffer-size macros in `bsp_usart.h`
-- `CONVERT_NUM` and `DAC1_PIN` in `bsp_analog.h`
+- `ADC/DAC pin macros` stay local to `bsp_analog.c` unless another module truly consumes them
 
 ---
 

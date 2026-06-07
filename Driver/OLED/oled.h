@@ -7,9 +7,6 @@
 extern "C" {
 #endif
 
-#define OLED_WIDTH  128
-#define OLED_HEIGHT 32
-
 /* 显示16px ASCII字符串。 */
 uint8_t OLED_ShowStr(uint8_t x, uint8_t y, char *ch);
 

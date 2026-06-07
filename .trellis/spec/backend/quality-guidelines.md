@@ -49,6 +49,7 @@ that capability.
 | OLED | Formal App display is two lines: team ID and `AutoSample` / `IDLE` |
 | LED | Formal App uses two LEDs: LED1 system blink, LED2 auto-sample status |
 | DAC | `0x0301` exclusively controls DAC0 OUT0; ADC periodic logic must not overwrite it |
+| GD30AD3344 | SPI3 initialization lives in `Driver/GD30AD3344/gd30ad3344.c`; no separate storage wrapper is compiled |
 | OTA | App handles `0x0501`; Bootloader handles `0x0502/0x0503` and `5AA5C33C` bin magic |
 | Build output | App after-build generates `Project.bin` only; no `Project_ota.bin` |
 

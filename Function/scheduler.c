@@ -1,8 +1,8 @@
 #include "scheduler.h"
 
-static uint8_t ntask; /* 有效任务数量，由scheduler_init()按任务表长度计算 */
+static uint8_t ntask; /* 有效任务数量 */
 
-/* 描述一个周期任务：入口函数、周期（ms）、上次执行时刻（ms） */
+/* 一个周期任务 */
 typedef struct
 {
     void (*fn)(void);
@@ -10,7 +10,7 @@ typedef struct
     uint32_t last;
 } task_t;
 
-/* 静态任务表，新增周期任务在此登记 */
+/* 静态任务表 */
 static task_t s_tasks[] =
 {
      {led_task,                      20,   0}
@@ -18,20 +18,16 @@ static task_t s_tasks[] =
     ,{gd30ad3344_pt100_task,         200,  0}
     ,{oled_task,                     100,  0}
     ,{uart_task,                     5,    0}
-    ,{rtc_task,                      1000, 0}  /* 每秒更新RTC共享缓存 */
-    ,{proto_tick, 100,  0}  /* 自动上报，内部自管理间隔 */
+    ,{proto_tick, 100,  0}
 };
 
 // 按静态任务表长度初始化有效任务数
-void scheduler_init(void)
+static void scheduler_init(void)
 {
     ntask = sizeof(s_tasks) / sizeof(task_t);
 }
 
-/*
- * 深度睡眠唤醒后调用，将所有任务last统一重置为当前tick。
- * 避免唤醒后外设重建期间各任务集中到期引发冲突。
- */
+/*深度睡眠唤醒后调用，将所有任务last统一重置为当前tick。*/
 void scheduler_reset_runtime(void)
 {
     uint8_t i;
@@ -45,10 +41,7 @@ void scheduler_reset_runtime(void)
 }
 
 
-/*
- * 系统上电初始化，完成后进入主循环。
- * 初始化顺序：BootLoader现场接管 → USART/参数/告警 → LED/OLED/ADC/DAC/RTC/PT100 → 调度器 → 开机心跳。
- */
+/*系统上电初始化，完成后进入主循环。*/
 void system_init(void)
 {
 	#ifdef __FIRMWARE_VERSION_DEFINE
@@ -61,7 +54,6 @@ void system_init(void)
 		alm_init();
 		alm_load();
 
-		/* Flash保存的波特率与出厂默认不同时，原地切换USART1波特率 */
 		{
 		    uint32_t saved_baud = params_baud();
 		    if(saved_baud != RS485_BAUD) 
@@ -78,16 +70,16 @@ void system_init(void)
 
 		systick_config();
 
-		delay_ms(200); /* 给调试器重连SWIO留出窗口 */
+		delay_ms(200);
 
 	#ifdef __FIRMWARE_VERSION_DEFINE
 		fw_ver = gd32f4xx_firmware_version_get();
-	#endif /* __FIRMWARE_VERSION_DEFINE */
+	#endif
 
 		bsp_led_init();
 		bsp_oled_init();
 
-		bsp_gd30ad3344_init();
+		GD30AD3344_Init();
 		gd30ad3344_pt100_app_init();
 
 		bsp_adc_init();
@@ -106,7 +98,7 @@ void system_init(void)
 		proto_hb();
 }
 
-/* 轮询任务表，执行已到期的周期任务，32位tick回绕安全 */
+/* 轮询任务表 */
 void scheduler_run(void)
 {
     uint32_t now = timebase_get_ms32();

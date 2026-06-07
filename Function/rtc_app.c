@@ -8,7 +8,7 @@ static uint8_t is_leap(uint16_t year)
     return ((year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))) ? 1 : 0;
 }
 
-/* Unix时间戳转年月日时分秒，格里高利历快速推算 */
+/* Unix时间戳转年月日时分秒 */
 static void ts_to_dt(uint32_t ts, bsp_rtc_datetime_t *dt)
 {
     uint32_t days = ts / 86400, tod = ts % 86400;
@@ -59,12 +59,6 @@ static uint32_t dt_to_ts(const bsp_rtc_datetime_t *dt)
     days += dt->date - 1;
 
     return days * 86400 + (uint32_t)dt->hour   * 3600 + (uint32_t)dt->minute * 60 + (uint32_t)dt->second;
-}
-
-/* 每秒更新RTC共享缓存 */
-void rtc_task(void)
-{
-    rtc_current_time_get(&rtc_initpara);
 }
 
 int rtc_app_set_unix_epoch(uint32_t unix_ts)

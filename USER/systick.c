@@ -126,9 +126,3 @@ void delay_us(uint32_t us)
     if(!g_dwt_ready) timebase_dwt_init();
     timebase_delay_cycles((uint64_t)us * (uint64_t)g_cycles_per_us);
 }
-
-// 兼容原厂1ms延时。
-void delay_1ms(uint32_t count)
-{
-    delay_ms(count);
-}

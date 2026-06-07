@@ -24,7 +24,6 @@
 /* Driver 层头文件。 */
 #include "bsp_led.h"
 #include "bsp_oled.h"
-#include "bsp_storage.h"
 #include "bsp_usart.h"
 #include "bsp_analog.h"
 #include "bsp_rtc.h"

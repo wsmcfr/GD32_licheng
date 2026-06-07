@@ -1,8 +1,6 @@
 #ifndef CIMC_ALARM_H
 #define CIMC_ALARM_H
 
-/* 告警记录模块。 */
-
 #define SYSTEM_ALL_BASE_ONLY
 #include "system_all.h"
 #undef SYSTEM_ALL_BASE_ONLY

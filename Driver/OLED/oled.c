@@ -6,13 +6,11 @@
 #define OLED_I2C_BUSY_WAIT_MS 20
 #define OLED_CMD_CONTROL_BYTE 0x00U
 #define OLED_DATA_CONTROL_BYTE 0x40U
+#define OLED_WIDTH  128
+#define OLED_HEIGHT 32
 
-uint8_t s_oled_available = 1;
+static uint8_t s_oled_available = 1;
 
-/*
- * 对 I2C0 总线执行手动恢复：把 PB8/PB9 切为 GPIO 输出，产生 9 个 SCL
- * 脉冲让从机释放 SDA，再手动发 STOP，最后恢复 I2C 复用开漏并重新初始化控制器。
- */
 static void I2C_Bus_Reset(void)
 {
     uint8_t i;
@@ -20,11 +18,10 @@ static void I2C_Bus_Reset(void)
     gpio_mode_set(OLED_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, OLED_CLK_PIN | OLED_DAT_PIN);
     gpio_output_options_set(OLED_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, OLED_CLK_PIN | OLED_DAT_PIN);
 
-    /* 先释放 SCL/SDA，给被打断的从机一个回到空闲态的窗口。 */
+
     gpio_bit_set(OLED_PORT, OLED_CLK_PIN | OLED_DAT_PIN);
     delay_ms(10);
 
-    /* 9 个时钟覆盖从机可能残留的 8 位数据和 1 位 ACK 周期。 */
     for (i = 0; i < 9; i++)
 	{
         gpio_bit_reset(OLED_PORT, OLED_CLK_PIN);
@@ -33,7 +30,6 @@ static void I2C_Bus_Reset(void)
         delay_ms(5);
     }
 
-    /* SDA 在 SCL 高电平期间拉高就是 STOP，可把总线状态收回空闲。 */
     gpio_bit_set(OLED_PORT, OLED_CLK_PIN);
     gpio_bit_reset(OLED_PORT, OLED_DAT_PIN);
     delay_ms(5);
@@ -67,7 +63,7 @@ static uint8_t oled_wait_i2c_flag_set(uint32_t i2c_periph, i2c_flag_enum flag, u
     return 0;
 }
 
-// 等待 I2C STOP 位由硬件清零，确认 STOP 条件已发送完成；超时返回 0。
+// 等待 I2C STOP 位由硬件清零
 static uint8_t oled_wait_i2c_stop_clear(uint32_t i2c_periph, uint32_t timeout)
 {
     while (timeout--)
@@ -80,7 +76,7 @@ static uint8_t oled_wait_i2c_stop_clear(uint32_t i2c_periph, uint32_t timeout)
     return 0;
 }
 
-// 等待 DMA 通道传输完成标志；超时返回 0。
+// 等待 DMA 通道传输完成标志
 static uint8_t oled_wait_dma_ftf(uint32_t dma_periph, dma_channel_enum channel, uint32_t timeout)
 {
     while (timeout--)
@@ -93,7 +89,7 @@ static uint8_t oled_wait_dma_ftf(uint32_t dma_periph, dma_channel_enum channel, 
     return 0;
 }
 
-// 等待地址发送完成；若 OLED 返回 NACK 则提前清除 AERR 并返回 0。
+// 等待地址发送完成
 static uint8_t oled_wait_addsend_or_nack(uint32_t timeout)
 {
     while (timeout--)
@@ -112,8 +108,7 @@ static uint8_t oled_wait_addsend_or_nack(uint32_t timeout)
 }
 
 /*
- * 等待 I2C0 总线空闲：若总线忙先调用 I2C_Bus_Reset 尝试恢复，
- * 再做有限轮询；两轮都超时则放弃并返回 0。
+ * 等待 I2C0 总线空闲
  */
 static uint8_t oled_wait_bus_idle(void)
 {
@@ -148,11 +143,8 @@ static uint8_t oled_wait_bus_idle(void)
     return 1;
 }
 
-/*
- * 通过一次 I2C START/地址/DMA/STOP 事务把已组包好的 OLED 数据发出去。
- * packet 首字节必须是 SSD1306 控制字，length 含控制字至少 2 字节。
- * 任意阶段失败则关闭 DMA 并尝试总线恢复，返回 0。
- */
+
+// 通过一次 I2C START/地址/DMA/STOP 事务把已组包好的 OLED 数据发出去。
 static uint8_t oled_write_packet(__IO uint8_t *packet, uint16_t length)
 {
     if(!packet || (length < 2))
@@ -223,7 +215,7 @@ static uint8_t oled_write_packet(__IO uint8_t *packet, uint16_t length)
     return 1;
 }
 
-// 带可用标志保护的发送：OLED 不可用时直接返回 0；失败时置 s_oled_available=0。
+// 带可用标志保护的发送
 static uint8_t oled_write_packet_checked(__IO uint8_t *packet, uint16_t length)
 {
     if(!s_oled_available)
@@ -339,7 +331,7 @@ static uint8_t oled_write_data_buf(const uint8_t *data, uint16_t length)
     return 1;
 }
 
-// 用一次批量命令事务设置 OLED 页地址和列地址；坐标越界返回 0。
+// 用一次批量命令事务设置 OLED 页地址和列地址
 static uint8_t oled_set_position_buf(uint8_t x, uint8_t y)
 {
     uint8_t pos_cmds[3];

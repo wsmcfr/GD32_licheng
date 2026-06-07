@@ -47,6 +47,4 @@ void delay_ms(uint32_t ms);
 
 void delay_us(uint32_t us);
 
-void delay_1ms(uint32_t count);
-
 #endif /* SYS_TICK_H */

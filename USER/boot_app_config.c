@@ -3,7 +3,7 @@
 /* 将 SCB->VTOR 切换到 App 向量表基址，并执行 DSB/ISB 屏障，
  * 确保后续异常和外设中断入口正确。
  */
-void boot_app_vector_table_init(void)
+static void boot_app_vector_table_init(void)
 {
     /*
      * BootLoader 跳转到 App 后，必须让 VTOR 指向 App 的向量表。

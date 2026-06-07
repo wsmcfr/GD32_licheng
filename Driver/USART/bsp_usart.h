@@ -1,8 +1,6 @@
 #ifndef BSP_USART_H
 #define BSP_USART_H
 
-/* USART1/RS485硬件资源定义：仅保留RS485通信串口 */
-
 #define SYSTEM_ALL_BASE_ONLY
 #include "system_all.h"
 #undef SYSTEM_ALL_BASE_ONLY
@@ -15,7 +13,7 @@ extern "C" {
 #define RS485_PORT               USART1
 #define RS485_BAUD            19200U
 
-/* USART1/RS485 DMA接收缓冲区长度（单帧远小于512字节，1KB留有余量） */
+/* USART1/RS485 DMA接收缓冲区长度 */
 #define BSP_USART1_RX_BUFFER_SIZE      1024U
 
 /* USART1引脚与DMA映射 */
@@ -29,7 +27,7 @@ extern "C" {
 #define USART1_RX_PIN                  GPIO_PIN_6
 #define USART1_AF                      GPIO_AF_7
 
-/* RS485方向控制脚PE8（DE/RE#复用），高电平发送，低电平接收 */
+/* RS485方向控制脚PE8（DE/RE#复用） */
 #define RS485_USART                    RS485_PORT
 #define RS485_DIR_PORT                 GPIOE
 #define RS485_DIR_CLK_PORT             RCU_GPIOE
@@ -41,10 +39,10 @@ extern uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
 
 void     bsp_usart_init(void);          /* 初始化USART1/RS485 */
 
-/* 阻塞发送字节流，RS485自动管理方向脚，超时返回已发字节数 */
+/* 阻塞发送字节流 */
 uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint16_t length);
 
-/* 原地切换USART1波特率，不重新初始化GPIO/NVIC，baudrate=0时直接返回 */
+/* 切换USART1波特率 */
 void     bsp_usart_change_baudrate(uint32_t baudrate);
 
 #ifdef __cplusplus

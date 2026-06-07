@@ -9,8 +9,6 @@
 extern "C" {
 #endif
 
-void boot_app_vector_table_init(void);
-
 void boot_app_handoff_init(void);
 
 #ifdef __cplusplus

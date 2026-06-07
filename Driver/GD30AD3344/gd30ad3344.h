@@ -14,24 +14,6 @@ extern "C" {
 
 #include "system_all.h"
 
-/* GD30AD3344 所在 SPI3 引脚资源定义。 */
-#define GD30AD3344_SPI_GPIO_PORT       GPIOE
-#define GD30AD3344_SPI_GPIO_CLOCK      RCU_GPIOE
-#define GD30AD3344_SPI_SCK_PIN         GPIO_PIN_12
-#define GD30AD3344_SPI_MISO_PIN        GPIO_PIN_13
-#define GD30AD3344_SPI_MOSI_PIN        GPIO_PIN_14
-#define GD30AD3344_SPI_CS_PIN          GPIO_PIN_10
-#define GD30AD3344_SPI_AF              GPIO_AF_5
-
-/* GD30AD3344 使用的 SPI 外设和 DMA 缓冲区长度。 */
-#define SPI_GD30AD3344                 SPI3
-#define GD30AD3344_DMA_BUFFER_SIZE     12U
-
-/* 片选控制宏。 */
-#define SPI_GD30AD3344_CS_LOW()        gpio_bit_reset(GD30AD3344_SPI_GPIO_PORT, GD30AD3344_SPI_CS_PIN)
-#define SPI_GD30AD3344_CS_HIGH()       gpio_bit_set(GD30AD3344_SPI_GPIO_PORT, GD30AD3344_SPI_CS_PIN)
-
-
 typedef struct _GD30AD3344
 {
     uint16_t SS         : 1;   //写状态:0无作用           1开始单次转换（默认）   

@@ -1,7 +1,18 @@
 #include "bsp_analog.h"
 
 __IO uint16_t adc_value[2];
-uint16_t convertarr[CONVERT_NUM] = {0};
+
+/* ADC 引脚定义。 */
+#define ADC1_PORT                       GPIOC
+#define ADC1_CLK_PORT                   RCU_GPIOC
+#define ADC1_PIN                        GPIO_PIN_0   /* PC0: CH0 电位器输入 */
+#define ADC2_PIN                        GPIO_PIN_1   /* PC1: CH1 DAC 回读 */
+#define ADC_VREF_PIN                    GPIO_PIN_2   /* PC2: 参考电压脚，仅配置为模拟输入 */
+
+/* DAC 引脚定义。 */
+#define DAC1_PORT                       GPIOA
+#define DAC1_CLK_PORT                   RCU_GPIOA
+#define DAC1_PIN                        GPIO_PIN_4
 
 /* TIMER5 作为 DAC 触发源，10kHz 更新频率 */
 static void timer5_config(void)
@@ -65,7 +76,7 @@ void bsp_adc_init(void)
     adc_dma_mode_enable(ADC0);
 
     adc_enable(ADC0);
-    delay_1ms(1);
+    delay_ms(1);
     adc_calibration_enable(ADC0);
 
     adc_software_trigger_enable(ADC0, ADC_ROUTINE_CHANNEL);

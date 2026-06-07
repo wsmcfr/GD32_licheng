@@ -3,7 +3,7 @@
 #define PT100_ADC_CHANNEL    GD30AD3344_Channel_4
 #define PT100_ADC_PGA        GD30AD3344_PGA_4V096
 
-/* PT100模块两点标定参数：100Ω->1.1355V，154Ω->1.2398V */
+/* PT100模块两点标定参数 */
 #define PT100_OFFSET_V       0.94235185f
 #define PT100_SLOPE_V_OHM    0.0019314815f
 
@@ -18,7 +18,7 @@ typedef struct
     float temperature_c;
 } pt100_point_t;
 
-/* 电阻-温度标定表，按电阻升序排列，用于分段线性插值 */
+/* 电阻-温度标定表 */
 static const pt100_point_t s_pt100_table[] = 
 {
     {80.6f,  -49.27f},
@@ -38,7 +38,7 @@ static const pt100_point_t s_pt100_table[] =
 static pt100_measurement_t s_latest;
 static uint8_t s_discard = 1; /* 上电首帧丢弃，等MUX/PGA稳定 */
 
-/* 根据测试板标定表分段线性插值，电阻→温度 */
+/* 标定表分段线性插值，电阻→温度 */
 static float resistance_to_temp(float r)
 {
     uint32_t i;

@@ -26,7 +26,7 @@ Function/
 ├── cimc_status.c / cimc_status.h # Team ID and auto-sample status
 ├── adc_app.c / adc_app.h       # ADC/DAC app logic; DAC is controlled by 0x0301
 ├── gd30ad3344_pt100_app.c / gd30ad3344_pt100_app.h # GD30AD3344 PT100 resistance/temperature conversion
-└── rtc_app.c / rtc_app.h       # RTC cache refresh without OLED side effects
+└── rtc_app.c / rtc_app.h       # Unix timestamp conversion helpers used by CIMC protocol
 ```
 
 Legacy `btn_app.c`, `uart_ota_app.c`, and USART0/SMARTFS shell behavior have been removed from the formal source tree and must not be restored as CIMC build entries.
@@ -61,7 +61,7 @@ App modules may read:
 
 - `adc_value`
 - `g_idle_pend`
-- RTC state
+- RTC state through `rtc_app_get_unix_epoch()` / `rtc_app_set_unix_epoch()`
 - status from `cimc_status`
 
 But pin definitions, DMA channels, SPI mode, and IRQ enables remain below in `Driver/` or `Library/`.
@@ -81,7 +81,6 @@ Task naming examples:
 - `oled_task`
 - `uart_task`
 - `adc_task`
-- `rtc_task`
 
 ---
 

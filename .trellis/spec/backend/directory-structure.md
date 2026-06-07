@@ -15,7 +15,7 @@ The main rule is: **hardware ownership stays low, app behavior stays high**.
 
 ```text
 User/
-├── main.c / main.h                # Program entry and C library retarget
+├── main.c                         # Program entry and C library retarget
 ├── systick.c / systick.h          # SysTick/DWT timebase and blocking delay
 ├── gd32f4xx_it.c / gd32f4xx_it.h  # Interrupt service routines
 ├── gd32f4xx_libopt.h              # GD32 standard peripheral library option header
@@ -29,13 +29,12 @@ Function/
 ├── cimc_status.c / cimc_status.h
 ├── adc_app.c / adc_app.h
 ├── gd30ad3344_pt100_app.c / gd30ad3344_pt100_app.h
-└── rtc_app.c / rtc_app.h
+└── rtc_app.c / rtc_app.h          # Unix timestamp conversion helpers used by CIMC protocol
 
 Driver/
 ├── LED/
 ├── USART/
 ├── OLED/
-├── STORAGE/
 ├── ANALOG/
 ├── RTC/
 ├── BOOTLOADER/
@@ -85,7 +84,7 @@ instead of reusing the button low-power demo unchanged.
 Use `Driver/<device>/` for reusable device logic:
 
 - SSD1306 display primitives in `Driver/OLED/`
-- GD30AD3344 command/data protocol in `Driver/GD30AD3344/`
+- GD30AD3344 SPI resource initialization and command/data protocol in `Driver/GD30AD3344/`
 
 ### Protocol Layer
 
@@ -134,7 +133,7 @@ Header conventions:
 - Public macros, `extern` buffers, and public function declarations belong in the matching `.h`
 - Driver headers that include `system_all.h` while avoiding app-layer cycles use the `SYSTEM_ALL_BASE_ONLY` guard pattern
 
-Example from `Driver/STORAGE/bsp_storage.h`:
+Example from driver headers such as `Driver/BOOTLOADER/bootloader_port.h`:
 
 ```c
 #define SYSTEM_ALL_BASE_ONLY

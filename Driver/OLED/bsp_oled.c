@@ -1,10 +1,9 @@
 #include "bsp_oled.h"
 
-/* OLED DMA 发送缓冲区：命令包保持 2 字节，数据包第 1 字节为控制字，后续最多携带一整页显存数据 */
-__IO uint8_t oled_cmd_buf[2] = {0x00U, 0x00U};
+/* OLED DMA 发送缓冲区 */
 __IO uint8_t oled_data_buf[OLED_TX_BUFFER_SIZE] = {0x40U};
 
-/* 初始化 OLED 使用的 I2C0 外设、GPIO 复用功能以及 DMA 发送通道 */
+/* 初始化 OLED */
 void bsp_oled_init(void)
 {
     dma_single_data_parameter_struct dma_init_struct;

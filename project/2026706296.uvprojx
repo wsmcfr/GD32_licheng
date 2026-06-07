@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_STDPERIPH_DRIVER,GD32F470</Define>
               <Undefine></Undefine>
-              <IncludePath>..\Library\GD32F4xx_standard_peripheral\Include;..\User;..\HeaderFiles;..\Function;..\Protocol;..\Driver\LED;..\Driver\USART;..\Driver\OLED;..\Driver\STORAGE;..\Driver\ANALOG;..\Driver\RTC;..\Driver\BOOTLOADER;..\Driver\GD30AD3344;..\CMSIS;..\CMSIS\GD\GD32F4xx\Include</IncludePath>
+              <IncludePath>..\Library\GD32F4xx_standard_peripheral\Include;..\User;..\HeaderFiles;..\Function;..\Protocol;..\Driver\LED;..\Driver\USART;..\Driver\OLED;..\Driver\ANALOG;..\Driver\RTC;..\Driver\BOOTLOADER;..\Driver\GD30AD3344;..\CMSIS;..\CMSIS\GD\GD32F4xx\Include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -563,11 +563,6 @@
               <FileName>bsp_oled.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\Driver\OLED\bsp_oled.c</FilePath>
-            </File>
-            <File>
-              <FileName>bsp_storage.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Driver\STORAGE\bsp_storage.c</FilePath>
             </File>
             <File>
               <FileName>bsp_analog.c</FileName>

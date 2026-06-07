@@ -1,7 +1,7 @@
 #include "bsp_usart.h"
 #include "usart_app.h"
 
-/* USART1/RS485 DMA 接收缓冲区，IDLE 中断按有效长度转交应用层 */
+/* USART1/RS485 DMA 接收缓冲区 */
 uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
 
 static void rs485_direction_receive(void);
@@ -23,10 +23,6 @@ static uint8_t wait_flag(uint32_t usart_periph, usart_flag_enum flag)
     return 1;
 }
 
-/*
- * 配置 RS485 方向控制脚 PE8 为推挽输出，初始化后默认进入接收态，
- * 避免上电后占用 RS485 总线。
- */
 static void rs485_init_gpio(void)
 {
     rcu_periph_clock_enable(RS485_DIR_CLK_PORT);
@@ -90,9 +86,7 @@ void bsp_usart_init(void)
 }
 
 /*
- * 阻塞轮询向指定串口发送原始字节流。
- * RS485 发送前先切换方向脚并等 10µs 建立时间，全部字节移出后切回接收态。
- * 返回实际完成的字节数；等待标志超时时提前返回。
+ * 指定串口发送原始字节流。
  */
 uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint16_t length)
 {
@@ -140,9 +134,7 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
 }
 
 /*
- * 原地切换 USART1 波特率，不重新初始化 GPIO 或 NVIC。
- * 等 TC 确认当前 TX 结束 → 关 DMA → 关 USART → 改波特率 → 开 USART →
- * 清零接收缓冲（清除旧波特率乱码）→ 重置 DMA CNT → 重新使能 DMA 和 IDLE 中断。
+ *切换 USART1 波特率。
  */
 void bsp_usart_change_baudrate(uint32_t baudrate)
 {
@@ -153,7 +145,6 @@ void bsp_usart_change_baudrate(uint32_t baudrate)
 
     wait_flag(USART1, USART_FLAG_TC);
 
-    /* 关闭 IDLE 中断，防止切换过程中 ISR 标记虚假 IDLE 事件 */
     usart_interrupt_disable(USART1, USART_INT_IDLE);
 
     dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
@@ -162,7 +153,6 @@ void bsp_usart_change_baudrate(uint32_t baudrate)
     usart_baudrate_set(USART1, baudrate);
     usart_enable(USART1);
 
-    /* 清除 USART 可能残留的 IDLE / ORE 标志（读 STAT + 读 DATA）*/
     USART_STAT0(USART1);
     USART_DATA(USART1);
 
@@ -170,7 +160,6 @@ void bsp_usart_change_baudrate(uint32_t baudrate)
     dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL,sizeof(usart1_rxbuffer));
     dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
-    /* 清除去抖状态，避免处理旧波特率的残留数据 */
     g_idle_pend = 0;
 
     usart_interrupt_enable(USART1, USART_INT_IDLE);

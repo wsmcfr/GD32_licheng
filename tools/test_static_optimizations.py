@@ -28,7 +28,6 @@ def require_missing(relative_path: str) -> None:
 def main() -> None:
     """执行正式版静态契约检查，任一契约缺失都会让脚本以非零状态退出。"""
     main_c = read_text("USER/main.c")
-    scheduler = read_text("Function/scheduler.c")
     interrupts = read_text("USER/gd32f4xx_it.c")
     usart_h = read_text("Driver/USART/bsp_usart.h")
     usart_c = read_text("Driver/USART/bsp_usart.c")
@@ -36,8 +35,11 @@ def main() -> None:
     usart_app_h = read_text("Function/usart_app.h")
     pt100_app = read_text("Function/gd30ad3344_pt100_app.c")
     adc_app = read_text("Function/adc_app.c")
+    analog_h = read_text("Driver/ANALOG/bsp_analog.h")
+    oled_h = read_text("Driver/OLED/bsp_oled.h")
     led_h = read_text("Driver/LED/bsp_led.h")
     oled_app = read_text("Function/oled_app.c")
+    scheduler = read_text("Function/scheduler.c")
     system_all = read_text("HeaderFiles/system_all.h")
     uvproj = read_text("project/2026706296.uvprojx")
     doc = read_text("工程文档.md")
@@ -62,6 +64,9 @@ def main() -> None:
         "tools/pack_ota_image.c",
         "tools/pack_ota_image.exe",
         "tools/test_header_bin_ota_static.py",
+        "Driver/STORAGE/bsp_storage.c",
+        "Driver/STORAGE/bsp_storage.h",
+        "User/main.h",
     ):
         require_missing(relative_path)
 
@@ -76,6 +81,8 @@ def main() -> None:
             usart_app_h,
             pt100_app,
             adc_app,
+            analog_h,
+            oled_h,
             system_all,
             uvproj,
         ]
@@ -95,6 +102,14 @@ def main() -> None:
         "USART5_IRQHandler",
         "usart0_rxbuffer",
         "usart5_rxbuffer",
+        "convertarr",
+        "CONVERT_NUM",
+        "oled_cmd_buf",
+        "bsp_storage",
+        "bsp_gd30ad3344_init",
+        "rtc_task",
+        "boot_app_vector_table_init(void);",
+        "bsp_rtc_clock_source_t",
     ):
         require(forbidden not in combined_source, f"正式版源码仍包含已删除调试/旧功能标记: {forbidden}")
 
@@ -112,10 +127,12 @@ def main() -> None:
     require("PT100_SLOPE_V_OHM" in pt100_app, "PT100 app 缺少模块 Vout-电阻斜率")
     require("resistance_to_temp" in pt100_app, "PT100 app 未通过分段线性插值换算温度")
     require("GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_v)" in pt100_app, "PT100 app 未检查 GD30AD3344 采样返回状态")
+    require("GD30AD3344_Init()" in scheduler, "GD30AD3344 初始化未直接由调度启动流程调用")
 
     require("adc_app_set_dac_raw" in adc_app and "dac_data_set" in adc_app, "DAC 0x0301 控制入口缺失")
     for forbidden_dac_pattern in (
         "convertarr[0] = adc_value[0]",
+        "convertarr[0]",
         "dac_data_set(DAC0, DAC_OUT0, DAC_ALIGN_12B_R, adc_value[0])",
     ):
         require(forbidden_dac_pattern not in adc_app, "ADC app 仍可能把 ADC 采样直通覆盖 DAC")
@@ -134,6 +151,7 @@ def main() -> None:
         "lfs.c",
         "lfs_util.c",
         "gd25qxx.c",
+        "bsp_storage.c",
         "Project_ota.bin",
         "pack_ota_image",
     ):

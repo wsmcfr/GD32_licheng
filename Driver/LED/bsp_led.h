@@ -13,11 +13,10 @@ extern "C" {
 #define LED_PORT                GPIOD
 #define LED_CLK_PORT            RCU_GPIOD
 
-/* 正式版只使用两个 LED：LED1 为系统状态灯，LED2 为采集工作灯。 */
 #define LED1_PIN                GPIO_PIN_10
 #define LED2_PIN                GPIO_PIN_11
 
-/* LED 电平有效配置：1 表示高电平点亮，0 表示低电平点亮。 */
+/* LED 电平有效配置 */
 #define LED_ACTIVE_HIGH         1U
 
 #if LED_ACTIVE_HIGH

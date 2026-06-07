@@ -278,14 +278,12 @@ bootloader_port_status_t bootloader_port_write_user_config(const uint8_t *buf, u
         return BOOTLOADER_PORT_STATUS_BAD_PARAM;
     }
 
-    /* 读整页，避免擦除时丢掉升级控制字段。 */
     for(index = 0; index < BOOTLOADER_PORT_PARAM_SIZE; index++) 
 	{
         g_bootloader_port_param_buffer[index] =
             *(volatile uint8_t *)(BOOTLOADER_PORT_PARAM_ADDR + index);
     }
 
-    /* 只覆盖user_config。 */
     parameter = (bootloader_port_parameter_t *)g_bootloader_port_param_buffer;
     for(index = 0; index < (uint32_t)size; index++) 
 	{

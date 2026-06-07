@@ -2,7 +2,6 @@
 
 #include "cimc_alarm.h"
 #include "cimc_params.h"
-#include "rtc_app.h"
 
 #define DAC_RAW_MAX  4095   /* DAC最大值 */
 #define VREF_V       3.3f    /* 参考电压 */
@@ -18,7 +17,6 @@ uint16_t adc_app_set_dac_raw(uint16_t raw_value)
         val = DAC_RAW_MAX;
     }
 
-    convertarr[0] = val;
     dac_data_set(DAC0, DAC_OUT0, DAC_ALIGN_12B_R, val);
 
     return val;

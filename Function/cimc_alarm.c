@@ -7,7 +7,7 @@
 #define RECORD_LEN      56    /* 单条长度 */
 #define DEBOUNCE_MS     1000  /* 去抖时间 */
 
-/* 告警块紧跟params_t，修改params_t时同步ALM_OFFSET。 */
+/* 告警块紧跟params_t */
 #define ALM_MAGIC   0xA1B2C3D4UL
 #define ALM_OFFSET  29
 
@@ -93,7 +93,7 @@ static void save_flash(void)
     bootloader_port_write_user_config(buf, ALM_BUF_SZ);
 }
 
-/* 追加告警记录，满则丢最旧。 */
+/* 追加告警记录 */
 static void append_record(const char *text, const alm_rec_t *rec)
 {
     uint8_t i;
@@ -113,7 +113,7 @@ static void append_record(const char *text, const alm_rec_t *rec)
     g_count++;
 }
 
-/* 超阈后记录告警，主动模式直接发ASCII。 */
+/* 超阈后记录告警*/
 void alm_check(uint8_t channel, float threshold, float value)
 {
     uint32_t           now_ms;

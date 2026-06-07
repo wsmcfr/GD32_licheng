@@ -1,8 +1,13 @@
 #include "bsp_rtc.h"
+#define RTC_CLOCK_SOURCE_LXTAL
 
-rtc_parameter_struct rtc_initpara;
+#ifndef RTC_CLOCK_FALLBACK_IRC32K_ENABLE
+#define RTC_CLOCK_FALLBACK_IRC32K_ENABLE 1U
+#endif
 
-static rtc_alarm_struct rtc_alarm;
+#define BKP_VALUE                       0x32F0U
+
+static rtc_parameter_struct s_rtc_time;
 static __IO uint32_t prescaler_a = 0;
 static __IO uint32_t prescaler_s = 0;
 static uint32_t rtcsrc_flag = 0;
@@ -129,21 +134,19 @@ static int bsp_rtc_setup(void)
     uint32_t tmp_mm = 0x59U;
     uint32_t tmp_ss = 0x50U;
 
-    (void)rtc_alarm;
+    s_rtc_time.factor_asyn = prescaler_a;
+    s_rtc_time.factor_syn = prescaler_s;
+    s_rtc_time.year = 0x25U;
+    s_rtc_time.day_of_week = RTC_SATURDAY;
+    s_rtc_time.month = RTC_APR;
+    s_rtc_time.date = 0x30U;
+    s_rtc_time.display_format = RTC_24HOUR;
+    s_rtc_time.am_pm = RTC_AM;
+    s_rtc_time.hour = tmp_hh;
+    s_rtc_time.minute = tmp_mm;
+    s_rtc_time.second = tmp_ss;
 
-    rtc_initpara.factor_asyn = prescaler_a;
-    rtc_initpara.factor_syn = prescaler_s;
-    rtc_initpara.year = 0x25U;
-    rtc_initpara.day_of_week = RTC_SATURDAY;
-    rtc_initpara.month = RTC_APR;
-    rtc_initpara.date = 0x30U;
-    rtc_initpara.display_format = RTC_24HOUR;
-    rtc_initpara.am_pm = RTC_AM;
-    rtc_initpara.hour = tmp_hh;
-    rtc_initpara.minute = tmp_mm;
-    rtc_initpara.second = tmp_ss;
-
-    if (ERROR == rtc_init(&rtc_initpara))
+    if (ERROR == rtc_init(&s_rtc_time))
 	{
         ret = -1;
     }
@@ -174,12 +177,12 @@ static int bsp_rtc_restore_from_backup(void)
         return -1;
     }
 
-    rtc_current_time_get(&rtc_initpara);
+    rtc_current_time_get(&s_rtc_time);
     return 0;
 }
 
 /*
- * IRC32K备份域尝试迁回LXTAL，保留原时间快照。
+ * IRC32K备份域尝试迁回LXTAL。
  */
 static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
 {
@@ -243,7 +246,7 @@ static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
         }
 
         RTC_BKP0 = BKP_VALUE;
-        rtc_current_time_get(&rtc_initpara);
+        rtc_current_time_get(&s_rtc_time);
         *has_valid_backup = 1;
     }
 	else
@@ -256,7 +259,7 @@ static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
 }
 
 /*
- * 配置RTC时钟源和分频；已有备份域时不强切RTCSRC。
+ * 配置RTC时钟源和分频
  */
 static int bsp_rtc_pre_cfg(uint8_t *has_valid_backup)
 {
@@ -354,7 +357,7 @@ static int bsp_rtc_pre_cfg(uint8_t *has_valid_backup)
 }
 
 /*
- * 初始化RTC：备份域有效则恢复，否则写默认时间。
+ * 初始化RTC
  */
 int bsp_rtc_init(void)
 {
@@ -405,20 +408,20 @@ int bsp_rtc_get_datetime(bsp_rtc_datetime_t *datetime)
         return -1;
     }
 
-    rtc_current_time_get(&rtc_initpara);
+    rtc_current_time_get(&s_rtc_time);
 
-    datetime->year = (uint16_t)(2000 + bsp_rtc_bcd_to_decimal(rtc_initpara.year));
-    datetime->month = bsp_rtc_bcd_to_decimal(rtc_initpara.month);
-    datetime->date = bsp_rtc_bcd_to_decimal(rtc_initpara.date);
-    datetime->hour = bsp_rtc_bcd_to_decimal(rtc_initpara.hour);
-    datetime->minute = bsp_rtc_bcd_to_decimal(rtc_initpara.minute);
-    datetime->second = bsp_rtc_bcd_to_decimal(rtc_initpara.second);
-    datetime->day_of_week = (uint8_t)rtc_initpara.day_of_week;
+    datetime->year = (uint16_t)(2000 + bsp_rtc_bcd_to_decimal(s_rtc_time.year));
+    datetime->month = bsp_rtc_bcd_to_decimal(s_rtc_time.month);
+    datetime->date = bsp_rtc_bcd_to_decimal(s_rtc_time.date);
+    datetime->hour = bsp_rtc_bcd_to_decimal(s_rtc_time.hour);
+    datetime->minute = bsp_rtc_bcd_to_decimal(s_rtc_time.minute);
+    datetime->second = bsp_rtc_bcd_to_decimal(s_rtc_time.second);
+    datetime->day_of_week = (uint8_t)s_rtc_time.day_of_week;
     return 0;
 }
 
 /*
- * 设置RTC日期时间，成功后刷新rtc_initpara。
+ * 设置RTC日期时间
  */
 int bsp_rtc_set_datetime(const bsp_rtc_datetime_t *datetime)
 {
@@ -462,6 +465,6 @@ int bsp_rtc_set_datetime(const bsp_rtc_datetime_t *datetime)
     }
 
     RTC_BKP0 = BKP_VALUE;
-    rtc_current_time_get(&rtc_initpara);
+    rtc_current_time_get(&s_rtc_time);
     return 0;
 }

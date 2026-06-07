@@ -9,13 +9,11 @@
 extern "C" {
 #endif
 
-/* OLED I2C 硬件资源定义。 */
+/* OLED I2C */
 #define I2C0_OWN_ADDRESS7              0x72U
 #define I2C0_DATA_ADDRESS              ((uint32_t)&I2C_DATA(I2C0))
 
-/* OLED 批量 DMA 发送缓冲区定义：
- * 第 1 字节固定为 SSD1306 控制字，后续最多承载一整页 128 字节显存数据。
- */
+/* OLED 批量 DMA 发送缓冲区定义： */
 #define OLED_TX_DATA_MAX_SIZE          128U
 #define OLED_TX_BUFFER_SIZE            (OLED_TX_DATA_MAX_SIZE + 1U)
 
@@ -25,8 +23,7 @@ extern "C" {
 #define OLED_CLK_PIN                   GPIO_PIN_8
 #define AF_OLED_I2C0                   GPIO_AF_4
 
-/* OLED 命令仍使用两字节包；数据缓冲扩展为一页批量写，减少 I2C 事务数量。 */
-extern __IO uint8_t oled_cmd_buf[2];
+/* OLED 批量发送缓冲区*/
 extern __IO uint8_t oled_data_buf[OLED_TX_BUFFER_SIZE];
 
 void bsp_oled_init(void);

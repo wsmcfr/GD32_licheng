@@ -25,7 +25,7 @@ Examples:
 
 - `adc_value[2]` in `bsp_analog.h`
 - `usart1_rxbuffer[]` in `bsp_usart.h`
-- `oled_cmd_buf[2]` and `oled_data_buf[2]` in `bsp_oled.h`
+- `oled_data_buf[]` in `bsp_oled.h`
 
 ### App-Owned Shared State
 
@@ -77,7 +77,7 @@ Examples:
 
 - `oled_task()` derives the second display line from `cimc_status_is_auto_sample_active()`
 - `led_task()` derives LED1/LED2 output from the system blink timer and auto-sample state
-- `rtc_task()` refreshes `rtc_initpara` without writing OLED rows
+- `rtc_app_get_unix_epoch()` reads RTC only when the protocol needs a timestamp
 - `gd30ad3344_pt100_task()` derives voltage, resistance, temperature, `sample_ready`, and `range_valid` from a successful `GD30AD3344_AD_Read(..., &out_voltage_v)` call
 
 This keeps the source of truth close to the render/output path.

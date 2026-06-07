@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-/* OLED第一行显示的队伍编号，修改队伍号只改这里 */
+/*队伍编号 */
 #define TEAM_ID       "2026706296"
 
 const char *sts_team_id(void);          /* 获取队伍编号字符串常量 */

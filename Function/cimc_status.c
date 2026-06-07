@@ -3,7 +3,7 @@
 /* 自动采集状态：LED2 和 OLED 第二行共同读取，统一控制 */
 static volatile uint8_t g_sampling = 0;
 
-// 返回队伍编号字符串常量，只读
+// 返回队伍编号字符串常量
 const char *sts_team_id(void)
 {
     return TEAM_ID;

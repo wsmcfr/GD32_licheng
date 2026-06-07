@@ -9,6 +9,20 @@
 
 // SPI DMA等待超时，避免硬件异常时卡死。
 #define GD30AD3344_SPI_WAIT_TIMEOUT     0x00FFFFFFUL
+#define GD30AD3344_DMA_BUFFER_SIZE      12U
+
+/* GD30AD3344 所在 SPI3 引脚资源定义。 */
+#define GD30AD3344_SPI_GPIO_PORT       GPIOE
+#define GD30AD3344_SPI_GPIO_CLOCK      RCU_GPIOE
+#define GD30AD3344_SPI_SCK_PIN         GPIO_PIN_12
+#define GD30AD3344_SPI_MISO_PIN        GPIO_PIN_13
+#define GD30AD3344_SPI_MOSI_PIN        GPIO_PIN_14
+#define GD30AD3344_SPI_CS_PIN          GPIO_PIN_10
+#define GD30AD3344_SPI_AF              GPIO_AF_5
+
+#define SPI_GD30AD3344                 SPI3
+#define SPI_GD30AD3344_CS_LOW()        gpio_bit_reset(GD30AD3344_SPI_GPIO_PORT, GD30AD3344_SPI_CS_PIN)
+#define SPI_GD30AD3344_CS_HIGH()       gpio_bit_set(GD30AD3344_SPI_GPIO_PORT, GD30AD3344_SPI_CS_PIN)
 
 /* DMA发送缓冲。 */
 static uint8_t spi3_send_array[GD30AD3344_DMA_BUFFER_SIZE];
@@ -20,6 +34,34 @@ static uint8_t spi3_receive_array[GD30AD3344_DMA_BUFFER_SIZE];
 static uint8_t s_gd30ad3344_dma_error;
 
 static GD30AD3344 s_adc_cfg;
+
+/* 初始化GD30AD3344使用的SPI3、GPIO和DMA时钟资源。 */
+static void gd30ad3344_bus_init(void)
+{
+    spi_parameter_struct spi_init_struct;
+
+    rcu_periph_clock_enable(GD30AD3344_SPI_GPIO_CLOCK);
+    rcu_periph_clock_enable(RCU_SPI3);
+    rcu_periph_clock_enable(RCU_DMA1);
+
+    gpio_af_set(GD30AD3344_SPI_GPIO_PORT, GD30AD3344_SPI_AF, GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
+    gpio_mode_set(GD30AD3344_SPI_GPIO_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
+    gpio_output_options_set(GD30AD3344_SPI_GPIO_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
+
+    gpio_mode_set(GD30AD3344_SPI_GPIO_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GD30AD3344_SPI_CS_PIN);
+    gpio_output_options_set(GD30AD3344_SPI_GPIO_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GD30AD3344_SPI_CS_PIN);
+    SPI_GD30AD3344_CS_HIGH();
+
+    spi_struct_para_init(&spi_init_struct);
+    spi_init_struct.trans_mode = SPI_TRANSMODE_FULLDUPLEX;
+    spi_init_struct.device_mode = SPI_MASTER;
+    spi_init_struct.frame_size = SPI_FRAMESIZE_8BIT;
+    spi_init_struct.clock_polarity_phase = SPI_CK_PL_LOW_PH_2EDGE;
+    spi_init_struct.nss = SPI_NSS_SOFT;
+    spi_init_struct.prescale = SPI_PSC_8;
+    spi_init_struct.endian = SPI_ENDIAN_MSB;
+    spi_init(SPI_GD30AD3344, &spi_init_struct);
+}
 
 // 打包当前GD30AD3344配置寄存器。
 static uint16_t gd30ad3344_cfg_value(const GD30AD3344 *cfg)
@@ -139,6 +181,8 @@ static int prv_gd30ad3344_apply_config(const GD30AD3344 *config)
 
 void GD30AD3344_Init(void)
 {
+    gd30ad3344_bus_init();
+
     s_adc_cfg.SS         = 0;        //写状态:0无作用 1开始单次转换（默认） 读的时候总是返回0
     s_adc_cfg.MUX        = 4;        // 0(默认)      1         2         3         4         5         6         7
                                                 //AIN0~AIN1 AIN0~AIN3 AIN1~AIN3 AIN2~AIN3 AIN0~GND  AIN1~GND  AIN2~GND  AIN3~GND
