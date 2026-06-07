@@ -105,8 +105,8 @@ void USART1_IRQHandler(void)
         /* 清除 IDLE 标志：先读 STAT 再读 DATA 是 GD32F4xx 的标准清除序列。 */
         usart_data_receive(USART1);
 
-        g_usart_idle_tick = timebase_get_ms32();
-        g_usart_idle_pending = 1U;
+        g_idle_ms = timebase_get_ms32();
+        g_idle_pend = 1U;
     }
 }
 

@@ -14,8 +14,8 @@ extern __IO uint16_t uart_dma_length;
 extern uint8_t       uart_dma_buffer[UART_APP_DMA_BUFFER_SIZE];
 
 /* IDLE去抖共享变量：ISR写，uart_task读；3ms去抖防USB分包误判 */
-extern __IO uint32_t g_usart_idle_tick;
-extern __IO uint8_t  g_usart_idle_pending;
+extern __IO uint32_t g_idle_ms;
+extern __IO uint8_t  g_idle_pend;
 
 uint16_t uart_app_take_frame(uint8_t *output, uint16_t output_size); /* 从DMA缓冲取一帧 */
 void     uart_task(void); /* 5ms周期：IDLE去抖后取帧并交给协议解析 */

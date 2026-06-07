@@ -5,7 +5,7 @@
 uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
 
 /* 等待 USART 标志置位，递减计数超时返回 0，避免异常串口卡死主循环 */
-static uint8_t prv_bsp_usart_wait_flag_set(uint32_t usart_periph, usart_flag_enum flag)
+static uint8_t wait_flag(uint32_t usart_periph, usart_flag_enum flag)
 {
     uint32_t timeout = 1000000UL;
 
@@ -23,7 +23,7 @@ static uint8_t prv_bsp_usart_wait_flag_set(uint32_t usart_periph, usart_flag_enu
  * 配置 RS485 方向控制脚 PE8 为推挽输出，初始化后默认进入接收态，
  * 避免上电后占用 RS485 总线。
  */
-static void prv_rs485_direction_gpio_init(void)
+static void rs485_init_gpio(void)
 {
     rcu_periph_clock_enable(RS485_DIR_CLK_PORT);
     gpio_mode_set(RS485_DIR_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, RS485_DIR_PIN);
@@ -88,7 +88,7 @@ void bsp_usart1_init(void)
                             GPIO_OSPEED_50MHZ,
                             USART1_TX_PIN | USART1_RX_PIN);
 
-    prv_rs485_direction_gpio_init();
+    rs485_init_gpio();
 
     usart_deinit(USART1);
     usart_baudrate_set(USART1, RS485_BAUD);
@@ -108,9 +108,9 @@ void bsp_usart1_init(void)
  */
 uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint16_t length)
 {
-    uint16_t index;
+    uint16_t i;
 
-    if((NULL == data) || (0 == length)) {
+    if(!data || (0 == length)) {
         return 0;
     }
 
@@ -123,21 +123,21 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
         delay_us(10);
     }
 
-    for(index = 0; index < length; index++) {
-        if(0 == prv_bsp_usart_wait_flag_set(usart_periph, USART_FLAG_TBE)) {
+    for(i = 0; i < length; i++) {
+        if(0 == wait_flag(usart_periph, USART_FLAG_TBE)) {
             if(RS485_USART == usart_periph) {
                 bsp_rs485_direction_receive();
             }
-            return index;
+            return i;
         }
-        usart_data_transmit(usart_periph, data[index]);
+        usart_data_transmit(usart_periph, data[i]);
     }
 
-    if(0 == prv_bsp_usart_wait_flag_set(usart_periph, USART_FLAG_TC)) {
+    if(0 == wait_flag(usart_periph, USART_FLAG_TC)) {
         if(RS485_USART == usart_periph) {
             bsp_rs485_direction_receive();
         }
-        return index;
+        return i;
     }
 
     if(RS485_USART == usart_periph) {
@@ -158,7 +158,7 @@ void bsp_usart_change_baudrate(uint32_t baudrate)
         return;
     }
 
-    prv_bsp_usart_wait_flag_set(USART1, USART_FLAG_TC);
+    wait_flag(USART1, USART_FLAG_TC);
 
     /* 关闭 IDLE 中断，防止切换过程中 ISR 标记虚假 IDLE 事件 */
     usart_interrupt_disable(USART1, USART_INT_IDLE);
@@ -179,7 +179,7 @@ void bsp_usart_change_baudrate(uint32_t baudrate)
     dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
     /* 清除去抖状态，避免处理旧波特率的残留数据 */
-    g_usart_idle_pending = 0;
+    g_idle_pend = 0;
 
     usart_interrupt_enable(USART1, USART_INT_IDLE);
 }

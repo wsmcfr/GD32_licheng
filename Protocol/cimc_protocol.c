@@ -10,57 +10,57 @@
 #include "gd30ad3344_pt100_app.h"
 
 /* ── 帧格式固定字段 ── */
-#define SOF          0xA5B6U
-#define FRAME_END            0xB6A5U
-#define PROTO_VER     0x02U
-#define FT_CMD   0x01U
-#define FT_RSP  0x02U
+#define SOF 0xA5B6U
+#define FRAME_END 0xB6A5U
+#define PROTO_VER 0x02U
+#define FT_CMD 0x01U
+#define FT_RSP 0x02U
 #define FT_HB 0x05U
-#define FT_ERR     0xFFU
-#define RSP_OK          0xFFU
+#define FT_ERR 0xFFU
+#define RSP_OK 0xFFU
 
 /* ── 特殊命令字 ── */
-#define CMD_HB        0x8888U
+#define CMD_HB 0x8888U
 #define CMD_SEARCH 0xFFFFU
 
 /* ── 系统管理类 0x01xx ── */
-#define CMD_REBOOT           0x0101U
-#define CMD_VERSION    0x0104U
-#define CMD_SET_TIME         0x0105U
-#define CMD_GET_TIME         0x0106U
-#define CMD_SET_ID    0x01A1U
-#define CMD_SET_BAUD         0x01A2U
-#define CMD_GET_ID    0x0111U
-#define CMD_GET_BAUD         0x0112U
+#define CMD_REBOOT 0x0101U
+#define CMD_VERSION 0x0104U
+#define CMD_SET_TIME 0x0105U
+#define CMD_GET_TIME 0x0106U
+#define CMD_SET_ID 0x01A1U
+#define CMD_SET_BAUD 0x01A2U
+#define CMD_GET_ID 0x0111U
+#define CMD_GET_BAUD 0x0112U
 
 /* ── 数据类 0x02xx ── */
-#define CMD_GET_CH0          0x0201U
-#define CMD_GET_CH1          0x0202U
-#define CMD_GET_CH2          0x0221U
-#define CMD_SET_R0    0x0241U
-#define CMD_SET_R1    0x0242U
-#define CMD_SET_INTV  0x0261U
+#define CMD_GET_CH0 0x0201U
+#define CMD_GET_CH1 0x0202U
+#define CMD_GET_CH2 0x0221U
+#define CMD_SET_R0 0x0241U
+#define CMD_SET_R1 0x0242U
+#define CMD_SET_INTV 0x0261U
 
 /* ── 控制类 0x03xx ── */
-#define CMD_SET_DAC          0x0301U
+#define CMD_SET_DAC 0x0301U
 #define CMD_SAMPLE_ON 0x0302U
-#define CMD_SAMPLE_OFF  0x0303U
-#define CMD_SLEEP            0x03AAU
+#define CMD_SAMPLE_OFF 0x0303U
+#define CMD_SLEEP 0x03AAU
 
 /* ── 参数配置类 0x04xx ── */
-#define CMD_GET_THRA   0x0400U
-#define CMD_GET_THR0   0x0401U
-#define CMD_GET_THR1   0x0402U
-#define CMD_SET_THR0   0x0411U
-#define CMD_SET_THR1   0x0412U
+#define CMD_GET_THRA 0x0400U
+#define CMD_GET_THR0 0x0401U
+#define CMD_GET_THR1 0x0402U
+#define CMD_SET_THR0 0x0411U
+#define CMD_SET_THR1 0x0412U
 
 /* ── 升级类 0x05xx ── */
-#define CMD_UPGRADE  0x0501U
+#define CMD_UPGRADE 0x0501U
 
 /* ── 告警日志类 0x06xx ── */
-#define CMD_SET_ALM   0x0601U
-#define CMD_GET_ALM    0x0602U
-#define CMD_CLR_ALM      0x0603U
+#define CMD_SET_ALM 0x0601U
+#define CMD_GET_ALM 0x0602U
+#define CMD_CLR_ALM 0x0603U
 
 /* 固件版本：2.0.1.0 → [02 00 01 00] */
 static const uint8_t s_fw_ver[4] = {0x02U, 0x00U, 0x01U, 0x00U};
@@ -84,9 +84,9 @@ static uint32_t g_last_report_ms = 0; /* 上次自动上报时刻，用于间隔
 /* ASCII十六进制字符转4位值，非法字符返回0xFF */
 static uint8_t hex_nibble(uint8_t ch)
 {
-    if((ch >= (uint8_t)'0') && (ch <= (uint8_t)'9')) { return (uint8_t)(ch - (uint8_t)'0'); }
-    if((ch >= (uint8_t)'A') && (ch <= (uint8_t)'F')) { return (uint8_t)(ch - (uint8_t)'A' + 10); }
-    if((ch >= (uint8_t)'a') && (ch <= (uint8_t)'f')) { return (uint8_t)(ch - (uint8_t)'a' + 10); }
+    if((ch >= '0') && (ch <= '9')) { return (uint8_t)(ch - '0'); }
+    if((ch >= 'A') && (ch <= 'F')) { return (uint8_t)(ch - 'A' + 10); }
+    if((ch >= 'a') && (ch <= 'f')) { return (uint8_t)(ch - 'a' + 10); }
     return 0xFFU;
 }
 
@@ -98,41 +98,41 @@ static uint8_t is_space(uint8_t ch)
 }
 
 /* 将ASCII十六进制文本解码为二进制字节流，返回字节数，失败返回0 */
-static uint16_t decode_ascii_hex(const uint8_t *ascii, uint16_t ascii_len,
-                                 uint8_t *output, uint16_t output_size)
+static uint16_t decode_ascii_hex(const uint8_t *ascii, uint16_t len,
+                                 uint8_t *output, uint16_t sz)
 {
     uint16_t ai, out = 0;
-    uint8_t high = 0, have_high = 0;
+    uint8_t hi = 0, hi_ok = 0;
 
-    if((NULL == ascii) || (NULL == output) || (0 == output_size)) { return 0; }
+    if((!ascii) || (!output) || (0 == sz)) { return 0; }
 
-    for(ai = 0; ai < ascii_len; ai++) {
+    for(ai = 0; ai < len; ai++) {
         uint8_t nibble;
         if(0 != is_space(ascii[ai])) { continue; }
         nibble = hex_nibble(ascii[ai]);
         if(0xFFU == nibble) { return 0; }
-        if(0 == have_high) {
-            high = nibble; have_high = 1;
+        if(0 == hi_ok) {
+            hi = nibble; hi_ok = 1;
         } else {
-            if(out >= output_size) { return 0; }
-            output[out++] = (uint8_t)((high << 4) | nibble);
-            have_high = 0;
+            if(out >= sz) { return 0; }
+            output[out++] = (uint8_t)((hi << 4) | nibble);
+            hi_ok = 0;
         }
     }
-    return (0 != have_high) ? 0 : out;
+    return (0 != hi_ok) ? 0 : out;
 }
 
 // 从大端缓冲区读取16位无符号整数
 static uint16_t read_u16_be(const uint8_t *data)
 {
-    if(NULL == data) { return 0; }
+    if(!data) { return 0; }
     return (uint16_t)(((uint16_t)data[0] << 8) | (uint16_t)data[1]);
 }
 
 // 从大端缓冲区读取32位无符号整数
 static uint32_t read_u32_be(const uint8_t *data)
 {
-    if(NULL == data) { return 0; }
+    if(!data) { return 0; }
     return ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) |
            ((uint32_t)data[2] <<  8) |  (uint32_t)data[3];
 }
@@ -144,7 +144,7 @@ static uint16_t crc16_modbus(const uint8_t *data, uint16_t length)
     uint16_t i;
     uint8_t  b;
 
-    if((NULL == data) && (length > 0)) { return 0; }
+    if((!data) && (length > 0)) { return 0; }
 
     for(i = 0; i < length; i++) {
         crc ^= data[i];
@@ -196,7 +196,7 @@ static uint8_t append_hex_byte(char *output, uint16_t output_size,
 {
     static const char hex_chars[] = "0123456789ABCDEF";
 
-    if((NULL == output) || (NULL == offset) || ((*offset + 2) >= output_size)) { return 0; }
+    if((!output) || (!offset) || ((*offset + 2) >= output_size)) { return 0; }
 
     output[*offset] = hex_chars[(value >> 4) & 0x0FU]; (*offset)++;
     output[*offset] = hex_chars[ value        & 0x0FU]; (*offset)++;
@@ -207,20 +207,20 @@ static uint8_t append_hex_byte(char *output, uint16_t output_size,
 
 /*
  * 组装协议帧（二进制→ASCII十六进制）并通过RS485发送。
- * payload为NULL时payload_length须为0；帧格式：帧头+设备ID+帧类型+命令+长度+版本+内容+CRC+帧尾。
+ * payload为NULL时plen须为0；帧格式：帧头+设备ID+帧类型+命令+长度+版本+内容+CRC+帧尾。
  */
 static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,
                           uint16_t command,
-                          const uint8_t *payload, uint8_t payload_length)
+                          const uint8_t *payload, uint8_t plen)
 {
     uint8_t  binary[BIN_BUF_SIZE];
     char     ascii[ASCII_BUF_SIZE];
-    uint16_t bin_len, crc, idx, ascii_offset = 0;
+    uint16_t n, crc, idx, off = 0;
 
-    if((payload_length > 0) && (NULL == payload)) { return 0; }
+    if((plen > 0) && (!payload)) { return 0; }
 
-    bin_len = (uint16_t)(13 + payload_length);
-    if(bin_len > sizeof(binary)) { return 0; }
+    n = (uint16_t)(13 + plen);
+    if(n > sizeof(binary)) { return 0; }
 
     binary[0] = 0xA5U; binary[1] = 0xB6U;
     binary[2] = (uint8_t)(device_id >> 8);
@@ -228,26 +228,26 @@ static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,
     binary[4] = frame_type;
     binary[5] = (uint8_t)(command >> 8);
     binary[6] = (uint8_t)(command  & 0xFFU);
-    binary[7] = payload_length;
+    binary[7] = plen;
     binary[8] = PROTO_VER;
-    if(payload_length > 0) {
-        memcpy(&binary[9], payload, payload_length);
+    if(plen > 0) {
+        memcpy(&binary[9], payload, plen);
     }
 
-    crc = crc16_modbus(binary, (uint16_t)(9 + payload_length));
-    binary[9  + payload_length] = (uint8_t)(crc >> 8);
-    binary[10 + payload_length] = (uint8_t)(crc  & 0xFFU);
-    binary[11 + payload_length] = 0xB6U;
-    binary[12 + payload_length] = 0xA5U;
+    crc = crc16_modbus(binary, (uint16_t)(9 + plen));
+    binary[9  + plen] = (uint8_t)(crc >> 8);
+    binary[10 + plen] = (uint8_t)(crc  & 0xFFU);
+    binary[11 + plen] = 0xB6U;
+    binary[12 + plen] = 0xA5U;
 
-    for(idx = 0; idx < bin_len; idx++) {
+    for(idx = 0; idx < n; idx++) {
         if(0 == append_hex_byte(ascii, (uint16_t)sizeof(ascii),
-                                  &ascii_offset, binary[idx])) {
+                                  &off, binary[idx])) {
             return 0;
         }
     }
 
-    bsp_usart_send_buffer(RS485_USART, (const uint8_t *)ascii, ascii_offset);
+    bsp_usart_send_buffer(RS485_USART, (const uint8_t *)ascii, off);
     return 1;
 }
 
@@ -288,33 +288,33 @@ static void send_auto_report(uint16_t own_id)
 static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,
                             frame_t *frame)
 {
-    uint8_t  payload_length;
-    uint16_t expected_length;
-    uint16_t recv_crc, calc_crc;
+    uint8_t  plen;
+    uint16_t elen;
+    uint16_t rcrc, ccrc;
 
-    if((NULL == binary) || (NULL == frame) || (binary_len < 13)) { return 0; }
+    if((!binary) || (!frame) || (binary_len < 13)) { return 0; }
 
     if((SOF != read_u16_be(&binary[0])) ||
        (FRAME_END   != read_u16_be(&binary[binary_len - 2]))) {
         return 0;
     }
 
-    payload_length  = binary[7];
-    expected_length = (uint16_t)(13 + payload_length);
-    if(binary_len != expected_length) { return 0; }
+    plen  = binary[7];
+    elen = (uint16_t)(13 + plen);
+    if(binary_len != elen) { return 0; }
 
     if(PROTO_VER != binary[8]) { return 0; }
 
-    recv_crc = read_u16_be(&binary[9 + payload_length]);
-    calc_crc = crc16_modbus(binary, (uint16_t)(9 + payload_length));
-    if(recv_crc != calc_crc) { return 0; }
+    rcrc = read_u16_be(&binary[9 + plen]);
+    ccrc = crc16_modbus(binary, (uint16_t)(9 + plen));
+    if(rcrc != ccrc) { return 0; }
 
     frame->device_id  = read_u16_be(&binary[2]);
     frame->frame_type = binary[4];
     frame->command    = read_u16_be(&binary[5]);
-    frame->length     = payload_length;
+    frame->length     = plen;
     frame->version    = binary[8];
-    frame->payload    = (payload_length > 0) ? &binary[9] : NULL;
+    frame->payload    = (plen > 0) ? &binary[9] : NULL;
 
     return 1;
 }
@@ -329,7 +329,7 @@ static uint8_t dispatch_command(const frame_t *frame)
     const params_t *params;
     uint16_t own_id;
 
-    if(NULL == frame) { return 0; }
+    if(!frame) { return 0; }
 
     params = params_get();
     own_id = params->device_id;
@@ -378,7 +378,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_TIME:  /* 0x0105 设置设备时间（4字节UTC秒，大端） */
-        if((frame->length != 4) || (NULL == frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         {
@@ -422,7 +422,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_ID:  /* 0x01A1 设置设备ID（应答帧用新ID） */
-        if((frame->length != 2) || (NULL == frame->payload)) {
+        if((frame->length != 2) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         {
@@ -435,7 +435,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_BAUD:  /* 0x01A2 设置波特率：先回OK（旧波特率），再在线切换 */
-        if((frame->length != 1) || (NULL == frame->payload)) {
+        if((frame->length != 1) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         if(0 == params_set_baud(frame->payload[0])) {
@@ -451,7 +451,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_DAC:  /* 0x0301 设置DAC输出（0~4095） */
-        if((frame->length != 2) || (NULL == frame->payload)) {
+        if((frame->length != 2) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         {
@@ -517,7 +517,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_R0:  /* 0x0241 设置CH0变比 */
-        if((frame->length != 4) || (NULL == frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         params_set_r0(read_float_be(frame->payload));
@@ -525,7 +525,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_R1:  /* 0x0242 设置CH1变比 */
-        if((frame->length != 4) || (NULL == frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         params_set_r1(read_float_be(frame->payload));
@@ -533,7 +533,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_INTV:  /* 0x0261 设置自动上报间隔（01=1s/02=3s/03=5s） */
-        if((frame->length != 1) || (NULL == frame->payload)) {
+        if((frame->length != 1) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         if(0 == params_set_intv(frame->payload[0])) {
@@ -577,7 +577,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_THR0:  /* 0x0411 写入CH0阈值 */
-        if((frame->length != 4) || (NULL == frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         params_set_thr0(read_float_be(frame->payload));
@@ -585,7 +585,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_THR1:  /* 0x0412 写入CH1阈值 */
-        if((frame->length != 4) || (NULL == frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         params_set_thr1(read_float_be(frame->payload));
@@ -593,7 +593,7 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_ALM:  /* 0x0601 设置告警上报模式（01=主动/02=仅记录） */
-        if((frame->length != 1) || (NULL == frame->payload)) {
+        if((frame->length != 1) || (!frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         if(0 == params_set_alm(frame->payload[0])) {

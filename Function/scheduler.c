@@ -1,17 +1,17 @@
 #include "scheduler.h"
 
-static uint8_t task_num; /* 有效任务数量，由scheduler_init()按任务表长度计算 */
+static uint8_t ntask; /* 有效任务数量，由scheduler_init()按任务表长度计算 */
 
 /* 描述一个周期任务：入口函数、周期（ms）、上次执行时刻（ms） */
 typedef struct
 {
-    void (*task_func)(void);
-    uint32_t rate_ms;
-    uint32_t last_run;
+    void (*fn)(void);
+    uint32_t rate;
+    uint32_t last;
 } task_t;
 
 /* 静态任务表，新增周期任务在此登记 */
-static task_t scheduler_task[] =
+static task_t s_tasks[] =
 {
      {led_task,                      20,   0}
     ,{adc_task,                      50,   0}
@@ -25,21 +25,21 @@ static task_t scheduler_task[] =
 // 按静态任务表长度初始化有效任务数
 void scheduler_init(void)
 {
-    task_num = sizeof(scheduler_task) / sizeof(task_t);
+    ntask = sizeof(s_tasks) / sizeof(task_t);
 }
 
 /*
- * 深度睡眠唤醒后调用，将所有任务last_run统一重置为当前tick。
+ * 深度睡眠唤醒后调用，将所有任务last统一重置为当前tick。
  * 避免唤醒后外设重建期间各任务集中到期引发冲突。
  */
 void scheduler_reset_runtime(void)
 {
     uint8_t i;
-    uint32_t now_time;
+    uint32_t now;
 
-    now_time = timebase_get_ms32();
-    for(i = 0; i < task_num; i++) {
-        scheduler_task[i].last_run = now_time;
+    now = timebase_get_ms32();
+    for(i = 0; i < ntask; i++) {
+        s_tasks[i].last = now;
     }
 }
 
@@ -112,15 +112,15 @@ void system_init(void)
 /* 轮询任务表，执行已到期的周期任务，32位tick回绕安全 */
 void scheduler_run(void)
 {
-    uint32_t now_time = timebase_get_ms32();
+    uint32_t now = timebase_get_ms32();
     uint8_t i;
 
-    for (i = 0; i < task_num; i++)
+    for (i = 0; i < ntask; i++)
     {
-        if ((uint32_t)(now_time - scheduler_task[i].last_run) >= scheduler_task[i].rate_ms)
+        if ((uint32_t)(now - s_tasks[i].last) >= s_tasks[i].rate)
         {
-            scheduler_task[i].last_run = now_time;
-            scheduler_task[i].task_func();
+            s_tasks[i].last = now;
+            s_tasks[i].fn();
         }
     }
 }
