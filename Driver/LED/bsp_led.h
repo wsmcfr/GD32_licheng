@@ -16,10 +16,6 @@ extern "C" {
 #define LED1_PIN                GPIO_PIN_10
 #define LED2_PIN                GPIO_PIN_11
 
-/* LED 电平有效配置 */
-#define LED_ACTIVE_HIGH         1U
-
-#if LED_ACTIVE_HIGH
 #define LED_WRITE(pin, on)                                                      \
     do {                                                                        \
         if (on) {                                                               \
@@ -28,16 +24,6 @@ extern "C" {
             GPIO_BC(LED_PORT) = (pin);                                          \
         }                                                                       \
     } while (0)
-#else
-#define LED_WRITE(pin, on)                                                      \
-    do {                                                                        \
-        if (on) {                                                               \
-            GPIO_BC(LED_PORT) = (pin);                                          \
-        } else {                                                                \
-            GPIO_BOP(LED_PORT) = (pin);                                         \
-        }                                                                       \
-    } while (0)
-#endif
 
 /* 单个 LED 控制宏。 */
 #define LED1_SET(state)         do { LED_WRITE(LED1_PIN, ((state) != 0U)); } while (0)
