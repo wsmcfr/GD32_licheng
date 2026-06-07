@@ -93,8 +93,7 @@ static uint8_t hex_nibble(uint8_t ch)
 // 判断是否为协议允许忽略的空白字符（空格/制表/回车/换行）
 static uint8_t is_space(uint8_t ch)
 {
-    return ((ch == (uint8_t)' ')  || (ch == (uint8_t)'\t') ||
-            (ch == (uint8_t)'\r') || (ch == (uint8_t)'\n')) ? 1 : 0;
+    return ((ch == (uint8_t)' ')  || (ch == (uint8_t)'\t') || (ch == (uint8_t)'\r') || (ch == (uint8_t)'\n')) ? 1 : 0;
 }
 
 /* 将ASCII十六进制文本解码为二进制字节流，返回字节数，失败返回0 */
@@ -106,14 +105,18 @@ static uint16_t decode_ascii_hex(const uint8_t *ascii, uint16_t len,
 
     if((!ascii) || (!output) || (0 == sz)) { return 0; }
 
-    for(ai = 0; ai < len; ai++) {
+    for(ai = 0; ai < len; ai++) 
+	{
         uint8_t nibble;
         if(0 != is_space(ascii[ai])) { continue; }
         nibble = hex_nibble(ascii[ai]);
         if(0xFFU == nibble) { return 0; }
-        if(0 == hi_ok) {
+        if(0 == hi_ok) 
+		{
             hi = nibble; hi_ok = 1;
-        } else {
+        } 
+		else 
+		{
             if(out >= sz) { return 0; }
             output[out++] = (uint8_t)((hi << 4) | nibble);
             hi_ok = 0;
@@ -133,8 +136,7 @@ static uint16_t read_u16_be(const uint8_t *data)
 static uint32_t read_u32_be(const uint8_t *data)
 {
     if(!data) { return 0; }
-    return ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) |
-           ((uint32_t)data[2] <<  8) |  (uint32_t)data[3];
+    return ((uint32_t)data[0] << 24) | ((uint32_t)data[1] << 16) | ((uint32_t)data[2] <<  8) |  (uint32_t)data[3];
 }
 
 /* CRC-16-Modbus校验，覆盖帧头到内容末尾 */
@@ -146,12 +148,17 @@ static uint16_t crc16_modbus(const uint8_t *data, uint16_t length)
 
     if((!data) && (length > 0)) { return 0; }
 
-    for(i = 0; i < length; i++) {
+    for(i = 0; i < length; i++) 
+	{
         crc ^= data[i];
-        for(b = 0; b < 8; b++) {
-            if(0 != (crc & 0x0001U)) {
+        for(b = 0; b < 8; b++) 
+		{
+            if(0 != (crc & 0x0001U)) 
+			{
                 crc = (uint16_t)((crc >> 1) ^ 0xA001U);
-            } else {
+            } 
+			else 
+			{
                 crc = (uint16_t)(crc >> 1);
             }
         }
@@ -184,8 +191,7 @@ static float read_float_be(const uint8_t *buf)
 {
     uint32_t raw;
     float    value;
-    raw = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16) |
-          ((uint32_t)buf[2] <<  8) |  (uint32_t)buf[3];
+    raw = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16) | ((uint32_t)buf[2] <<  8) |  (uint32_t)buf[3];
     memcpy(&value, &raw, sizeof(value));
     return value;
 }
@@ -209,9 +215,7 @@ static uint8_t append_hex_byte(char *output, uint16_t output_size,
  * 组装协议帧（二进制→ASCII十六进制）并通过RS485发送。
  * payload为NULL时plen须为0；帧格式：帧头+设备ID+帧类型+命令+长度+版本+内容+CRC+帧尾。
  */
-static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,
-                          uint16_t command,
-                          const uint8_t *payload, uint8_t plen)
+static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,uint16_t command,const uint8_t *payload, uint8_t plen)
 {
     uint8_t  binary[BIN_BUF_SIZE];
     char     ascii[ASCII_BUF_SIZE];
@@ -230,7 +234,8 @@ static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,
     binary[6] = (uint8_t)(command  & 0xFFU);
     binary[7] = plen;
     binary[8] = PROTO_VER;
-    if(plen > 0) {
+    if(plen > 0) 
+	{
         memcpy(&binary[9], payload, plen);
     }
 
@@ -240,9 +245,10 @@ static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,
     binary[11 + plen] = 0xB6U;
     binary[12 + plen] = 0xA5U;
 
-    for(idx = 0; idx < n; idx++) {
-        if(0 == append_hex_byte(ascii, (uint16_t)sizeof(ascii),
-                                  &off, binary[idx])) {
+    for(idx = 0; idx < n; idx++) 
+	{
+        if(0 == append_hex_byte(ascii, (uint16_t)sizeof(ascii),&off, binary[idx])) 
+		{
             return 0;
         }
     }
@@ -280,13 +286,11 @@ static void send_auto_report(uint16_t own_id)
     write_float_be(&payload[4], ch0);
     write_float_be(&payload[8], ch1);
 
-    send_frame(own_id, FT_RSP,
-                     CMD_SAMPLE_ON, payload, 12);
+    send_frame(own_id, FT_RSP,CMD_SAMPLE_ON, payload, 12);
 }
 
 /* 校验并解析一帧二进制协议数据，合法返回1，否则返回0 */
-static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,
-                            frame_t *frame)
+static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,frame_t *frame)
 {
     uint8_t  plen;
     uint16_t elen;
@@ -294,8 +298,8 @@ static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,
 
     if((!binary) || (!frame) || (binary_len < 13)) { return 0; }
 
-    if((SOF != read_u16_be(&binary[0])) ||
-       (FRAME_END   != read_u16_be(&binary[binary_len - 2]))) {
+    if((SOF != read_u16_be(&binary[0])) || (FRAME_END   != read_u16_be(&binary[binary_len - 2]))) 
+	{
         return 0;
     }
 
@@ -334,20 +338,24 @@ static uint8_t dispatch_command(const frame_t *frame)
     params = params_get();
     own_id = params->device_id;
 
-    if((frame->device_id != own_id) && (frame->device_id != 0xFFFFU)) {
+    if((frame->device_id != own_id) && (frame->device_id != 0xFFFFU)) 
+	{
         return 1;
     }
 
-    if(0 != sts_sampling()) {
-        if((FT_CMD != frame->frame_type) ||
-           (frame->command != CMD_SAMPLE_OFF)) {
+    if(0 != sts_sampling()) 
+	{
+        if((FT_CMD != frame->frame_type) || (frame->command != CMD_SAMPLE_OFF)) 
+		{
             return 1;
         }
     }
 
     /* 心跳帧（类型0x05）：广播寻址时回复本机心跳 */
-    if(FT_HB == frame->frame_type) {
-        if(CMD_SEARCH == frame->command) {
+    if(FT_HB == frame->frame_type) 
+	{
+        if(CMD_SEARCH == frame->command) 
+		{
             send_frame(own_id, FT_HB,
                              CMD_HB, NULL, 0);
         }
@@ -355,7 +363,8 @@ static uint8_t dispatch_command(const frame_t *frame)
     }
 
     /* 非命令帧（类型非0x01）→ 回错误帧 */
-    if(FT_CMD != frame->frame_type) {
+    if(FT_CMD != frame->frame_type) 
+	{
         send_error(own_id, frame->command);
         return 1;
     }
@@ -373,17 +382,18 @@ static uint8_t dispatch_command(const frame_t *frame)
 
     case CMD_VERSION:  /* 0x0104 查询固件版本 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
-        send_frame(own_id, FT_RSP,
-                         frame->command, s_fw_ver, 4);
+        send_frame(own_id, FT_RSP,frame->command, s_fw_ver, 4);
         return 1;
 
     case CMD_SET_TIME:  /* 0x0105 设置设备时间（4字节UTC秒，大端） */
-        if((frame->length != 4) || (!frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) 
+		{
             send_error(own_id, frame->command); return 1;
         }
         {
             uint32_t ts = read_u32_be(frame->payload);
-            if(0 != rtc_app_set_unix_epoch(ts)) {
+            if(0 != rtc_app_set_unix_epoch(ts)) 
+			{
                 send_error(own_id, frame->command); return 1;
             }
         }
@@ -395,7 +405,8 @@ static uint8_t dispatch_command(const frame_t *frame)
         {
             uint32_t ts;
             uint8_t  buf[4];
-            if(0 != rtc_app_get_unix_epoch(&ts)) {
+            if(0 != rtc_app_get_unix_epoch(&ts)) 
+			{
                 send_error(own_id, frame->command); return 1;
             }
             write_u32_be(buf, ts);
@@ -422,12 +433,14 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_ID:  /* 0x01A1 设置设备ID（应答帧用新ID） */
-        if((frame->length != 2) || (!frame->payload)) {
+        if((frame->length != 2) || (!frame->payload)) 
+		{
             send_error(own_id, frame->command); return 1;
         }
         {
             uint16_t new_id = read_u16_be(frame->payload);
-            if(0 == params_set_id(new_id)) {
+            if(0 == params_set_id(new_id)) 
+			{
                 send_error(own_id, frame->command); return 1;
             }
             send_ok(new_id, frame->command);
@@ -435,10 +448,12 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_BAUD:  /* 0x01A2 设置波特率：先回OK（旧波特率），再在线切换 */
-        if((frame->length != 1) || (!frame->payload)) {
+        if((frame->length != 1) || (!frame->payload)) 
+		{
             send_error(own_id, frame->command); return 1;
         }
-        if(0 == params_set_baud(frame->payload[0])) {
+        if(0 == params_set_baud(frame->payload[0]))
+		{
             send_error(own_id, frame->command); return 1;
         }
         send_ok(own_id, frame->command);
@@ -451,7 +466,8 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_DAC:  /* 0x0301 设置DAC输出（0~4095） */
-        if((frame->length != 2) || (!frame->payload)) {
+        if((frame->length != 2) || (!frame->payload)) 
+		{
             send_error(own_id, frame->command); return 1;
         }
         {
@@ -477,7 +493,8 @@ static uint8_t dispatch_command(const frame_t *frame)
 
     case CMD_UPGRADE:  /* 0x0501 进入Bootloader等待升级 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
-        if(BOOTLOADER_PORT_STATUS_OK != bootloader_port_request_bootloader_upgrade()) {
+        if(BOOTLOADER_PORT_STATUS_OK != bootloader_port_request_bootloader_upgrade()) 
+		{
             send_error(own_id, frame->command); return 1;
         }
         send_ok(own_id, frame->command);
@@ -517,7 +534,8 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_R0:  /* 0x0241 设置CH0变比 */
-        if((frame->length != 4) || (!frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) 
+		{
             send_error(own_id, frame->command); return 1;
         }
         params_set_r0(read_float_be(frame->payload));
@@ -525,7 +543,8 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_R1:  /* 0x0242 设置CH1变比 */
-        if((frame->length != 4) || (!frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) 
+		{
             send_error(own_id, frame->command); return 1;
         }
         params_set_r1(read_float_be(frame->payload));
@@ -537,6 +556,7 @@ static uint8_t dispatch_command(const frame_t *frame)
             send_error(own_id, frame->command); return 1;
         }
         if(0 == params_set_intv(frame->payload[0])) {
+		
             send_error(own_id, frame->command); return 1;
         }
         send_ok(own_id, frame->command);
@@ -577,7 +597,8 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_THR0:  /* 0x0411 写入CH0阈值 */
-        if((frame->length != 4) || (!frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) 
+		{
             send_error(own_id, frame->command); return 1;
         }
         params_set_thr0(read_float_be(frame->payload));
@@ -585,7 +606,8 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_THR1:  /* 0x0412 写入CH1阈值 */
-        if((frame->length != 4) || (!frame->payload)) {
+        if((frame->length != 4) || (!frame->payload)) 
+		{
             send_error(own_id, frame->command); return 1;
         }
         params_set_thr1(read_float_be(frame->payload));
@@ -593,10 +615,12 @@ static uint8_t dispatch_command(const frame_t *frame)
         return 1;
 
     case CMD_SET_ALM:  /* 0x0601 设置告警上报模式（01=主动/02=仅记录） */
-        if((frame->length != 1) || (!frame->payload)) {
+        if((frame->length != 1) || (!frame->payload)) 
+		{
             send_error(own_id, frame->command); return 1;
         }
-        if(0 == params_set_alm(frame->payload[0])) {
+        if(0 == params_set_alm(frame->payload[0])) 
+		{
             send_error(own_id, frame->command); return 1;
         }
         alm_set_mode(frame->payload[0]);
@@ -642,13 +666,14 @@ uint8_t proto_rx(const uint8_t *frame, uint16_t length)
     uint16_t     binary_length;
     frame_t parsed_frame;
 
-    binary_length = decode_ascii_hex(frame, length,
-                                     binary, (uint16_t)sizeof(binary));
-    if(0 == binary_length) {
+    binary_length = decode_ascii_hex(frame, length, binary, (uint16_t)sizeof(binary));
+    if(0 == binary_length) 
+	{
         return 0;
     }
 
-    if(0 == parse_frame(binary, binary_length, &parsed_frame)) {
+    if(0 == parse_frame(binary, binary_length, &parsed_frame)) 
+	{
         send_error(params_get()->device_id, 0xEEEEU);
         return 1;
     }
@@ -660,8 +685,7 @@ uint8_t proto_rx(const uint8_t *frame, uint16_t length)
 void proto_hb(void)
 {
     uint16_t own_id = params_get()->device_id;
-    send_frame(own_id, FT_HB,
-                     CMD_HB, NULL, 0);
+    send_frame(own_id, FT_HB, CMD_HB, NULL, 0);
 }
 
 /* 调度器100ms周期调用，自动上报激活时按间隔推送数据帧 */
@@ -671,21 +695,24 @@ void proto_tick(void)
     uint32_t             interval_ms;
     uint32_t             now_ms;
 
-    if(0 == sts_sampling()) {
+    if(0 == sts_sampling()) 
+	{
         return;
     }
 
     params = params_get();
 
-    switch(params->report_interval) {
-    case 0x01U: interval_ms = 1000UL; break;
-    case 0x02U: interval_ms = 3000UL; break;
-    case 0x03U: interval_ms = 5000UL; break;
-    default:    interval_ms = 1000UL; break;
+    switch(params->report_interval) 
+	{
+		case 0x01U: interval_ms = 1000UL; break;
+		case 0x02U: interval_ms = 3000UL; break;
+		case 0x03U: interval_ms = 5000UL; break;
+		default:    interval_ms = 1000UL; break;
     }
 
     now_ms = timebase_get_ms32();
-    if((uint32_t)(now_ms - g_last_report_ms) < interval_ms) {
+    if((uint32_t)(now_ms - g_last_report_ms) < interval_ms) 
+	{
         return;
     }
     g_last_report_ms = now_ms;

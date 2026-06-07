@@ -29,8 +29,10 @@ static int prv_gd30ad3344_wait_dma_done(void)
 {
     uint32_t timeout = GD30AD3344_SPI_WAIT_TIMEOUT;
 
-    while(RESET == dma_flag_get(DMA1, DMA_CH3, DMA_FLAG_FTF)) {
-        if(0 == timeout) {
+    while(RESET == dma_flag_get(DMA1, DMA_CH3, DMA_FLAG_FTF)) 
+	{
+        if(0 == timeout) 
+		{
             dma_flag_clear(DMA1, DMA_CH3, DMA_FLAG_FTF);
             dma_flag_clear(DMA1, DMA_CH4, DMA_FLAG_FTF);
             return -1;
@@ -51,24 +53,18 @@ static int prv_gd30ad3344_apply_config(const GD30AD3344 *config)
     uint16_t config_value;
     uint16_t rx_value;
 
-    if(NULL == config) {
+    if(NULL == config) 
+	{
         return -1;
     }
 
-    config_value = (uint16_t)((config->SS << 15) |
-                              (config->MUX << 12) |
-                              (config->PGA << 9) |
-                              (config->MODE << 8) |
-                              (config->DR << 5) |
-                              (config->RESERVED_1 << 4) |
-                              (config->PULL_UP_EN << 3) |
-                              (config->NOP << 1) |
-                              (config->RESERVED << 0));
+    config_value = (uint16_t)((config->SS << 15) | (config->MUX << 12) | (config->PGA << 9) | (config->MODE << 8) | (config->DR << 5) | (config->RESERVED_1 << 4) | (config->PULL_UP_EN << 3) | (config->NOP << 1) | (config->RESERVED << 0));
 
     spi_enable(SPI_GD30AD3344);
     rx_value = spi_gd30ad3344_send_halfword_dma(config_value);
     (void)rx_value;
-    if(0 != s_gd30ad3344_dma_error) {
+    if(0 != s_gd30ad3344_dma_error) 
+	{
         return -1;
     }
 
@@ -121,7 +117,8 @@ uint8_t spi_gd30ad3344_send_byte_dma(uint8_t byte)
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
 
-    if(0 != prv_gd30ad3344_wait_dma_done()) {
+    if(0 != prv_gd30ad3344_wait_dma_done()) 
+	{
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
         dma_channel_disable(DMA1, DMA_CH3);
@@ -191,7 +188,8 @@ uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
 
-    if(0 != prv_gd30ad3344_wait_dma_done()) {
+    if(0 != prv_gd30ad3344_wait_dma_done()) 
+	{
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
         dma_channel_disable(DMA1, DMA_CH3);
@@ -229,12 +227,14 @@ void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer,
     s_gd30ad3344_dma_error = 0;
 
     /* 检查传输大小是否超过缓冲区 */
-    if (size > GD30AD3344_DMA_BUFFER_SIZE) {
+    if (size > GD30AD3344_DMA_BUFFER_SIZE) 
+	{
         size = GD30AD3344_DMA_BUFFER_SIZE;
     }
 
     /* 准备发送数据 */
-    for (i = 0; i < size; i++) {
+    for (i = 0; i < size; i++) 
+	{
         spi3_send_array[i] = tx_buffer[i];
     }
 
@@ -270,7 +270,8 @@ void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer,
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
 
-    if(0 != prv_gd30ad3344_wait_dma_done()) {
+    if(0 != prv_gd30ad3344_wait_dma_done()) 
+	{
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
         dma_channel_disable(DMA1, DMA_CH3);
@@ -286,7 +287,8 @@ void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer,
     dma_channel_disable(DMA1, DMA_CH4);
 
     /* 复制接收到的数据到接收缓冲区 */
-    for (i = 0; i < size; i++) {
+    for (i = 0; i < size; i++) 
+	{
         rx_buffer[i] = spi3_receive_array[i];
     }
     s_gd30ad3344_dma_error = 0;
@@ -401,7 +403,8 @@ int GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH, GD30AD3344_PGA_TypeDef Ref
     uint16_t raw_data;
     float result = 0.0;
 
-    if(NULL == out_voltage_v) {
+    if(NULL == out_voltage_v) 
+	{
         s_gd30ad3344_dma_error = 1;
         return -1;
     }
@@ -410,7 +413,8 @@ int GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH, GD30AD3344_PGA_TypeDef Ref
     GD30AD3344_InitStruct.PGA = Ref;
 
     raw_data = spi_gd30ad3344_send_halfword_dma(GD30AD3344_InitStruct_Value);
-    if(0 != s_gd30ad3344_dma_error) {
+    if(0 != s_gd30ad3344_dma_error) 
+	{
         return -1;
     }
 

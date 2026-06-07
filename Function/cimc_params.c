@@ -21,8 +21,7 @@ static void fill_default(void)
     g_params.report_interval = INTV_1S;
     g_params.alarm_mode      = ALM_RECORD;
 
-    g_params.crc32 = bootloader_port_crc32_calc(
-                         (const uint8_t *)&g_params, PARAMS_CRC_SIZE);
+    g_params.crc32 = bootloader_port_crc32_calc((const uint8_t *)&g_params, PARAMS_CRC_SIZE);
 }
 
 /* 重新计算CRC32并与结构体存储值比较，不一致返回0 */
@@ -44,13 +43,14 @@ void params_load(void)
 {
     params_t loaded;
 
-    if(BOOTLOADER_PORT_STATUS_OK != bootloader_port_read_user_config(
-        (uint8_t *)&loaded, (uint16_t)sizeof(loaded))) {
+    if(BOOTLOADER_PORT_STATUS_OK != bootloader_port_read_user_config((uint8_t *)&loaded, (uint16_t)sizeof(loaded))) 
+	{
         fill_default();
         return;
     }
 
-    if((PARAMS_MAGIC != loaded.magic) || (0 == verify_crc(&loaded))) {
+    if((PARAMS_MAGIC != loaded.magic) || (0 == verify_crc(&loaded))) 
+	{
         fill_default();
         params_save();
         return;
@@ -62,11 +62,9 @@ void params_load(void)
 /* 重新计算CRC32后将g_params写回Flash，底层执行整页读-改-写 */
 void params_save(void)
 {
-    g_params.crc32 = bootloader_port_crc32_calc(
-                         (const uint8_t *)&g_params, PARAMS_CRC_SIZE);
+    g_params.crc32 = bootloader_port_crc32_calc((const uint8_t *)&g_params, PARAMS_CRC_SIZE);
 
-    bootloader_port_write_user_config(
-        (const uint8_t *)&g_params, (uint16_t)sizeof(g_params));
+    bootloader_port_write_user_config((const uint8_t *)&g_params, (uint16_t)sizeof(g_params));
 }
 
 /* 获取当前RAM参数结构体只读指针，修改时调用对应set_*函数 */
@@ -78,19 +76,21 @@ const params_t *params_get(void)
 /* 将波特率映射码转换为实际波特率，映射码异常时安全回退到19200 */
 uint32_t params_baud(void)
 {
-    switch(g_params.baud_code) {
-    case BAUD_4800:   return 4800;
-    case BAUD_9600:   return 9600;
-    case BAUD_19200:  return 19200;
-    case BAUD_115200: return 115200;
-    default:                           return 19200;
+    switch(g_params.baud_code) 
+	{
+		case BAUD_4800:   return 4800;
+		case BAUD_9600:   return 9600;
+		case BAUD_19200:  return 19200;
+		case BAUD_115200: return 115200;
+		default:                           return 19200;
     }
 }
 
 /* 验证ID有效范围（0x0001~0xFFFE）后更新RAM+Flash，超范围返回0 */
 uint8_t params_set_id(uint16_t id)
 {
-    if((id < ID_MIN) || (id > ID_MAX)) {
+    if((id < ID_MIN) || (id > ID_MAX)) 
+	{
         return 0;
     }
 
@@ -105,10 +105,8 @@ uint8_t params_set_id(uint16_t id)
  */
 uint8_t params_set_baud(uint8_t code)
 {
-    if((code != BAUD_4800)  &&
-       (code != BAUD_9600)  &&
-       (code != BAUD_19200) &&
-       (code != BAUD_115200)) {
+    if((code != BAUD_4800)  && (code != BAUD_9600)  && (code != BAUD_19200) && (code != BAUD_115200)) 
+	{
         return 0;
     }
 
@@ -148,9 +146,8 @@ void params_set_thr1(float threshold)
 /* 验证间隔码（0x01=1s/0x02=3s/0x03=5s）后更新并持久化 */
 uint8_t params_set_intv(uint8_t interval)
 {
-    if((interval != INTV_1S) &&
-       (interval != INTV_3S) &&
-       (interval != INTV_5S)) {
+    if((interval != INTV_1S) && (interval != INTV_3S) && (interval != INTV_5S)) 
+	{
         return 0;
     }
 
@@ -162,8 +159,8 @@ uint8_t params_set_intv(uint8_t interval)
 /* 验证告警模式码（0x01=主动/0x02=仅记录）后更新并持久化 */
 uint8_t params_set_alm(uint8_t mode)
 {
-    if((mode != ALM_ACTIVE) &&
-       (mode != ALM_RECORD)) {
+    if((mode != ALM_ACTIVE) && (mode != ALM_RECORD)) 
+	{
         return 0;
     }
 

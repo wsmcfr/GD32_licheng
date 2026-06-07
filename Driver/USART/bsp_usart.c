@@ -9,8 +9,10 @@ static uint8_t wait_flag(uint32_t usart_periph, usart_flag_enum flag)
 {
     uint32_t timeout = 1000000UL;
 
-    while(RESET == usart_flag_get(usart_periph, flag)) {
-        if(0 == timeout) {
+    while(RESET == usart_flag_get(usart_periph, flag)) 
+	{
+        if(0 == timeout)
+		{
             return 0;
         }
         timeout--;
@@ -76,17 +78,12 @@ void bsp_usart1_init(void)
     dma_single_data_mode_init(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, &dma_init_struct);
 
     dma_circulation_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-    dma_channel_subperipheral_select(USART1_RX_DMA_PERIPH,
-                                     USART1_RX_DMA_CHANNEL,
-                                     USART1_RX_DMA_SUBPERI);
+    dma_channel_subperipheral_select(USART1_RX_DMA_PERIPH,USART1_RX_DMA_CHANNEL,USART1_RX_DMA_SUBPERI);
     dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
     gpio_af_set(USART1_TX_PORT, USART1_AF, USART1_TX_PIN | USART1_RX_PIN);
     gpio_mode_set(USART1_TX_PORT, GPIO_MODE_AF, GPIO_PUPD_PULLUP, USART1_TX_PIN | USART1_RX_PIN);
-    gpio_output_options_set(USART1_TX_PORT,
-                            GPIO_OTYPE_PP,
-                            GPIO_OSPEED_50MHZ,
-                            USART1_TX_PIN | USART1_RX_PIN);
+    gpio_output_options_set(USART1_TX_PORT,GPIO_OTYPE_PP,GPIO_OSPEED_50MHZ,USART1_TX_PIN | USART1_RX_PIN);
 
     rs485_init_gpio();
 
@@ -110,11 +107,13 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
 {
     uint16_t i;
 
-    if(!data || (0 == length)) {
+    if(!data || (0 == length)) 
+	{
         return 0;
     }
 
-    if(RS485_USART == usart_periph) {
+    if(RS485_USART == usart_periph) 
+	{
         /*
          * 先切到发送态再写 USART DATA，避免 MAX3485 仍在接收态时吞掉首字节。
          * 保留短暂建立时间，覆盖 GPIO 到收发器方向脚的传播延迟。
@@ -123,9 +122,12 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
         delay_us(10);
     }
 
-    for(i = 0; i < length; i++) {
-        if(0 == wait_flag(usart_periph, USART_FLAG_TBE)) {
-            if(RS485_USART == usart_periph) {
+    for(i = 0; i < length; i++) 
+	{
+        if(0 == wait_flag(usart_periph, USART_FLAG_TBE)) 
+		{
+            if(RS485_USART == usart_periph) 
+			{
                 bsp_rs485_direction_receive();
             }
             return i;
@@ -133,14 +135,17 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
         usart_data_transmit(usart_periph, data[i]);
     }
 
-    if(0 == wait_flag(usart_periph, USART_FLAG_TC)) {
-        if(RS485_USART == usart_periph) {
+    if(0 == wait_flag(usart_periph, USART_FLAG_TC)) 
+	{
+        if(RS485_USART == usart_periph) 
+		{
             bsp_rs485_direction_receive();
         }
         return i;
     }
 
-    if(RS485_USART == usart_periph) {
+    if(RS485_USART == usart_periph) 
+	{
         bsp_rs485_direction_receive();
     }
 
@@ -154,7 +159,8 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
  */
 void bsp_usart_change_baudrate(uint32_t baudrate)
 {
-    if(0 == baudrate) {
+    if(0 == baudrate) 
+	{
         return;
     }
 
@@ -174,8 +180,7 @@ void bsp_usart_change_baudrate(uint32_t baudrate)
     USART_DATA(USART1);
 
     memset(usart1_rxbuffer, 0, sizeof(usart1_rxbuffer));
-    dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL,
-                                sizeof(usart1_rxbuffer));
+    dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL,sizeof(usart1_rxbuffer));
     dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
     /* 清除去抖状态，避免处理旧波特率的残留数据 */

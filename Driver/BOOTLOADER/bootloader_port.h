@@ -34,22 +34,15 @@ uint32_t bootloader_port_crc32_calc(const uint8_t *data, uint32_t length);
 
 uint32_t bootloader_port_crc32_update(uint32_t crc, const uint8_t *data, uint32_t length);
 
-bootloader_port_status_t bootloader_port_validate_firmware_vector(const uint8_t *firmware,
-                                                                  uint32_t firmware_size,
-                                                                  uint32_t *stack_addr,
-                                                                  uint32_t *entry_addr);
+bootloader_port_status_t bootloader_port_validate_firmware_vector(const uint8_t *firmware,uint32_t firmware_size,uint32_t *stack_addr,uint32_t *entry_addr);
 
 bootloader_port_status_t bootloader_port_prepare_download_area(uint32_t firmware_size);
 
-bootloader_port_status_t bootloader_port_write_download_chunk(uint32_t offset,
-                                                              const uint8_t *data,
-                                                              uint32_t length);
+bootloader_port_status_t bootloader_port_write_download_chunk(uint32_t offset,const uint8_t *data,uint32_t length);
 
 uint32_t bootloader_port_calc_download_crc32(uint32_t firmware_size);
 
-bootloader_port_status_t bootloader_port_write_upgrade_info(uint32_t app_version,
-                                                            uint32_t firmware_size,
-                                                            uint32_t firmware_crc32);
+bootloader_port_status_t bootloader_port_write_upgrade_info(uint32_t app_version,uint32_t firmware_size,uint32_t firmware_crc32);
 
 bootloader_port_status_t bootloader_port_request_bootloader_upgrade(void);
 

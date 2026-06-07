@@ -26,7 +26,8 @@ static void ts_to_dt(uint32_t ts, bsp_rtc_datetime_t *dt)
     n1   = days / 365;    if(n1 > 3) { n1 = 3; }
     days -= n1 * 365;     year += n1;
 
-    for(month = 1; month <= 12; month++) {
+    for(month = 1; month <= 12; month++) 
+	{
         uint32_t dim = s_days_per_month[month - 1];
         if(month == 2 && is_leap((uint16_t)year)) dim = 29;
         if(days < dim) break;
@@ -49,17 +50,15 @@ static uint32_t dt_to_ts(const bsp_rtc_datetime_t *dt)
     for(y = 1970; y < dt->year; y++)
         days += 365 + (is_leap(y) ? 1 : 0);
 
-    for(m = 1; m < dt->month; m++) {
+    for(m = 1; m < dt->month; m++) 
+	{
         days += s_days_per_month[m - 1];
         if(m == 2 && is_leap(dt->year)) days++;
     }
 
     days += dt->date - 1;
 
-    return days * 86400
-           + (uint32_t)dt->hour   * 3600
-           + (uint32_t)dt->minute * 60
-           + (uint32_t)dt->second;
+    return days * 86400 + (uint32_t)dt->hour   * 3600 + (uint32_t)dt->minute * 60 + (uint32_t)dt->second;
 }
 
 /* 每秒更新RTC共享缓存 */

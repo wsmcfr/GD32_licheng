@@ -24,18 +24,22 @@ uint16_t uart_app_take_frame(uint8_t *output, uint16_t output_size)
 {
     uint16_t valid_length = 0;
 
-    if((NULL == output) || (output_size < 2)) {
+    if((NULL == output) || (output_size < 2)) 
+	{
         return 0;
     }
 
     __disable_irq();
-    if(0 != rx_flag) {
+    if(0 != rx_flag) 
+	{
         valid_length = uart_dma_length;
-        if(valid_length >= output_size) {
+        if(valid_length >= output_size) 
+		{
             valid_length = (uint16_t)(output_size - 1);
         }
 
-        if(valid_length > 0) {
+        if(valid_length > 0) 
+		{
             memcpy(output, uart_dma_buffer, valid_length);
         }
         output[valid_length] = '\0';
@@ -60,11 +64,13 @@ void uart_task(void)
     uint16_t clen;
     uint8_t  fbuf[UART_APP_DMA_BUFFER_SIZE];
 
-    if(0 == g_idle_pend) {
+    if(0 == g_idle_pend) 
+	{
         return;
     }
 
-    if((uint32_t)(timebase_get_ms32() - g_idle_ms) < IDLE_DEBOUNCE) {
+    if((uint32_t)(timebase_get_ms32() - g_idle_ms) < IDLE_DEBOUNCE) 
+	{
         return;
     }
 
@@ -75,14 +81,18 @@ void uart_task(void)
     rlen = sizeof(usart1_rxbuffer) -
            dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
-    if((rlen > 0) && (rlen <= sizeof(usart1_rxbuffer))) {
+    if((rlen > 0) && (rlen <= sizeof(usart1_rxbuffer))) 
+	{
         clen = (uint16_t)rlen;
-        if(clen >= (uint16_t)sizeof(fbuf)) {
+        if(clen >= (uint16_t)sizeof(fbuf)) 
+		{
             clen = (uint16_t)(sizeof(fbuf) - 1);
         }
         memcpy(fbuf, usart1_rxbuffer, clen);
         fbuf[clen] = '\0';
-    } else {
+    } 
+	else 
+	{
         clen = 0;
     }
 
@@ -91,7 +101,8 @@ void uart_task(void)
                                sizeof(usart1_rxbuffer));
     dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
-    if(clen > 0) {
+    if(clen > 0) 
+	{
         proto_rx(fbuf, clen);
     }
 }

@@ -55,7 +55,8 @@ void alm_init(void)
     g_count = 0;
     g_mode  = 0x02U;
 
-    for(i = 0; i < 2; i++) {
+    for(i = 0; i < 2; i++) 
+	{
         g_last_ms[i] = 0;
     }
 }
@@ -63,7 +64,8 @@ void alm_init(void)
 /* 设置告警上报模式（0x01主动/0x02仅记录），非法值忽略 */
 void alm_set_mode(uint8_t mode)
 {
-    if((mode == 0x01U) || (mode == 0x02U)) {
+    if((mode == 0x01U) || (mode == 0x02U)) 
+	{
         g_mode = mode;
     }
 }
@@ -81,8 +83,8 @@ static void save_flash(void)
     alm_blk_t *blk;
     uint8_t    i;
 
-    if(BOOTLOADER_PORT_STATUS_OK != bootloader_port_read_user_config(
-            buf, ALM_BUF_SZ)) {
+    if(BOOTLOADER_PORT_STATUS_OK != bootloader_port_read_user_config(buf, ALM_BUF_SZ)) 
+	{
         return;
     }
 
@@ -90,12 +92,12 @@ static void save_flash(void)
     blk->magic = ALM_MAGIC;
     blk->count = g_count;
 
-    for(i = 0; i < g_count; i++) {
+    for(i = 0; i < g_count; i++) 
+	{
         blk->records[i] = g_frec[i];
     }
 
-    blk->crc32 = bootloader_port_crc32_calc(
-        (const uint8_t *)blk, ALM_CRC_SZ);
+    blk->crc32 = bootloader_port_crc32_calc((const uint8_t *)blk, ALM_CRC_SZ);
 
     bootloader_port_write_user_config(buf, ALM_BUF_SZ);
 }
@@ -105,8 +107,10 @@ static void append_record(const char *text, const alm_rec_t *rec)
 {
     uint8_t i;
 
-    if(g_count >= MAX_RECORDS) {
-        for(i = 0; i < (MAX_RECORDS - 1); i++) {
+    if(g_count >= MAX_RECORDS) 
+	{
+        for(i = 0; i < (MAX_RECORDS - 1); i++) 
+		{
             memcpy(g_records[i], g_records[i + 1], RECORD_LEN);
             g_frec[i] = g_frec[i + 1];
         }
@@ -134,19 +138,18 @@ void alm_check(uint8_t channel, float threshold, float value)
     if(value <= threshold) { return; }
 
     now_ms = timebase_get_ms32();
-    if((uint32_t)(now_ms - g_last_ms[channel]) < DEBOUNCE_MS) {
+    if((uint32_t)(now_ms - g_last_ms[channel]) < DEBOUNCE_MS) 
+	{
         return;
     }
     g_last_ms[channel] = now_ms;
 
-    if(0 != bsp_rtc_get_datetime(&dt)) {
+    if(0 != bsp_rtc_get_datetime(&dt)) 
+	{
         memset(&dt, 0, sizeof(dt));
     }
 
-    snprintf(text, sizeof(text),
-                   "%04u-%02u-%02u %02u:%02u:%02u | CH%u | %.2f | %.2f\n",
-                   (unsigned)dt.year, (unsigned)dt.month, (unsigned)dt.date,
-                   (unsigned)dt.hour, (unsigned)dt.minute, (unsigned)dt.second,
+    snprintf(text, sizeof(text), "%04u-%02u-%02u %02u:%02u:%02u | CH%u | %.2f | %.2f\n", (unsigned)dt.year, (unsigned)dt.month, (unsigned)dt.date, (unsigned)dt.hour, (unsigned)dt.minute, (unsigned)dt.second,
                    (unsigned)channel, (double)threshold, (double)value);
 
     rec.year      = dt.year;
@@ -159,10 +162,9 @@ void alm_check(uint8_t channel, float threshold, float value)
     rec.threshold = threshold;
     rec.value     = value;
 
-    if(0x01U == g_mode) {
-        bsp_usart_send_buffer(RS485_USART,
-                                    (const uint8_t *)text,
-                                    (uint16_t)strlen(text));
+    if(0x01U == g_mode) 
+	{
+        bsp_usart_send_buffer(RS485_USART, (const uint8_t *)text, (uint16_t)strlen(text));
     }
 
     append_record(text, &rec);
@@ -177,12 +179,14 @@ void alm_query(char *buf, uint16_t size)
 
     if(!buf || (0 == size)) { return; }
 
-    if(0 == g_count) {
+    if(0 == g_count) 
+	{
         snprintf(buf, size, "empty");
         return;
     }
 
-    for(i = (int8_t)(g_count - 1); i >= 0; i--) {
+    for(i = (int8_t)(g_count - 1); i >= 0; i--) 
+	{
         rec_len = (uint16_t)strlen(g_records[i]);
         if((pos + rec_len) >= size) { break; }
         memcpy(&buf[pos], g_records[i], rec_len);
@@ -228,8 +232,8 @@ void alm_load(void)
     bsp_rtc_datetime_t  dt;
     char                text[RECORD_LEN];
 
-    if(BOOTLOADER_PORT_STATUS_OK != bootloader_port_read_user_config(
-            buf, ALM_BUF_SZ)) {
+    if(BOOTLOADER_PORT_STATUS_OK != bootloader_port_read_user_config(buf, ALM_BUF_SZ)) 
+	{
         return;
     }
 
@@ -245,7 +249,8 @@ void alm_load(void)
 
     g_count = blk->count;
 
-    for(i = 0; i < g_count; i++) {
+    for(i = 0; i < g_count; i++) 
+	{
         g_frec[i] = blk->records[i];
 
         dt.year   = blk->records[i].year;
@@ -255,13 +260,8 @@ void alm_load(void)
         dt.minute = blk->records[i].minute;
         dt.second = blk->records[i].second;
 
-        snprintf(text, sizeof(text),
-                       "%04u-%02u-%02u %02u:%02u:%02u | CH%u | %.2f | %.2f\n",
-                       (unsigned)dt.year, (unsigned)dt.month, (unsigned)dt.date,
-                       (unsigned)dt.hour, (unsigned)dt.minute, (unsigned)dt.second,
-                       (unsigned)blk->records[i].channel,
-                       (double)blk->records[i].threshold,
-                       (double)blk->records[i].value);
+        snprintf(text, sizeof(text), "%04u-%02u-%02u %02u:%02u:%02u | CH%u | %.2f | %.2f\n", (unsigned)dt.year, (unsigned)dt.month, (unsigned)dt.date, (unsigned)dt.hour, (unsigned)dt.minute, (unsigned)dt.second,
+                       (unsigned)blk->records[i].channel, (double)blk->records[i].threshold, (double)blk->records[i].value);
 
         snprintf(g_records[i], RECORD_LEN, "%s", text);
     }

@@ -38,7 +38,8 @@ void scheduler_reset_runtime(void)
     uint32_t now;
 
     now = timebase_get_ms32();
-    for(i = 0; i < ntask; i++) {
+    for(i = 0; i < ntask; i++) 
+	{
         s_tasks[i].last = now;
     }
 }
@@ -68,12 +69,14 @@ void system_init(void)
 		/* Flash保存的波特率与出厂默认不同时，原地切换USART1波特率 */
 		{
 		    uint32_t saved_baud = params_baud();
-		    if(saved_baud != RS485_BAUD) {
+		    if(saved_baud != RS485_BAUD) 
+			{
 		        bsp_usart_change_baudrate(saved_baud);
 		    }
 		}
 		rcu_periph_clock_enable(RCU_PMU);
-		if(SET == pmu_flag_get(PMU_FLAG_STANDBY)) {
+		if(SET == pmu_flag_get(PMU_FLAG_STANDBY)) 
+		{
 			pmu_flag_clear(PMU_FLAG_RESET_STANDBY);
 			pmu_flag_clear(PMU_FLAG_RESET_WAKEUP);
 		}

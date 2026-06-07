@@ -1,4 +1,4 @@
-﻿/*
+/*
 this library is a 0.91'OLED(ssd1306) driver
 */
 
@@ -39,7 +39,8 @@ static void I2C_Bus_Reset(void)
     delay_ms(10);
 
     /* 9 个时钟覆盖从机可能残留的 8 位数据和 1 位 ACK 周期。 */
-    for (i = 0U; i < 9U; i++) {
+    for (i = 0U; i < 9U; i++) 
+	{
         gpio_bit_reset(OLED_PORT, OLED_CLK_PIN);
         delay_ms(5);
         gpio_bit_set(OLED_PORT, OLED_CLK_PIN);
@@ -80,8 +81,10 @@ static void I2C_Bus_Reset(void)
  */
 static uint8_t oled_wait_i2c_flag_set(uint32_t i2c_periph, i2c_flag_enum flag, uint32_t timeout)
 {
-    while (timeout--) {
-        if (SET == i2c_flag_get(i2c_periph, flag)) {
+    while (timeout--) 
+	{
+        if (SET == i2c_flag_get(i2c_periph, flag)) 
+		{
             return 1U;
         }
     }
@@ -100,8 +103,10 @@ static uint8_t oled_wait_i2c_flag_set(uint32_t i2c_periph, i2c_flag_enum flag, u
  */
 static uint8_t oled_wait_i2c_stop_clear(uint32_t i2c_periph, uint32_t timeout)
 {
-    while (timeout--) {
-        if (0U == (I2C_CTL0(i2c_periph) & I2C_CTL0_STOP)) {
+    while (timeout--) 
+	{
+        if (0U == (I2C_CTL0(i2c_periph) & I2C_CTL0_STOP)) 
+		{
             return 1U;
         }
     }
@@ -121,8 +126,10 @@ static uint8_t oled_wait_i2c_stop_clear(uint32_t i2c_periph, uint32_t timeout)
  */
 static uint8_t oled_wait_dma_ftf(uint32_t dma_periph, dma_channel_enum channel, uint32_t timeout)
 {
-    while (timeout--) {
-        if (SET == dma_flag_get(dma_periph, channel, DMA_FLAG_FTF)) {
+    while (timeout--) 
+	{
+        if (SET == dma_flag_get(dma_periph, channel, DMA_FLAG_FTF)) 
+		{
             return 1U;
         }
     }
@@ -140,11 +147,14 @@ static uint8_t oled_wait_dma_ftf(uint32_t dma_periph, dma_channel_enum channel, 
  */
 static uint8_t oled_wait_addsend_or_nack(uint32_t timeout)
 {
-    while (timeout--) {
-        if (SET == i2c_flag_get(I2C0, I2C_FLAG_ADDSEND)) {
+    while (timeout--) 
+	{
+        if (SET == i2c_flag_get(I2C0, I2C_FLAG_ADDSEND)) 
+		{
             return 1U;
         }
-        if (SET == i2c_flag_get(I2C0, I2C_FLAG_AERR)) {
+        if (SET == i2c_flag_get(I2C0, I2C_FLAG_AERR)) 
+		{
             i2c_flag_clear(I2C0, I2C_FLAG_AERR);
             return 0U;
         }
@@ -165,23 +175,28 @@ static uint8_t oled_wait_bus_idle(void)
 {
     uint32_t timeout = OLED_I2C_BUSY_WAIT_MS;
 
-    if(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY)) {
+    if(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY)) 
+	{
         I2C_Bus_Reset();
     }
 
-    while(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY) && (timeout > 0U)) {
+    while(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY) && (timeout > 0U)) 
+	{
         delay_ms(1);
         timeout--;
     }
 
-    if(0U == timeout) {
+    if(0U == timeout) 
+	{
         I2C_Bus_Reset();
         timeout = OLED_I2C_BUSY_WAIT_MS;
-        while(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY) && (timeout > 0U)) {
+        while(i2c_flag_get(I2C0, I2C_FLAG_I2CBSY) && (timeout > 0U)) 
+		{
             delay_ms(1);
             timeout--;
         }
-        if(0U == timeout) {
+        if(0U == timeout) 
+		{
             return 0U;
         }
     }
@@ -201,22 +216,26 @@ static uint8_t oled_wait_bus_idle(void)
  */
 static uint8_t oled_write_packet(__IO uint8_t *packet, uint16_t length)
 {
-    if((NULL == packet) || (length < 2U)) {
+    if((NULL == packet) || (length < 2U)) 
+	{
         return 0U;
     }
 
-    if(0U == oled_wait_bus_idle()) {
+    if(0U == oled_wait_bus_idle()) 
+	{
         return 0U;
     }
 
     i2c_start_on_bus(I2C0);
-    if(!oled_wait_i2c_flag_set(I2C0, I2C_FLAG_SBSEND, OLED_I2C_WAIT_TIMEOUT)) {
+    if(!oled_wait_i2c_flag_set(I2C0, I2C_FLAG_SBSEND, OLED_I2C_WAIT_TIMEOUT)) 
+	{
         I2C_Bus_Reset();
         return 0U;
     }
 
     i2c_master_addressing(I2C0, OLED_I2C_ADDR_WRITE, I2C_TRANSMITTER);
-    if(!oled_wait_addsend_or_nack(OLED_I2C_WAIT_TIMEOUT)) {
+    if(!oled_wait_addsend_or_nack(OLED_I2C_WAIT_TIMEOUT)) 
+	{
         i2c_stop_on_bus(I2C0);
         (void)oled_wait_i2c_stop_clear(I2C0, OLED_I2C_WAIT_TIMEOUT / 10U);
         I2C_Bus_Reset();
@@ -224,7 +243,8 @@ static uint8_t oled_write_packet(__IO uint8_t *packet, uint16_t length)
     }
 
     i2c_flag_clear(I2C0, I2C_FLAG_ADDSEND);
-    if(!oled_wait_i2c_flag_set(I2C0, I2C_FLAG_TBE, OLED_I2C_WAIT_TIMEOUT)) {
+    if(!oled_wait_i2c_flag_set(I2C0, I2C_FLAG_TBE, OLED_I2C_WAIT_TIMEOUT)) 
+	{
         I2C_Bus_Reset();
         return 0U;
     }
@@ -236,7 +256,8 @@ static uint8_t oled_write_packet(__IO uint8_t *packet, uint16_t length)
     i2c_dma_config(I2C0, I2C_DMA_ON);
     dma_channel_enable(DMA0, DMA_CH6);
 
-    if(!oled_wait_dma_ftf(DMA0, DMA_CH6, OLED_I2C_WAIT_TIMEOUT)) {
+    if(!oled_wait_dma_ftf(DMA0, DMA_CH6, OLED_I2C_WAIT_TIMEOUT)) 
+	{
         dma_channel_disable(DMA0, DMA_CH6);
         i2c_dma_config(I2C0, I2C_DMA_OFF);
         I2C_Bus_Reset();
@@ -251,13 +272,15 @@ static uint8_t oled_write_packet(__IO uint8_t *packet, uint16_t length)
      * DMA 完成只表示字节已经搬入 I2C 数据寄存器/移位链路，STOP 前再等 BTC，
      * 避免最后一个字节尚未真正移出时就终止总线。
      */
-    if(!oled_wait_i2c_flag_set(I2C0, I2C_FLAG_BTC, OLED_I2C_WAIT_TIMEOUT)) {
+    if(!oled_wait_i2c_flag_set(I2C0, I2C_FLAG_BTC, OLED_I2C_WAIT_TIMEOUT)) 
+	{
         I2C_Bus_Reset();
         return 0U;
     }
 
     i2c_stop_on_bus(I2C0);
-    if(!oled_wait_i2c_stop_clear(I2C0, OLED_I2C_WAIT_TIMEOUT)) {
+    if(!oled_wait_i2c_stop_clear(I2C0, OLED_I2C_WAIT_TIMEOUT)) 
+	{
         I2C_Bus_Reset();
         return 0U;
     }
@@ -277,11 +300,13 @@ static uint8_t oled_write_packet(__IO uint8_t *packet, uint16_t length)
  */
 static uint8_t oled_write_packet_checked(__IO uint8_t *packet, uint16_t length)
 {
-    if(0U == s_oled_available) {
+    if(0U == s_oled_available) 
+	{
         return 0U;
     }
 
-    if(0U == oled_write_packet(packet, length)) {
+    if(0U == oled_write_packet(packet, length)) 
+	{
         s_oled_available = 0U;
         return 0U;
     }
@@ -340,16 +365,20 @@ uint8_t OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length)
     uint16_t chunk_len;
     uint16_t i;
 
-    if(0U == length) {
+    if(0U == length)
+	{
         return 1U;
     }
-    if((NULL == cmds) || (0U == s_oled_available)) {
+    if((NULL == cmds) || (0U == s_oled_available)) 
+	{
         return 0U;
     }
 
-    while(offset < length) {
+    while(offset < length) 
+	{
         chunk_len = (uint16_t)(length - offset);
-        if(chunk_len > OLED_TX_DATA_MAX_SIZE) {
+        if(chunk_len > OLED_TX_DATA_MAX_SIZE) 
+		{
             chunk_len = OLED_TX_DATA_MAX_SIZE;
         }
 
@@ -358,11 +387,13 @@ uint8_t OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length)
          * 因此下一次数据写入前覆盖缓冲区不会破坏正在进行的传输。
          */
         oled_data_buf[0] = OLED_CMD_CONTROL_BYTE;
-        for(i = 0U; i < chunk_len; i++) {
+        for(i = 0U; i < chunk_len; i++) 
+		{
             oled_data_buf[i + 1U] = cmds[offset + i];
         }
 
-        if(0U == oled_write_packet_checked(oled_data_buf, (uint16_t)(chunk_len + 1U))) {
+        if(0U == oled_write_packet_checked(oled_data_buf, (uint16_t)(chunk_len + 1U))) 
+		{
             return 0U;
         }
 
@@ -406,25 +437,31 @@ uint8_t OLED_Write_data_buf(const uint8_t *data, uint16_t length)
     uint16_t chunk_len;
     uint16_t i;
 
-    if(0U == length) {
+    if(0U == length) 
+	{
         return 1U;
     }
-    if((NULL == data) || (0U == s_oled_available)) {
+    if((NULL == data) || (0U == s_oled_available)) 
+	{
         return 0U;
     }
 
-    while(offset < length) {
+    while(offset < length) 
+	{
         chunk_len = (uint16_t)(length - offset);
-        if(chunk_len > OLED_TX_DATA_MAX_SIZE) {
+        if(chunk_len > OLED_TX_DATA_MAX_SIZE) 
+		{
             chunk_len = OLED_TX_DATA_MAX_SIZE;
         }
 
         oled_data_buf[0] = OLED_DATA_CONTROL_BYTE;
-        for(i = 0U; i < chunk_len; i++) {
+        for(i = 0U; i < chunk_len; i++) 
+		{
             oled_data_buf[i + 1U] = data[offset + i];
         }
 
-        if(0U == oled_write_packet_checked(oled_data_buf, (uint16_t)(chunk_len + 1U))) {
+        if(0U == oled_write_packet_checked(oled_data_buf, (uint16_t)(chunk_len + 1U))) 
+		{
             return 0U;
         }
 
@@ -448,7 +485,8 @@ static uint8_t oled_set_position_buf(uint8_t x, uint8_t y)
 {
     uint8_t pos_cmds[3];
 
-    if((x >= OLED_WIDTH) || (y >= (OLED_HEIGHT / 8U))) {
+    if((x >= OLED_WIDTH) || (y >= (OLED_HEIGHT / 8U))) 
+	{
         return 0U;
     }
 
@@ -476,14 +514,17 @@ void OLED_ShowPic(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t BMP[])
     uint8_t y;
     uint8_t width;
 
-    if((NULL == BMP) || (x1 <= x0) || (x0 >= OLED_WIDTH) || (y0 >= (OLED_HEIGHT / 8U))) {
+    if((NULL == BMP) || (x1 <= x0) || (x0 >= OLED_WIDTH) || (y0 >= (OLED_HEIGHT / 8U))) 
+	{
         return;
     }
 
-    if(x1 > OLED_WIDTH) {
+    if(x1 > OLED_WIDTH) 
+	{
         x1 = OLED_WIDTH;
     }
-    if(y1 > (OLED_HEIGHT / 8U)) {
+    if(y1 > (OLED_HEIGHT / 8U)) 
+	{
         y1 = (OLED_HEIGHT / 8U);
     }
 
@@ -654,7 +695,8 @@ static uint8_t oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
     uint8_t c;
     uint8_t i;
 
-    if((NULL == ch) || (x >= OLED_WIDTH) || (y >= (OLED_HEIGHT / 8U))) {
+    if((NULL == ch) || (x >= OLED_WIDTH) || (y >= (OLED_HEIGHT / 8U))) 
+	{
         return 0U;
     }
 
@@ -663,17 +705,21 @@ static uint8_t oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
      * 这里每个字符补 2 列空白，保证批量写入后的坐标、间距和差异段刷新
      * 都与原来的 x += 8 行为一致。
      */
-    while((*ch != '\0') && (y < (OLED_HEIGHT / 8U))) {
+    while((*ch != '\0') && (y < (OLED_HEIGHT / 8U))) 
+	{
         row_len = 0U;
         current_x = x;
-        while((*ch != '\0') && (current_x <= (OLED_WIDTH - 8U)) && ((uint16_t)row_len + 8U <= OLED_TX_DATA_MAX_SIZE)) {
+        while((*ch != '\0') && (current_x <= (OLED_WIDTH - 8U)) && ((uint16_t)row_len + 8U <= OLED_TX_DATA_MAX_SIZE)) 
+		{
             c = (uint8_t)(*ch);
-            if((c < ' ') || (c > '~')) {
+            if((c < ' ') || (c > '~')) 
+			{
                 c = ' ';
             }
             c = (uint8_t)(c - ' ');
 
-            for(i = 0U; i < 6U; i++) {
+            for(i = 0U; i < 6U; i++) 
+			{
                 row_buf[row_len + i] = F6X8[c][i];
             }
 
@@ -684,13 +730,16 @@ static uint8_t oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
             ch++;
         }
 
-        if(row_len > 0U) {
-            if((0U == OLED_Set_Position(x, y)) || (0U == OLED_Write_data_buf(row_buf, row_len))) {
+        if(row_len > 0U) 
+		{
+            if((0U == OLED_Set_Position(x, y)) || (0U == OLED_Write_data_buf(row_buf, row_len))) 
+			{
                 return 0U;
             }
         }
 
-        if(*ch != '\0') {
+        if(*ch != '\0') 
+		{
             x = 0U;
             y = (uint8_t)(y + 2U);
         }
@@ -719,21 +768,26 @@ static uint8_t oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
     uint8_t c;
     uint8_t i;
 
-    if((NULL == ch) || (x >= OLED_WIDTH) || ((uint8_t)(y + 1U) >= (OLED_HEIGHT / 8U))) {
+    if((NULL == ch) || (x >= OLED_WIDTH) || ((uint8_t)(y + 1U) >= (OLED_HEIGHT / 8U))) 
+	{
         return 0U;
     }
 
-    while((*ch != '\0') && ((uint8_t)(y + 1U) < (OLED_HEIGHT / 8U))) {
+    while((*ch != '\0') && ((uint8_t)(y + 1U) < (OLED_HEIGHT / 8U))) 
+	{
         row_len = 0U;
         current_x = x;
-        while((*ch != '\0') && (current_x <= (OLED_WIDTH - 8U)) && ((uint16_t)row_len + 8U <= OLED_TX_DATA_MAX_SIZE)) {
+        while((*ch != '\0') && (current_x <= (OLED_WIDTH - 8U)) && ((uint16_t)row_len + 8U <= OLED_TX_DATA_MAX_SIZE)) 
+		{
             c = (uint8_t)(*ch);
-            if((c < ' ') || (c > '~')) {
+            if((c < ' ') || (c > '~')) 
+			{
                 c = ' ';
             }
             c = (uint8_t)(c - ' ');
 
-            for(i = 0U; i < 8U; i++) {
+            for(i = 0U; i < 8U; i++) 
+			{
                 upper_buf[row_len + i] = F8X16[(c * 16U) + i];
                 lower_buf[row_len + i] = F8X16[(c * 16U) + 8U + i];
             }
@@ -743,17 +797,20 @@ static uint8_t oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
             ch++;
         }
 
-        if(row_len > 0U) {
-            if((0U == OLED_Set_Position(x, y)) || (0U == OLED_Write_data_buf(upper_buf, row_len))) {
+        if(row_len > 0U) 
+		{
+            if((0U == OLED_Set_Position(x, y)) || (0U == OLED_Write_data_buf(upper_buf, row_len))) 
+			{
                 return 0U;
             }
-            if((0U == OLED_Set_Position(x, (uint8_t)(y + 1U))) ||
-               (0U == OLED_Write_data_buf(lower_buf, row_len))) {
+            if((0U == OLED_Set_Position(x, (uint8_t)(y + 1U))) || (0U == OLED_Write_data_buf(lower_buf, row_len))) 
+			{
                 return 0U;
             }
         }
 
-        if(*ch != '\0') {
+        if(*ch != '\0') 
+		{
             x = 0U;
             y = (uint8_t)(y + 2U);
         }
@@ -777,11 +834,13 @@ static uint8_t oled_show_str_16x8(uint8_t x, uint8_t y, const char *ch)
  */
 uint8_t OLED_ShowStr(uint8_t x, uint8_t y, char *ch, uint8_t fontsize)
 {
-    if(NULL == ch) {
+    if(NULL == ch) 
+	{
         return 0U;
     }
 
-    if(fontsize == 16U) {
+    if(fontsize == 16U) 
+	{
         return oled_show_str_16x8(x, y, ch);
     }
 
@@ -807,7 +866,8 @@ void OLED_ShowChar(uint8_t x, uint8_t y, uint8_t ch, uint8_t fontsize)
      * 字库只覆盖标准可打印 ASCII。越界字符按空格显示，避免负偏移或过大
      * 下标读穿字库数组。
      */
-    if((ch < ' ') || (ch > '~')) {
+    if((ch < ' ') || (ch > '~')) 
+	{
         ch = ' ';
     }
     c = (uint8_t)(ch - ' ');
@@ -951,7 +1011,8 @@ void OLED_Init(void)
     s_oled_available = 1U;
 
     OLED_Write_cmd_buf(initcmd1, sizeof(initcmd1));
-    if (0U == s_oled_available) {
+    if (0U == s_oled_available) 
+	{
         return;
     }
 

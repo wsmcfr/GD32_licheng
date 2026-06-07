@@ -59,8 +59,7 @@ static void restore_clock(void)
     RCU_CFG0 |= (RCU_AHB_CKSYS_DIV1 | RCU_APB2_CKAHB_DIV2 | RCU_APB1_CKAHB_DIV4);
 
     /* 主PLL：25MHz HXTAL，M=25，N=480，P=2 → 240MHz */
-    RCU_PLL = (25 | (480 << 6) | (((2 >> 1) - 1) << 16) |
-               (RCU_PLLSRC_HXTAL) | (10 << 24));
+    RCU_PLL = (25 | (480 << 6) | (((2 >> 1) - 1) << 16) | (RCU_PLLSRC_HXTAL) | (10 << 24));
 
     RCU_CTL |= RCU_CTL_PLLEN;
     while(RESET == (RCU_CTL & RCU_CTL_PLLSTB)) {}
@@ -112,7 +111,8 @@ void power_sleep(void)
     bsp_usart_init();
     {
         uint32_t saved_baud = params_baud();
-        if(saved_baud != 19200) {
+        if(saved_baud != 19200) 
+		{
             bsp_usart_change_baudrate(saved_baud);
         }
     }
@@ -120,7 +120,5 @@ void power_sleep(void)
     led_app_reset_cache();
     scheduler_reset_runtime(); /* 避免各任务唤醒后全部同时到期 */
 
-    bsp_usart_send_buffer(RS485_USART,
-                                s_wakeup_str,
-                                (uint16_t)(sizeof(s_wakeup_str) - 1));
+    bsp_usart_send_buffer(RS485_USART, s_wakeup_str, (uint16_t)(sizeof(s_wakeup_str) - 1));
 }

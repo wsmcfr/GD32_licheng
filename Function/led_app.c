@@ -8,11 +8,13 @@ static uint8_t  g_sys_st   = 0;    /* LED1当前电平 */
 /* 按位图写两路LED硬件，changed_mask中置1的位才操作GPIO */
 static void write_leds(uint8_t mask, uint8_t changed)
 {
-    if((changed & 0x01U) != 0) {
+    if((changed & 0x01U) != 0) 
+	{
         LED1_SET((mask & 0x01U) != 0);
     }
 
-    if((changed & 0x02U) != 0) {
+    if((changed & 0x02U) != 0) 
+	{
         LED2_SET((mask & 0x02U) != 0);
     }
 }
@@ -22,11 +24,13 @@ static uint8_t build_mask(void)
 {
     uint8_t mask = 0;
 
-    if(g_sys_st != 0) {
+    if(g_sys_st != 0) 
+	{
         mask |= 0x01U;
     }
 
-    if(sts_sampling() != 0) {
+    if(sts_sampling() != 0) 
+	{
         mask |= 0x02U;
     }
 
@@ -38,15 +42,19 @@ static void led_refresh(uint8_t mask)
 {
     uint8_t changed;
 
-    if(g_cached == 0) {
+    if(g_cached == 0) 
+	{
         /* 首次刷新无可信历史，强制写两路 */
         changed = 0x03U;
         g_cached = 1;
-    } else {
+    } 
+	else 
+	{
         changed = (uint8_t)((mask ^ g_old_mask) & 0x03U);
     }
 
-    if(changed == 0) {
+    if(changed == 0) 
+	{
         return;
     }
 
@@ -81,7 +89,8 @@ void led_task(void)
 {
     uint32_t now = timebase_get_ms32();
 
-    if((uint32_t)(now - g_sys_ms) >= 1000) {
+    if((uint32_t)(now - g_sys_ms) >= 1000) 
+	{
         g_sys_ms = now;
         g_sys_st = (g_sys_st == 0) ? 1 : 0;
     }

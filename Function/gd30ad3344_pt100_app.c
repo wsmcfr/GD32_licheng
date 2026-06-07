@@ -12,13 +12,15 @@
 
 #define PT100_TABLE_COUNT    (sizeof(s_pt100_table) / sizeof(s_pt100_table[0]))
 
-typedef struct {
+typedef struct 
+{
     float resistance_ohm;
     float temperature_c;
 } pt100_point_t;
 
 /* 测试板电阻-温度标定表，按电阻升序排列，用于分段线性插值 */
-static const pt100_point_t s_pt100_table[] = {
+static const pt100_point_t s_pt100_table[] = 
+{
     {80.6f,  -49.27f},
     {82.5f,  -44.49f},
     {100.0f,   0.0f},
@@ -44,12 +46,13 @@ static float resistance_to_temp(float r)
     if(r <= s_pt100_table[0].resistance_ohm)
         return s_pt100_table[0].temperature_c;
 
-    for(i = 1; i < PT100_TABLE_COUNT; i++) {
-        if(r <= s_pt100_table[i].resistance_ohm) {
+    for(i = 1; i < PT100_TABLE_COUNT; i++) 
+	{
+        if(r <= s_pt100_table[i].resistance_ohm) 
+		{
             float span = s_pt100_table[i].resistance_ohm - s_pt100_table[i-1].resistance_ohm;
             float pos  = (r - s_pt100_table[i-1].resistance_ohm) / span;
-            return s_pt100_table[i-1].temperature_c +
-                   pos * (s_pt100_table[i].temperature_c - s_pt100_table[i-1].temperature_c);
+            return s_pt100_table[i-1].temperature_c + pos * (s_pt100_table[i].temperature_c - s_pt100_table[i-1].temperature_c);
         }
     }
 
@@ -76,13 +79,15 @@ void gd30ad3344_pt100_task(void)
     float adc_v, sig_v, r, t;
     uint8_t valid = 0;
 
-    if(GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_v) != 0) {
+    if(GD30AD3344_AD_Read(PT100_ADC_CHANNEL, PT100_ADC_PGA, &adc_v) != 0) 
+	{
         s_latest.sample_ready = 0;
         s_latest.range_valid  = 0;
         return;
     }
 
-    if(s_discard) {
+    if(s_discard) 
+	{
         s_discard = 0;
         return;
     }

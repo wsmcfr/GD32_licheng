@@ -32,7 +32,8 @@ static uint8_t bsp_rtc_bcd_to_decimal(uint8_t value)
 // 判断指定年份是否为公历闰年，返回 1 表示闰年，0 表示平年。
 static uint8_t bsp_rtc_is_leap_year(uint16_t year)
 {
-    if((0 == (year % 400)) || ((0 == (year % 4)) && (0 != (year % 100)))){
+    if((0 == (year % 400)) || ((0 == (year % 4)) && (0 != (year % 100))))
+	{
         return 1;
     }
 
@@ -44,11 +45,13 @@ static uint8_t bsp_rtc_get_days_in_month(uint16_t year, uint8_t month)
 {
     static const uint8_t days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
-    if((month < 1) || (month > 12)){
+    if((month < 1) || (month > 12))
+	{
         return 0;
     }
 
-    if((2 == month) && (0 != bsp_rtc_is_leap_year(year))){
+    if((2 == month) && (0 != bsp_rtc_is_leap_year(year)))
+	{
         return 29;
     }
 
@@ -58,7 +61,8 @@ static uint8_t bsp_rtc_get_days_in_month(uint16_t year, uint8_t month)
 // 等待 RCU 振荡器稳定，库自带超时，失败时向上返回 -1。
 static int bsp_rtc_wait_osci_stable(rcu_osci_type_enum osci)
 {
-    if(SUCCESS == rcu_osci_stab_wait(osci)) {
+    if(SUCCESS == rcu_osci_stab_wait(osci)) 
+	{
         return 0;
     }
 
@@ -70,28 +74,34 @@ static uint8_t bsp_rtc_is_valid_datetime(const bsp_rtc_datetime_t *datetime)
 {
     uint8_t max_day;
 
-    if(NULL == datetime){
+    if(NULL == datetime)
+	{
         return 0;
     }
 
-    if((datetime->year < 2000) || (datetime->year > 2099)){
+    if((datetime->year < 2000) || (datetime->year > 2099))
+	{
         return 0;
     }
 
-    if((datetime->month < 1) || (datetime->month > 12)){
+    if((datetime->month < 1) || (datetime->month > 12))
+	{
         return 0;
     }
 
     max_day = bsp_rtc_get_days_in_month(datetime->year, datetime->month);
-    if((0 == max_day) || (datetime->date < 1) || (datetime->date > max_day)){
+    if((0 == max_day) || (datetime->date < 1) || (datetime->date > max_day))
+	{
         return 0;
     }
 
-    if(datetime->hour > 23){
+    if(datetime->hour > 23)
+	{
         return 0;
     }
 
-    if((datetime->minute > 59) || (datetime->second > 59)){
+    if((datetime->minute > 59) || (datetime->second > 59))
+	{
         return 0;
     }
 
@@ -109,18 +119,15 @@ static uint8_t bsp_rtc_calculate_day_of_week(uint16_t year, uint8_t month, uint8
      * 采用 Sakamoto 算法计算星期。
      * 对 1、2 月先视作上一年的第 13、14 月，以便统一闰年修正。
      */
-    if(month < 3){
+    if(month < 3)
+	{ 
         adjusted_year--;
     }
 
-    weekday_index = (uint8_t)((adjusted_year +
-                               (adjusted_year / 4) -
-                               (adjusted_year / 100) +
-                               (adjusted_year / 400) +
-                               month_offset[month - 1] +
-                               date) % 7);
+    weekday_index = (uint8_t)((adjusted_year + (adjusted_year / 4) - (adjusted_year / 100) + (adjusted_year / 400) + month_offset[month - 1] + date) % 7);
 
-    if(0 == weekday_index){
+    if(0 == weekday_index)
+	{
         return RTC_SUNDAY;
     }
 
@@ -153,9 +160,12 @@ static int bsp_rtc_setup(void)
     rtc_initpara.minute = tmp_mm;
     rtc_initpara.second = tmp_ss;
 
-    if (ERROR == rtc_init(&rtc_initpara)) {
+    if (ERROR == rtc_init(&rtc_initpara)) 
+	{
         ret = -1;
-    } else {
+    } 
+	else 
+	{
         RTC_BKP0 = BKP_VALUE;
     }
 
@@ -165,7 +175,8 @@ static int bsp_rtc_setup(void)
 // 检查 RTC_BKP0 是否已写入本工程约定的有效标记，主电掉电但 VBAT 仍在时该标记保持。
 static uint8_t bsp_rtc_has_valid_backup(void)
 {
-    if(RTC_BKP0 == BKP_VALUE) {
+    if(RTC_BKP0 == BKP_VALUE) 
+	{
         return 1;
     }
 
@@ -175,7 +186,8 @@ static uint8_t bsp_rtc_has_valid_backup(void)
 // 备份域有效时同步 RTC 阴影寄存器到 rtc_initpara，阴影同步失败返回 -1。
 static int bsp_rtc_restore_from_backup(void)
 {
-    if(ERROR == rtc_register_sync_wait()) {
+    if(ERROR == rtc_register_sync_wait()) 
+	{
         return -1;
     }
 
@@ -194,28 +206,30 @@ static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
     rtc_parameter_struct saved_time;
     uint8_t saved_time_valid = 0;
 
-    if(NULL == has_valid_backup) {
+    if(NULL == has_valid_backup) 
+	{
         return -1;
     }
 
-    if(2 != rtcsrc_flag) {
+    if(2 != rtcsrc_flag) 
+	{
         return 0;
     }
 
     rcu_osci_on(RCU_LXTAL);
-    if(0 != bsp_rtc_wait_osci_stable(RCU_LXTAL)) {
-        /*
-         * 外部晶振当前仍不可用，保守地继续走旧 IRC32K 路径，不复位备份域。
-         * 这样至少不会丢掉纽扣电池保存的现有时间。
-         */
+    if(0 != bsp_rtc_wait_osci_stable(RCU_LXTAL)) 
+	{
         return 0;
     }
 
-    if(0 != *has_valid_backup) {
+    if(0 != *has_valid_backup) 
+	{
         rcu_osci_on(RCU_IRC32K);
-        if(0 == bsp_rtc_wait_osci_stable(RCU_IRC32K)) {
+        if(0 == bsp_rtc_wait_osci_stable(RCU_IRC32K)) 
+		{
             rcu_periph_clock_enable(RCU_RTC);
-            if(ERROR != rtc_register_sync_wait()) {
+            if(ERROR != rtc_register_sync_wait()) 
+			{
                 rtc_current_time_get(&saved_time);
                 saved_time_valid = 1;
             }
@@ -230,7 +244,8 @@ static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
     rcu_bkp_reset_disable();
 
     rcu_osci_on(RCU_LXTAL);
-    if(0 != bsp_rtc_wait_osci_stable(RCU_LXTAL)) {
+    if(0 != bsp_rtc_wait_osci_stable(RCU_LXTAL)) 
+	{
         rtc_clock_ready = 0;
         *has_valid_backup = 0;
         return -1;
@@ -241,14 +256,16 @@ static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
     prescaler_a = 0x7FU;
     rcu_periph_clock_enable(RCU_RTC);
 
-    if(0 != saved_time_valid) {
+    if(0 != saved_time_valid) 
+	{
         /*
          * 复位备份域会清掉 RTC_PSC，因此写回快照前必须把分频改成 LXTAL 对应参数。
          * 日期时间字段保持从旧 RTC 读出的 BCD 值，尽量保留现场已经走到的时间。
          */
         saved_time.factor_asyn = prescaler_a;
         saved_time.factor_syn = prescaler_s;
-        if(ERROR == rtc_init(&saved_time)) {
+        if(ERROR == rtc_init(&saved_time)) 
+		{
             *has_valid_backup = 0;
             return -1;
         }
@@ -256,7 +273,9 @@ static int bsp_rtc_try_restore_lxtal_from_irc32k(uint8_t *has_valid_backup)
         RTC_BKP0 = BKP_VALUE;
         rtc_current_time_get(&rtc_initpara);
         *has_valid_backup = 1;
-    } else {
+    } 
+	else 
+	{
         *has_valid_backup = 0;
     }
 
@@ -275,7 +294,8 @@ static int bsp_rtc_pre_cfg(uint8_t *has_valid_backup)
 {
     int ret = -1;
 
-    if(NULL == has_valid_backup) {
+    if(NULL == has_valid_backup) 
+	{
         return -1;
     }
 
@@ -301,12 +321,14 @@ static int bsp_rtc_pre_cfg(uint8_t *has_valid_backup)
     prescaler_s = 0x13FU;
     prescaler_a = 0x63U;
 #elif defined(RTC_CLOCK_SOURCE_LXTAL)
-    if(0 != bsp_rtc_try_restore_lxtal_from_irc32k(has_valid_backup)) {
+    if(0 != bsp_rtc_try_restore_lxtal_from_irc32k(has_valid_backup)) 
+	{
         rtc_clock_ready = 0;
         return -1;
     }
 
-    if(2 == rtcsrc_flag) {
+    if(2 == rtcsrc_flag) 
+	{
         /*
          * 备份域显示 RTC 当前使用 IRC32K，说明之前可能已经从 LXTAL fallback。
          * 这种情况下继续等待 IRC32K，不能再按编译期首选 LXTAL 强行重选时钟源。
@@ -320,26 +342,34 @@ static int bsp_rtc_pre_cfg(uint8_t *has_valid_backup)
 
         prescaler_s = 0x13FU;
         prescaler_a = 0x63U;
-    } else {
+    } 
+	else 
+	{
         rcu_osci_on(RCU_LXTAL);
         ret = bsp_rtc_wait_osci_stable(RCU_LXTAL);
-        if(0 == ret) {
-            if(rtcsrc_flag == 0) {
+        if(0 == ret) 
+		{
+            if(rtcsrc_flag == 0) 
+			{
                 rcu_rtc_clock_config(RCU_RTCSRC_LXTAL);
             }
 
             prescaler_s = 0xFFU;
             prescaler_a = 0x7FU;
-        } else {
+        } 
+		else 
+		{
 #if RTC_CLOCK_FALLBACK_IRC32K_ENABLE
-            if(rtcsrc_flag == 0) {
+            if(rtcsrc_flag == 0) 
+			{
                 /*
                  * 只有冷启动且备份域尚未选择 RTC 时钟源时才允许切 IRC32K。
                  * 若已有 RTCSRC，强行切源需要复位备份域，会破坏 VBAT 保存的时间。
                  */
                 rcu_osci_on(RCU_IRC32K);
                 ret = bsp_rtc_wait_osci_stable(RCU_IRC32K);
-                if(0 != ret) {
+                if(0 != ret) 
+				{
                     rtc_clock_ready = 0;
                     return -1;
                 }
@@ -347,7 +377,9 @@ static int bsp_rtc_pre_cfg(uint8_t *has_valid_backup)
                 rcu_rtc_clock_config(RCU_RTCSRC_IRC32K);
                 prescaler_s = 0x13FU;
                 prescaler_a = 0x63U;
-            } else {
+            } 
+			else 
+			{
                 rtc_clock_ready = 0;
                 return -1;
             }
@@ -386,15 +418,19 @@ int bsp_rtc_init(void)
 
     rtc_lxtal_recovered = 0;
 
-    if(0 != bsp_rtc_pre_cfg(&has_valid_backup)) {
+    if(0 != bsp_rtc_pre_cfg(&has_valid_backup)) 
+	{
         rcu_all_reset_flag_clear();
         return -1;
     }
 
-    if(0 != has_valid_backup) {
+    if(0 != has_valid_backup) 
+	{
         /* 备份域有效时只同步当前时间，不能再重写默认时间。 */
         ret = bsp_rtc_restore_from_backup();
-    } else {
+    } 
+	else 
+	{
         /* 无备份域时按冷启动流程写入默认时间，并建立备份域有效标记。 */
         ret = bsp_rtc_setup();
     }
@@ -409,15 +445,18 @@ int bsp_rtc_init(void)
  */
 int bsp_rtc_get_datetime(bsp_rtc_datetime_t *datetime)
 {
-    if(NULL == datetime){
+    if(NULL == datetime)
+	{
         return -1;
     }
 
-    if(0 == rtc_clock_ready) {
+    if(0 == rtc_clock_ready) 
+	{
         return -1;
     }
 
-    if(ERROR == rtc_register_sync_wait()) {
+    if(ERROR == rtc_register_sync_wait()) 
+	{
         return -1;
     }
 
@@ -444,32 +483,34 @@ int bsp_rtc_get_epoch_seconds(uint32_t *epoch_seconds)
     uint8_t month;
     uint32_t days;
 
-    if(NULL == epoch_seconds) {
+    if(NULL == epoch_seconds) 
+	{
         return -1;
     }
 
-    if(0 != bsp_rtc_get_datetime(&datetime)) {
+    if(0 != bsp_rtc_get_datetime(&datetime)) 
+	{
         return -1;
     }
 
-    if(0 == bsp_rtc_is_valid_datetime(&datetime)) {
+    if(0 == bsp_rtc_is_valid_datetime(&datetime)) 
+	{
         return -1;
     }
 
     days = 0;
-    for(year = 2000; year < datetime.year; year++) {
+    for(year = 2000; year < datetime.year; year++) 
+	{
         days += (0 != bsp_rtc_is_leap_year(year)) ? 366 : 365;
     }
 
-    for(month = 1; month < datetime.month; month++) {
+    for(month = 1; month < datetime.month; month++) 
+	{
         days += bsp_rtc_get_days_in_month(datetime.year, month);
     }
 
     days += (uint32_t)(datetime.date - 1);
-    *epoch_seconds = (days * 86400) +
-                     ((uint32_t)datetime.hour * 3600) +
-                     ((uint32_t)datetime.minute * 60) +
-                     (uint32_t)datetime.second;
+    *epoch_seconds = (days * 86400) + ((uint32_t)datetime.hour * 3600) + ((uint32_t)datetime.minute * 60) + (uint32_t)datetime.second;
     return 0;
 }
 
@@ -479,7 +520,8 @@ int bsp_rtc_get_status(bsp_rtc_status_t *status)
     uint32_t bdctl;
     uint32_t psc;
 
-    if(NULL == status) {
+    if(NULL == status) 
+	{
         return -1;
     }
 
@@ -509,11 +551,13 @@ int bsp_rtc_set_datetime(const bsp_rtc_datetime_t *datetime)
     rtc_parameter_struct new_time;
     uint8_t rtc_year;
 
-    if(0 == bsp_rtc_is_valid_datetime(datetime)){
+    if(0 == bsp_rtc_is_valid_datetime(datetime))
+	{
         return -1;
     }
 
-    if(0 == rtc_clock_ready) {
+    if(0 == rtc_clock_ready) 
+	{
         return -1;
     }
 
@@ -524,7 +568,8 @@ int bsp_rtc_set_datetime(const bsp_rtc_datetime_t *datetime)
     rcu_periph_clock_enable(RCU_PMU);
     pmu_backup_write_enable();
 
-    if(ERROR == rtc_register_sync_wait()) {
+    if(ERROR == rtc_register_sync_wait()) 
+	{
         return -1;
     }
 
@@ -541,7 +586,8 @@ int bsp_rtc_set_datetime(const bsp_rtc_datetime_t *datetime)
     new_time.am_pm = RTC_AM;
     new_time.display_format = RTC_24HOUR;
 
-    if(ERROR == rtc_init(&new_time)) {
+    if(ERROR == rtc_init(&new_time)) 
+	{
         return -1;
     }
 

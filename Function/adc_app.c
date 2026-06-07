@@ -15,7 +15,8 @@ uint16_t adc_app_set_dac_raw(uint16_t raw_value)
 {
     uint16_t val = raw_value;
 
-    if(val > DAC_RAW_MAX) {
+    if(val > DAC_RAW_MAX) 
+	{
         val = DAC_RAW_MAX;
     }
 

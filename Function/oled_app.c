@@ -22,7 +22,8 @@ static uint8_t diff_end(const char *old, const char *new, uint8_t start)
     uint8_t i;
     if(start >= VISIBLE_CHARS) return start;
     i = VISIBLE_CHARS;
-    while(i > start) {
+    while(i > start) 
+	{
         i--;
         if(old[i] != new[i]) return (uint8_t)(i + 1);
     }
@@ -56,13 +57,15 @@ int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
 
     ds = diff_start(g_cache[y], buf);
     de = diff_end(g_cache[y], buf, ds);
-    if(de > ds) {
+    if(de > ds) 
+	{
         dlen  = (uint8_t)(de - ds);
         seg_x = (uint8_t)(x + ds * 8);
         memcpy(diff_buf, &buf[ds], dlen);
         diff_buf[dlen] = '\0';
         /* 16px字体，逻辑行0→物理页0，逻辑行1→物理页2 */
-        if(OLED_ShowStr(seg_x, (uint8_t)(y * 2), diff_buf, 16)) {
+        if(OLED_ShowStr(seg_x, (uint8_t)(y * 2), diff_buf, 16)) 
+		{
             memcpy(&g_cache[y][ds], &buf[ds], dlen);
             g_cache[y][VISIBLE_CHARS] = '\0';
         }

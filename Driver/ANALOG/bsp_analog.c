@@ -32,8 +32,7 @@ void bsp_adc_init(void)
 
     adc_clock_config(ADC_ADCCK_PCLK2_DIV8);
 
-    gpio_mode_set(ADC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,
-                  ADC1_PIN | ADC2_PIN | ADC_VREF_PIN);
+    gpio_mode_set(ADC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,ADC1_PIN | ADC2_PIN | ADC_VREF_PIN);
 
     dma_deinit(DMA1, DMA_CH0);
     dma_single_data_para_struct_init(&dma_single_data_parameter);
