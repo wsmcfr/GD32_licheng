@@ -1,4 +1,5 @@
 #include "bsp_usart.h"
+#include "usart_app.h"
 
 /* USART1/RS485 DMA 接收缓冲区定义，IDLE 中断会按有效长度转交给应用层。 */
 uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
@@ -231,6 +232,9 @@ void bsp_usart_change_baudrate(uint32_t baudrate)
     /* 等待当前最后一帧完全移出 USART 移位寄存器，再改波特率。 */
     (void)prv_bsp_usart_wait_flag_set(USART1, USART_FLAG_TC);
 
+    /* 关闭 IDLE 中断，防止切换过程中 ISR 标记虚假 IDLE 事件。 */
+    usart_interrupt_disable(USART1, USART_INT_IDLE);
+
     /* 先停 DMA，避免波特率过渡期间 DMA 把乱码写入接收缓冲。 */
     dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
@@ -238,16 +242,22 @@ void bsp_usart_change_baudrate(uint32_t baudrate)
     usart_baudrate_set(USART1, baudrate);
     usart_enable(USART1);
 
+    /* 清除 USART 可能残留的 IDLE / ORE 标志（读 STAT + 读 DATA）。 */
+    (void)USART_STAT0(USART1);
+    (void)USART_DATA(USART1);
+
     /*
      * 清零接收缓冲区，确保旧波特率下的残留字节不会被 usart_app 当作新帧解析。
      * 然后重置 DMA CNT 寄存器（需在通道关闭状态下写入），重新使能。
      */
     memset(usart1_rxbuffer, 0U, sizeof(usart1_rxbuffer));
-    /*
-     * DMA 通道关闭状态下调用 dma_transfer_number_config() 重置传输计数，
-     * 恢复为满缓冲容量，避免下次 IDLE 中断误判有效长度。
-     */
     dma_transfer_number_config(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL,
                                 sizeof(usart1_rxbuffer));
     dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+
+    /* 清除去抖状态，避免处理旧波特率的残留数据。 */
+    g_usart_idle_pending = 0U;
+
+    /* 重新使能 IDLE 中断。 */
+    usart_interrupt_enable(USART1, USART_INT_IDLE);
 }

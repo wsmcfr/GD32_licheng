@@ -548,7 +548,7 @@ static uint8_t prv_cimc_dispatch_command(const cimc_protocol_frame_t *frame)
         }
         return 1U;
 
-    /* (M) 0x01A2 设置波特率：先回 OK（旧波特率），持久化，再重启生效 */
+    /* (M) 0x01A2 设置波特率：先回 OK（旧波特率），再在线切换到新波特率 */
     case CIMC_CMD_SET_BAUD:
         if((frame->length != 1U) || (NULL == frame->payload)) {
             (void)prv_cimc_send_error(own_id, frame->command);
@@ -559,11 +559,16 @@ static uint8_t prv_cimc_dispatch_command(const cimc_protocol_frame_t *frame)
             return 1U;
         }
         (void)prv_cimc_send_ok(own_id, frame->command);
-        /* 重启前持久化告警记录，确保重启后能恢复。 */
-        cimc_alarm_save();
+        /*
+         * OK 帧以旧波特率发完后，在线切换到新波特率，不执行系统重启。
+         * BootLoader 有 5 秒固定延时，重启后设备心跳帧发送时刻与上位机
+         * 新波特率查询命令在 RS485 半双工总线上严重冲突，
+         * 导致 M-01 "115200 下通信正常" 丢分。
+         * 波特率码已在 cimc_params_set_baud_code() 中持久化到 Flash，
+         * M-02 重启后仍从 Flash 加载新波特率，持久化验证不受影响。
+         */
         delay_ms(20U);
-        __set_FAULTMASK(1U);
-        NVIC_SystemReset();
+        bsp_usart_change_baudrate(cimc_params_get_baud_rate());
         return 1U;
 
     /* (D) 0x0301 设置 DAC 输出电压（0~4095 → 0x0000~0x0FFF） */

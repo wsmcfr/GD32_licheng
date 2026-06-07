@@ -24,6 +24,16 @@ extern __IO uint16_t uart_dma_length;
 extern uint8_t uart_dma_buffer[UART_APP_DMA_BUFFER_SIZE];
 
 /*
+ * 变量作用：
+ *   IDLE 中断去抖机制共享变量。ISR 只记录最后一次 IDLE 时刻，
+ *   uart_task 等待 3ms 去抖后再取出 DMA 数据处理。
+ *   解决 115200 波特率下 USB 转串口芯片的帧间隙（~1ms）
+ *   被 USART IDLE 检测误判为帧结束的问题。
+ */
+extern __IO uint32_t g_usart_idle_tick;
+extern __IO uint8_t  g_usart_idle_pending;
+
+/*
  * 函数作用：
  *   从 USART1/RS485 共享接收缓冲区取走一帧数据。
  * 参数说明：

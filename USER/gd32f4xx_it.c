@@ -157,12 +157,17 @@ void PendSV_Handler(void)
 
 /*
  * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，将 DMA 接收到的一帧赛题 ASCII 协议数据移交给应用层。
+ *   处理 USART1/RS485 IDLE 中断，仅记录时间戳，不处理 DMA 数据。
  * 主要流程：
- *   1. 判断并清除 IDLE 中断标志。
- *   2. 暂停 DMA，按剩余传输计数计算本帧有效长度。
- *   3. 做长度边界检查后复制到 uart_dma_buffer，并置位 rx_flag。
- *   4. 重新装载 DMA 计数，准备下一帧接收。
+ *   1. 清除 IDLE 中断标志。
+ *   2. 记录当前 ms tick 并置位 pending 标志。
+ *   3. DMA 保持运行，不关闭、不重置，让后续 USB 分包的字节继续累积。
+ *   4. uart_task 在去抖超时后统一取出 DMA 数据并解析协议帧。
+ * 说明：
+ *   115200 波特率下一个字节帧仅 87µs，USB 转串口芯片的帧间隙约 1ms
+ *   远大于 IDLE 检测阈值，导致一帧协议数据被拆成多段分别触发 IDLE。
+ *   将 DMA 数据处理移到 uart_task 并加 3ms 去抖，可保证所有 USB 分包
+ *   到齐后再统一处理，避免部分帧 CRC 校验失败。
  * 参数说明：
  *   无参数。
  * 返回值说明：
@@ -170,41 +175,17 @@ void PendSV_Handler(void)
  */
 void USART1_IRQHandler(void)
 {
-    uint32_t rx_len;
-    uint32_t copy_len;
-
     if(RESET != usart_interrupt_flag_get(USART1, USART_INT_FLAG_IDLE)) {
-        /* 清除 IDLE 标志：读数据寄存器用于结束本次空闲中断状态。 */
+        /* 清除 IDLE 标志：先读 STAT 再读 DATA 是 GD32F4xx 的标准清除序列。 */
         usart_data_receive(USART1);
-        dma_channel_disable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-
-        /* 根据 DMA 剩余传输数计算本次 IDLE 前收到的字节数。 */
-        rx_len = sizeof(usart1_rxbuffer) -
-                 dma_transfer_number_get(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
-        if((rx_len > 0U) && (rx_len <= sizeof(usart1_rxbuffer))) {
-            copy_len = rx_len;
-            if(copy_len > sizeof(uart_dma_buffer)) {
-                copy_len = sizeof(uart_dma_buffer);
-            }
-            if(copy_len > 0U) {
-                /*
-                 * ISR 只复制完整 ASCII 帧，不解析帧头、CRC 或命令字，保持中断路径可预测。
-                 */
-                memcpy(uart_dma_buffer, usart1_rxbuffer, copy_len);
-                uart_dma_length = (uint16_t)copy_len;
-                rx_flag = 1U;
-            }
-        }
 
         /*
-         * 重新装载 DMA 计数并打开通道，准备接收下一帧。旧 OTA 的 DMA 半满/满中断已删除，
-         * 因为正式协议普通帧不再依赖 32KB circular DMA 裸流接收。
+         * 只记录最后一次 IDLE 时刻，不关 DMA、不复制数据。
+         * uart_task 在距最后 IDLE 超过 3ms 后才取出 DMA 累积的全部字节，
+         * 确保 USB 拆包全部到齐。
          */
-        dma_flag_clear(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL, DMA_FLAG_FTF);
-        dma_transfer_number_config(USART1_RX_DMA_PERIPH,
-                                   USART1_RX_DMA_CHANNEL,
-                                   sizeof(usart1_rxbuffer));
-        dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
+        g_usart_idle_tick = timebase_get_ms32();
+        g_usart_idle_pending = 1U;
     }
 }
 
