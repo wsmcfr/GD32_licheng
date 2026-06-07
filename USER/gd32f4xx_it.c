@@ -35,143 +35,69 @@ OF SUCH DAMAGE.
 #include "gd32f4xx_it.h"
 #include "system_all.h"
 
-/*
- * 函数作用：
- *   处理 NMI 不可屏蔽中断异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值；发生该异常后进入无限循环，便于调试器停机定位。
- */
+// NMI 不可屏蔽中断——不可恢复，停机保留现场
 void NMI_Handler(void)
 {
-    /* NMI 属于不可恢复异常，停在现场便于查看堆栈和寄存器。 */
     while(1) {
     }
 }
 
-/*
- * 函数作用：
- *   处理 HardFault 硬 fault 异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值；发生该异常后进入无限循环，保留故障现场。
- */
+// HardFault——继续运行风险不可控，停机保留故障现场
 void HardFault_Handler(void)
 {
-    /* HardFault 后继续运行风险不可控，直接停机保留故障现场。 */
     while(1) {
     }
 }
 
-/*
- * 函数作用：
- *   处理 MemManage 内存管理异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值；发生该异常后进入无限循环，保留故障现场。
- */
+// MemManage——通常是栈溢出或 MPU 配置错误，停机排查
 void MemManage_Handler(void)
 {
-    /* 内存访问异常通常表示栈、指针或 MPU 配置错误，需要停机排查。 */
     while(1) {
     }
 }
 
-/*
- * 函数作用：
- *   处理 BusFault 总线访问异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值；发生该异常后进入无限循环，保留故障现场。
- */
+// BusFault——非法外设地址或未就绪总线访问，停机定位访问源
 void BusFault_Handler(void)
 {
-    /* 总线异常可能来自非法外设地址或未就绪总线访问，停机便于定位访问源。 */
     while(1) {
     }
 }
 
-/*
- * 函数作用：
- *   处理 UsageFault 指令使用异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值；发生该异常后进入无限循环，保留故障现场。
- */
+// UsageFault——结合 UFSR 分析，停机避免覆盖现场
 void UsageFault_Handler(void)
 {
-    /* 指令使用异常通常需要结合异常寄存器分析，直接停机避免覆盖现场。 */
     while(1) {
     }
 }
 
-/*
- * 函数作用：
- *   处理 SVC 异常入口。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值；当前工程未使用 SVC 服务，异常后停机。
- */
+// SVC——裸机工程未使用 SVC 服务，进入即流程异常
 void SVC_Handler(void)
 {
-    /* 当前裸机工程没有 SVC 调度需求，进入该入口说明流程异常。 */
     while(1) {
     }
 }
 
-/*
- * 函数作用：
- *   处理 DebugMon 调试监控异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值；当前工程未使用 DebugMon，异常后停机。
- */
+// DebugMon——未配置 DebugMon 业务，停机保留异常现场
 void DebugMon_Handler(void)
 {
-    /* 当前工程未配置 DebugMon 业务处理，停机保留异常现场。 */
     while(1) {
     }
 }
 
-/*
- * 函数作用：
- *   处理 PendSV 异常入口。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值；当前工程未使用 RTOS 上下文切换，异常后停机。
- */
+// PendSV——裸机调度器不使用 PendSV，进入即流程异常
 void PendSV_Handler(void)
 {
-    /* 裸机调度器不使用 PendSV，进入该入口说明异常触发来源需要排查。 */
     while(1) {
     }
 }
 
 /*
- * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，仅记录时间戳，不处理 DMA 数据。
- * 主要流程：
- *   1. 清除 IDLE 中断标志。
- *   2. 记录当前 ms tick 并置位 pending 标志。
- *   3. DMA 保持运行，不关闭、不重置，让后续 USB 分包的字节继续累积。
- *   4. uart_task 在去抖超时后统一取出 DMA 数据并解析协议帧。
- * 说明：
- *   115200 波特率下一个字节帧仅 87µs，USB 转串口芯片的帧间隙约 1ms
- *   远大于 IDLE 检测阈值，导致一帧协议数据被拆成多段分别触发 IDLE。
- *   将 DMA 数据处理移到 uart_task 并加 3ms 去抖，可保证所有 USB 分包
- *   到齐后再统一处理，避免部分帧 CRC 校验失败。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
+ * USART1/RS485 IDLE 中断：仅记录时间戳，不处理 DMA 数据。
+ * 清 IDLE 标志后记录 ms tick，置 pending 标志，DMA 保持运行继续累积。
+ * uart_task 在去抖超时后统一取出 DMA 数据解析协议帧。
+ *
+ * 背景：115200 下 USB 转串口芯片帧间隙约 1ms，会把一帧协议数据拆成多个 USB 包
+ * 分别触发 IDLE；加 3ms 去抖确保所有分包到齐后再统一处理。
  */
 void USART1_IRQHandler(void)
 {
@@ -179,44 +105,23 @@ void USART1_IRQHandler(void)
         /* 清除 IDLE 标志：先读 STAT 再读 DATA 是 GD32F4xx 的标准清除序列。 */
         usart_data_receive(USART1);
 
-        /*
-         * 只记录最后一次 IDLE 时刻，不关 DMA、不复制数据。
-         * uart_task 在距最后 IDLE 超过 3ms 后才取出 DMA 累积的全部字节，
-         * 确保 USB 拆包全部到齐。
-         */
         g_usart_idle_tick = timebase_get_ms32();
         g_usart_idle_pending = 1U;
     }
 }
 
-/*
- * 函数作用：
- *   处理 SysTick 中断，推进本地 1ms timebase。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- * 说明：
- *   当前工程已经移除外部 SysTick wrapper，SysTick 中断必须直接维护本地 tick，
- *   否则调度器、delay_ms() 和 OLED 运行时间显示都会停止。
- */
+// SysTick 中断，推进本地 1ms timebase
 void SysTick_Handler(void)
 {
     systick_tick_inc();
 }
 
 /*
- * 函数作用：
- *   RTC 自动唤醒定时器中断服务函数（EXTI_22 路由）。
- *   深度睡眠期间由 RTC 10s 定时触发，清除 EXTI 挂起标志后 WFI 自动返回。
- *   cimc_power_sleep_10s() 在 WFI 返回后统一清除 RTC 唤醒标志和禁用定时器。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
+ * RTC 自动唤醒定时器中断（EXTI_22），深度睡眠 10s 后触发。
+ * 只需清 EXTI 挂起标志，WFI 即可自动返回；RTC 标志和定时器由
+ * cimc_power_sleep_10s() 在 WFI 返回后统一清理。
  */
 void RTC_WKUP_IRQHandler(void)
 {
-    /* 清除 EXTI_22 挂起标志，使能 WFI 正常退出深度睡眠。 */
     exti_flag_clear(EXTI_22);
 }

@@ -155,14 +155,14 @@ bootloader_port_status_t bootloader_port_write_upgrade_info(uint32_t app_version
 
 /*
  * 函数作用：
- *   写入“进入 Bootloader 等待赛题串口升级”的请求标志。
+ *   写入”进入 Bootloader 等待串口升级”的请求标志。
  * 参数说明：
  *   无参数。
  * 返回值说明：
  *   BOOTLOADER_PORT_STATUS_OK：参数区写入成功，复位后 Bootloader 将等待 0x0502/0x0503。
  *   BOOTLOADER_PORT_STATUS_FLASH_ERROR：参数区擦写失败。
  * 说明：
- *   该接口只用于 App 收到赛题 0x0501 升级请求后触发 Bootloader 等待窗口；
+ *   该接口只用于 App 收到 0x0501 升级请求后触发 Bootloader 等待窗口；
  *   它不表示下载区已有有效固件，因此不能复用 updateStatus=0x01 的搬运语义。
  */
 bootloader_port_status_t bootloader_port_request_bootloader_upgrade(void);

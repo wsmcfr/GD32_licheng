@@ -1,167 +1,90 @@
 #include "led_app.h"
 
-/*
- * 变量作用：
- *   保存上一次已经同步到硬件的两个 LED 逻辑位图。
- * 说明：
- *   bit0 对应系统状态灯 LED1，bit1 对应采集工作灯 LED2。
- */
-static uint8_t g_led_mask_old = 0x00U;
+static uint8_t  g_old_mask = 0x00U; /* 上次同步到硬件的LED位图 */
+static uint8_t  g_cached   = 0;    /* 缓存是否有效，0=强制刷新 */
+static uint32_t g_sys_ms   = 0;    /* LED1上次翻转时刻 */
+static uint8_t  g_sys_st   = 0;    /* LED1当前电平 */
 
-/*
- * 变量作用：
- *   标记 g_led_mask_old 是否已经对应过真实硬件输出。
- * 说明：
- *   上电、唤醒或直接硬件熄灯后该标志必须清零，下一次 led_task() 会强制写入两个 LED。
- */
-static uint8_t g_led_cache_valid = 0U;
-
-/*
- * 变量作用：
- *   LED1 系统状态灯的闪烁节拍缓存。
- * 说明：
- *   赛题要求进入 APP 后以 1s 为单位闪烁，这里用毫秒 timebase 做无阻塞翻转。
- */
-static uint32_t g_led_system_last_toggle_ms = 0U;
-static uint8_t g_led_system_state = 0U;
-
-/*
- * 函数作用：
- *   按位图直接写入两个正式 LED 硬件输出。
- * 参数说明：
- *   led_mask：bit0 表示 LED1，bit1 表示 LED2，1 表示点亮。
- *   changed_mask：bit0/bit1 表示需要实际写 GPIO 的 LED，0 表示该路保持不动。
- * 返回值说明：
- *   无返回值。
- */
-static void led_app_write_mask(uint8_t led_mask, uint8_t changed_mask)
+/* 按位图写两路LED硬件，changed_mask中置1的位才操作GPIO */
+static void write_leds(uint8_t mask, uint8_t changed)
 {
-    if((changed_mask & 0x01U) != 0U) {
-        LED1_SET((led_mask & 0x01U) != 0U);
+    if((changed & 0x01U) != 0) {
+        LED1_SET((mask & 0x01U) != 0);
     }
 
-    if((changed_mask & 0x02U) != 0U) {
-        LED2_SET((led_mask & 0x02U) != 0U);
+    if((changed & 0x02U) != 0) {
+        LED2_SET((mask & 0x02U) != 0);
     }
 }
 
-/*
- * 函数作用：
- *   根据当前应用状态构造两个正式 LED 的目标位图。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   bit0：系统状态灯 LED1。
- *   bit1：采集工作灯 LED2。
- */
-static uint8_t led_app_build_mask(void)
+/* 构造LED目标位图：bit0=LED1系统灯，bit1=LED2采集灯 */
+static uint8_t build_mask(void)
 {
-    uint8_t led_mask = 0U;
+    uint8_t mask = 0;
 
-    if(g_led_system_state != 0U) {
-        led_mask |= 0x01U;
+    if(g_sys_st != 0) {
+        mask |= 0x01U;
     }
 
-    if(cimc_status_is_auto_sample_active() != 0U) {
-        led_mask |= 0x02U;
+    if(cimc_status_is_auto_sample_active() != 0) {
+        mask |= 0x02U;
     }
 
-    return led_mask;
+    return mask;
 }
 
-/*
- * 函数作用：
- *   将两个正式 LED 的目标位图同步到硬件。
- * 参数说明：
- *   led_mask：bit0 表示 LED1，bit1 表示 LED2，1 表示点亮。
- * 返回值说明：
- *   无返回值。
- */
-static void led_app_refresh(uint8_t led_mask)
+/* 将LED位图同步到硬件，仅变化的位写GPIO */
+static void led_refresh(uint8_t mask)
 {
-    uint8_t changed_mask;
+    uint8_t changed;
 
-    if(g_led_cache_valid == 0U) {
-        /*
-         * 首次刷新时没有可信历史状态，强制写入两个 LED，覆盖 bsp_led_init() 后的默认关闭状态。
-         */
-        changed_mask = 0x03U;
-        g_led_cache_valid = 1U;
+    if(g_cached == 0) {
+        /* 首次刷新无可信历史，强制写两路 */
+        changed = 0x03U;
+        g_cached = 1;
     } else {
-        changed_mask = (uint8_t)((led_mask ^ g_led_mask_old) & 0x03U);
+        changed = (uint8_t)((mask ^ g_old_mask) & 0x03U);
     }
 
-    if(changed_mask == 0U) {
+    if(changed == 0) {
         return;
     }
 
-    led_app_write_mask(led_mask, changed_mask);
-    g_led_mask_old = led_mask;
+    write_leds(mask, changed);
+    g_old_mask = mask;
 }
 
-/*
- * 函数作用：
- *   低功耗或复位前关闭正式版两个 LED 指示灯。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
+/* 低功耗或复位前关闭两路LED */
 void led_app_all_off(void)
 {
-    g_led_system_state = 0U;
-    led_app_refresh(0U);
+    g_sys_st = 0;
+    led_refresh(0);
 }
 
-/*
- * 函数作用：
- *   低功耗入口专用熄灯接口，关闭硬件 LED 并复位 LED 刷新缓存。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
+/* 低功耗入口熄灯，并复位刷新缓存，唤醒后首次led_task强制刷新 */
 void led_app_blank_for_sleep(void)
 {
-    g_led_system_state = 0U;
-    led_app_write_mask(0U, 0x03U);
+    g_sys_st = 0;
+    write_leds(0, 0x03U);
     led_app_reset_cache();
 }
 
-/*
- * 函数作用：
- *   复位 LED 应用层缓存，让下一次 led_task() 强制刷新两个正式指示灯。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
+/* 复位LED缓存，下次led_task强制刷新两路 */
 void led_app_reset_cache(void)
 {
-    g_led_mask_old = 0U;
-    g_led_cache_valid = 0U;
+    g_old_mask = 0;
+    g_cached   = 0;
 }
 
-/*
- * 函数作用：
- *   调度器周期调用的 LED 任务。
- * 主要流程：
- *   1. 每 1000ms 翻转一次 LED1 系统状态灯。
- *   2. 根据自动采集状态刷新 LED2 采集工作灯。
- *   3. 仅当目标位图变化时写 GPIO，减少无意义寄存器操作。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
+/* 调度器20ms周期：LED1每1s翻转，LED2跟随采集状态，仅变化时写GPIO */
 void led_task(void)
 {
-    uint32_t now_ms = timebase_get_ms32();
+    uint32_t now = timebase_get_ms32();
 
-    if((uint32_t)(now_ms - g_led_system_last_toggle_ms) >= 1000U) {
-        g_led_system_last_toggle_ms = now_ms;
-        g_led_system_state = (g_led_system_state == 0U) ? 1U : 0U;
+    if((uint32_t)(now - g_sys_ms) >= 1000) {
+        g_sys_ms = now;
+        g_sys_st = (g_sys_st == 0) ? 1 : 0;
     }
 
-    led_app_refresh(led_app_build_mask());
+    led_refresh(build_mask());
 }

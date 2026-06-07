@@ -1,180 +1,81 @@
 #include "oled_app.h"
 
-/* 正式版 OLED 只保留双行显示：第 1 行队伍编号，第 2 行运行状态。 */
-#define OLED_APP_LINE_COUNT             2U
-#define OLED_APP_LINE_BUFFER_SIZE       32U
-#define OLED_APP_VISIBLE_CHARS          16U
+#define LINE_COUNT     2
+#define LINE_BUF_SIZE  32
+#define VISIBLE_CHARS  16
 
-/*
- * 变量作用：
- *   缓存 OLED 每一行上一次已经写入的文本内容，用于脏行判断。
- * 说明：
- *   128x32 OLED 使用 8 像素步进字符时每行可显示 16 个字符。缓存按 32 字节保留，
- *   既覆盖当前格式化文本，也显著小于旧版 512 字节栈缓冲。
- */
-static char g_oled_line_cache[OLED_APP_LINE_COUNT][OLED_APP_LINE_BUFFER_SIZE];
+/* 每行已显示内容缓存，用于脏字符检测 */
+static char g_cache[LINE_COUNT][LINE_BUF_SIZE];
 
-/*
- * 函数作用：
- *   从左到右查找 OLED 行缓存与新显示文本之间第一个不同字符的位置。
- * 参数说明：
- *   old_line：该 OLED 行上一次已经显示并缓存的 16 字符文本。
- *   new_line：本次格式化、裁剪并补空格后的 16 字符文本。
- * 返回值说明：
- *   0~15：第一个发生变化的字符索引。
- *   OLED_APP_VISIBLE_CHARS：整行 16 个可见字符都没有变化。
- */
-static uint8_t oled_printf_diff_start(const char *old_line, const char *new_line)
+/* 从左找第一个差异位置 */
+static uint8_t diff_start(const char *old, const char *new)
 {
-    uint8_t index;
-
-    for(index = 0U; index < OLED_APP_VISIBLE_CHARS; index++) {
-        if(old_line[index] != new_line[index]) {
-            return index;
-        }
-    }
-
-    return OLED_APP_VISIBLE_CHARS;
+    uint8_t i;
+    for(i = 0; i < VISIBLE_CHARS; i++)
+        if(old[i] != new[i]) return i;
+    return VISIBLE_CHARS;
 }
 
-/*
- * 函数作用：
- *   从右到左查找 OLED 行缓存与新显示文本之间最后一个不同字符的后一位。
- * 参数说明：
- *   old_line：该 OLED 行上一次已经显示并缓存的 16 字符文本。
- *   new_line：本次格式化、裁剪并补空格后的 16 字符文本。
- *   start：差异段起点；当起点已经越过可见区时，表示无需刷新。
- * 返回值说明：
- *   start：没有需要刷新的差异段。
- *   start+1~OLED_APP_VISIBLE_CHARS：差异段结束位置，采用“终点不含”语义。
- */
-static uint8_t oled_printf_diff_end(const char *old_line, const char *new_line, uint8_t start)
+/* 从右找最后一个差异位置的下一位 */
+static uint8_t diff_end(const char *old, const char *new, uint8_t start)
 {
-    uint8_t index;
-
-    if(start >= OLED_APP_VISIBLE_CHARS) {
-        return start;
+    uint8_t i;
+    if(start >= VISIBLE_CHARS) return start;
+    i = VISIBLE_CHARS;
+    while(i > start) {
+        i--;
+        if(old[i] != new[i]) return (uint8_t)(i + 1);
     }
-
-    index = OLED_APP_VISIBLE_CHARS;
-    while(index > start) {
-        index--;
-        if(old_line[index] != new_line[index]) {
-            return (uint8_t)(index + 1U);
-        }
-    }
-
     return start;
 }
 
-/*
- * 函数作用：
- *   清空 OLED 应用层行缓存，让下一次 oled_printf 必定刷新对应行。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void oled_app_reset_cache(void)
 {
-    memset(g_oled_line_cache, 0, sizeof(g_oled_line_cache));
+    memset(g_cache, 0, sizeof(g_cache));
 }
 
-/*
- * 函数作用：
- *   使用 printf 风格格式化文本，并把结果显示到 OLED 指定坐标。
- * 主要流程：
- *   1. 使用 vsnprintf 将可变参数格式化到本地缓冲区，避免无界写入。
- *   2. 将显示行裁剪/补齐到当前屏幕一行可见宽度。
- *   3. 与行缓存比较，仅当文本变化时调用 OLED_ShowStr 刷新。
- * 参数说明：
- *   x：OLED 横向像素坐标，当前 128x32 屏建议范围为 0~127。
- *   y：OLED 行号，当前 6x8 字符显示建议范围为 0~3。
- *   format：printf 风格格式字符串，后续可变参数必须与格式占位符匹配。
- * 返回值说明：
- *   非负值：vsnprintf 计算出的格式化字符串长度，不包含结尾 '\0'。
- *   负值：格式化失败，返回值由 vsnprintf 决定。
- */
+/* printf风格OLED显示，只刷新变化的字符段 */
 int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
 {
-    char buffer[OLED_APP_LINE_BUFFER_SIZE];
-    char diff_buffer[OLED_APP_LINE_BUFFER_SIZE];
+    char buf[LINE_BUF_SIZE], diff_buf[LINE_BUF_SIZE];
     va_list arg;
     int len;
-    uint8_t i;
-    uint8_t diff_start;
-    uint8_t diff_end;
-    uint8_t diff_len;
-    uint8_t segment_x;
+    uint8_t i, ds, de, dlen, seg_x;
 
     va_start(arg, format);
-    /* 使用行级有界格式化，避免调试显示占用过大的任务栈。 */
-    len = vsnprintf(buffer, sizeof(buffer), format, arg);
+    len = vsnprintf(buf, sizeof(buf), format, arg);
     va_end(arg);
 
-    if(y >= OLED_APP_LINE_COUNT) {
-        return len;
-    }
+    if(y >= LINE_COUNT) return len;
 
-    /*
-     * OLED_ShowStr 不会主动清掉上一帧较长字符串残留，因此先把可见区补齐空格。
-     * 超过一行的内容按当前 128 像素屏宽裁剪，避免自动换行改写下一页内容。
-     */
-    for(i = 0U; i < OLED_APP_VISIBLE_CHARS; i++) {
-        if('\0' == buffer[i]) {
-            break;
-        }
-    }
-    while(i < OLED_APP_VISIBLE_CHARS) {
-        buffer[i] = ' ';
-        i++;
-    }
-    buffer[OLED_APP_VISIBLE_CHARS] = '\0';
+    /* 可见区不足时补空格，覆盖上一帧残留 */
+    for(i = 0; i < VISIBLE_CHARS; i++)
+        if(buf[i] == '\0') break;
+    while(i < VISIBLE_CHARS) buf[i++] = ' ';
+    buf[VISIBLE_CHARS] = '\0';
 
-    diff_start = oled_printf_diff_start(g_oled_line_cache[y], buffer);
-    diff_end = oled_printf_diff_end(g_oled_line_cache[y], buffer, diff_start);
-    if(diff_end > diff_start) {
-        diff_len = (uint8_t)(diff_end - diff_start);
-
-        /*
-         * 只把变化的字符段拷贝成临时 C 字符串再显示。底层 6x8 字符批量渲染
-         * 已保持 8 像素步进，因此这里可以直接用字符索引换算横坐标。
-         */
-        memcpy(diff_buffer, &buffer[diff_start], diff_len);
-        diff_buffer[diff_len] = '\0';
-        segment_x = (uint8_t)(x + (diff_start * 8U));
-        /*
-         * 屏幕刷新成功后才更新缓存。若 OLED 离线、I2C 忙死或 DMA 超时，底层会返回
-         * 失败并保持旧缓存，下一轮调度仍会尝试刷新同一差异段，避免“缓存显示成功、
-         * 物理屏幕没写入”的假成功状态。
-         */
-        /* 16px 字体每字符占 2 页，逻辑行 0→物理页 0，逻辑行 1→物理页 2。 */
-        if(0U != OLED_ShowStr(segment_x, (uint8_t)(y * 2U), diff_buffer, 16)) {
-            memcpy(&g_oled_line_cache[y][diff_start], &buffer[diff_start], diff_len);
-            g_oled_line_cache[y][OLED_APP_VISIBLE_CHARS] = '\0';
+    ds = diff_start(g_cache[y], buf);
+    de = diff_end(g_cache[y], buf, ds);
+    if(de > ds) {
+        dlen  = (uint8_t)(de - ds);
+        seg_x = (uint8_t)(x + ds * 8);
+        memcpy(diff_buf, &buf[ds], dlen);
+        diff_buf[dlen] = '\0';
+        /* 16px字体，逻辑行0→物理页0，逻辑行1→物理页2 */
+        if(OLED_ShowStr(seg_x, (uint8_t)(y * 2), diff_buf, 16)) {
+            memcpy(&g_cache[y][ds], &buf[ds], dlen);
+            g_cache[y][VISIBLE_CHARS] = '\0';
         }
     }
 
     return len;
 }
 
-/*
- * 函数作用：
- *   周期性刷新 OLED 双行状态。
- * 主要流程：
- *   1. 第一行显示队伍编号。
- *   2. 第二行根据自动采集状态显示 AutoSample 或 IDLE。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void oled_task(void)
 {
     oled_printf(0, 0, "%s", cimc_status_get_team_id());
-    if(cimc_status_is_auto_sample_active() != 0U) {
+    if(cimc_status_is_auto_sample_active())
         oled_printf(0, 1, "AutoSample");
-    } else {
+    else
         oled_printf(0, 1, "IDLE");
-    }
 }

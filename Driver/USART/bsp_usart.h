@@ -1,11 +1,7 @@
 #ifndef BSP_USART_H
 #define BSP_USART_H
 
-/*
- * 文件作用：
- *   定义正式比赛通信使用的 USART1/RS485 硬件资源、共享缓冲区和初始化接口。
- *   本工程正式版删除 USART0 和 USART5，避免非评分串口影响协议链路。
- */
+/* USART1/RS485硬件资源定义：仅保留RS485通信串口 */
 
 #define SYSTEM_ALL_BASE_ONLY
 #include "system_all.h"
@@ -15,25 +11,14 @@
 extern "C" {
 #endif
 
-/*
- * 宏作用：
- *   定义正式比赛通信串口和默认波特率。
- * 说明：
- *   赛题明确要求自动评分默认通过 USART1 的 RS485 接口通信，出厂默认波特率必须为 19200。
- */
+/* RS485通信串口，出厂默认波特率19200 */
 #define CIMC_RS485_USART               USART1
 #define CIMC_RS485_BAUDRATE            19200U
 
-/*
- * 宏作用：
- *   定义 USART1/RS485 DMA 接收缓冲区长度。
- * 说明：
- *   比赛协议以 ASCII 十六进制字符串收发，单帧长度远小于 512 字节；
- *   这里保留 1KB 余量，供后续 0x0502 前的普通命令帧和异常帧处理使用。
- */
+/* USART1/RS485 DMA接收缓冲区长度（单帧远小于512字节，1KB留有余量） */
 #define BSP_USART1_RX_BUFFER_SIZE      1024U
 
-/* USART1 引脚与 DMA 映射。 */
+/* USART1引脚与DMA映射 */
 #define USART1_RDATA_ADDRESS           ((uint32_t)&USART_DATA(USART1))
 #define USART1_RX_DMA_PERIPH           DMA0
 #define USART1_RX_DMA_CHANNEL          DMA_CH5
@@ -45,86 +30,26 @@ extern "C" {
 #define USART1_RX_PIN                  GPIO_PIN_6
 #define USART1_AF                      GPIO_AF_7
 
-/* RS485 方向控制脚：PE8 同时控制 MAX3485 的 DE 和 RE#，高电平发送，低电平接收。 */
+/* RS485方向控制脚PE8（DE/RE#复用），高电平发送，低电平接收 */
 #define RS485_USART                    CIMC_RS485_USART
 #define RS485_DIR_PORT                 GPIOE
 #define RS485_DIR_CLK_PORT             RCU_GPIOE
 #define RS485_DIR_PIN                  GPIO_PIN_8
-/* RS485 方向控制有效电平。若实测 485_CS 为低电平发送，只需交换下面两个宏。 */
 #define RS485_DIR_TX_LEVEL             SET
 #define RS485_DIR_RX_LEVEL             RESET
 
-/* USART1/RS485 DMA 接收缓冲区，由驱动层统一提供。 */
 extern uint8_t usart1_rxbuffer[BSP_USART1_RX_BUFFER_SIZE];
 
-/*
- * 函数作用：
- *   初始化当前正式版唯一启用的 USART1/RS485 资源。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_usart_init(void);
+void     bsp_usart_init(void);          /* 初始化USART1/RS485 */
+void     bsp_usart1_init(void);         /* 初始化USART1及RS485方向控制GPIO */
+void     bsp_rs485_direction_receive(void);   /* RS485切换到接收态 */
+void     bsp_rs485_direction_transmit(void);  /* RS485切换到发送态 */
 
-/*
- * 函数作用：
- *   初始化 USART1 以及 RS485 方向控制 GPIO。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_usart1_init(void);
-
-/*
- * 函数作用：
- *   通过阻塞轮询方式向指定串口发送一段原始字节流。
- * 参数说明：
- *   usart_periph：目标 USART 外设编号。
- *   data：待发送数据起始地址，必须指向至少 length 字节的有效缓冲区。
- *   length：待发送字节数，单位为字节。
- * 返回值说明：
- *   返回实际完成发送流程的字节数；若等待标志超时，则返回超时前已发送长度。
- */
+/* 阻塞发送字节流，RS485自动管理方向脚，超时返回已发字节数 */
 uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint16_t length);
 
-/*
- * 函数作用：
- *   将 RS485 收发器方向切换为接收态。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_rs485_direction_receive(void);
-
-/*
- * 函数作用：
- *   将 RS485 收发器方向切换为发送态。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_rs485_direction_transmit(void);
-
-/*
- * 函数作用：
- *   在不重新初始化 GPIO 和 DMA 通道配置的前提下，原地切换 USART1 的波特率。
- *   用于赛题 0x01A2 命令：先回 OK，然后本函数切换波特率；
- *   配合重启使 App 下次从 Flash 参数读到新波特率后以新速率启动。
- * 主要流程：
- *   1. 等待 TC 标志确认当前 TX 已完全移出移位寄存器。
- *   2. 禁用 DMA RX 通道（避免波特率切换期间 DMA 收到乱码）。
- *   3. 禁用 USART1，修改波特率寄存器，重新使能 USART1。
- *   4. 清零 RX 缓冲区并重置 DMA 传输计数，重新使能 DMA。
- * 参数说明：
- *   baudrate：新波特率数值，例如 115200；为 0 时直接返回不做任何操作。
- * 返回值说明：
- *   无返回值。
- */
-void bsp_usart_change_baudrate(uint32_t baudrate);
+/* 原地切换USART1波特率，不重新初始化GPIO/NVIC，baudrate=0时直接返回 */
+void     bsp_usart_change_baudrate(uint32_t baudrate);
 
 #ifdef __cplusplus
 }

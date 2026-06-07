@@ -7,47 +7,10 @@
 extern "C" {
 #endif
 
-/*
- * 函数作用：
- *   低功耗或复位前关闭正式版两个 LED 指示灯。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void led_app_all_off(void);
-
-/*
- * 函数作用：
- *   低功耗入口专用熄灯接口，关闭硬件 LED 并复位 LED 刷新缓存。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void led_app_blank_for_sleep(void);
-
-/*
- * 函数作用：
- *   复位 LED 应用层缓存，让下一次 led_task() 强制刷新两个正式指示灯。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
-void led_app_reset_cache(void);
-
-/*
- * 函数作用：
- *   调度器周期调用的 LED 任务。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- * 说明：
- *   LED1 从进入 APP 后以 1s 为单位闪烁；LED2 在自动采集上报过程常亮，其余熄灭。
- */
-void led_task(void);
+void led_app_all_off(void);          /* 低功耗/复位前关闭两路LED */
+void led_app_blank_for_sleep(void);  /* 睡眠前熄灯并复位缓存 */
+void led_app_reset_cache(void);      /* 复位刷新缓存，下次led_task强制刷新 */
+void led_task(void);                 /* 20ms周期：LED1每1s翻转，LED2跟随采集状态 */
 
 #ifdef __cplusplus
 }

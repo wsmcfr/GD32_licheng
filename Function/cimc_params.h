@@ -16,13 +16,13 @@
 extern "C" {
 #endif
 
-/* 波特率映射码，与赛题通信协议约定一致：11=4800, 12=9600, 13=19200, 14=115200。 */
+/* 波特率映射码：11=4800, 12=9600, 13=19200, 14=115200 */
 #define CIMC_PARAMS_BAUD_CODE_4800    0x11U
 #define CIMC_PARAMS_BAUD_CODE_9600    0x12U
 #define CIMC_PARAMS_BAUD_CODE_19200   0x13U
 #define CIMC_PARAMS_BAUD_CODE_115200  0x14U
 
-/* 自动上报间隔映射码，与赛题 0x0261 命令约定一致：01=1s, 02=3s, 03=5s。 */
+/* 自动上报间隔映射码（0x0261命令）：01=1s, 02=3s, 03=5s */
 #define CIMC_PARAMS_INTERVAL_1S       0x01U
 #define CIMC_PARAMS_INTERVAL_3S       0x02U
 #define CIMC_PARAMS_INTERVAL_5S       0x03U

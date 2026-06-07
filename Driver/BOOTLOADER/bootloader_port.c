@@ -529,7 +529,7 @@ bootloader_port_status_t bootloader_port_write_upgrade_info(uint32_t app_version
 
 /*
  * 函数作用：
- *   写入“进入 Bootloader 等待赛题串口升级”的请求标志。
+ *   写入”进入 Bootloader 等待串口升级”的请求标志。
  * 参数说明：
  *   无参数。
  * 返回值说明：

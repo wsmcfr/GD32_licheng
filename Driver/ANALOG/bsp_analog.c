@@ -1,58 +1,27 @@
 #include "bsp_analog.h"
 
-/* ADC 采样结果缓冲区由 DMA 在后台更新，任务层读取时必须保持 volatile 语义。 */
 __IO uint16_t adc_value[2];
+uint16_t convertarr[CONVERT_NUM] = {0};
 
-/* DAC 输出缓冲区：
- * 当前工程只用到 1 个输出点，因此长度为 CONVERT_NUM。
- */
-uint16_t convertarr[CONVERT_NUM] = {0U};
-
-/*
- * 函数作用：
- *   配置 TIMER5，作为 DAC 触发源使用。
- * 主要流程：
- *   1. 复位 TIMER5 配置。
- *   2. 配置预分频、计数周期和向上计数模式。
- *   3. 将更新事件设置为 TRGO，驱动 DAC 定时输出。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- * 说明：
- *   该函数只服务于当前 DAC 输出节拍，因此使用 static 限定在本文件内。
- */
+/* TIMER5 作为 DAC 触发源，10kHz 更新频率 */
 static void timer5_config(void)
 {
     timer_parameter_struct timer_initpara;
 
     timer_deinit(TIMER5);
-
     timer_struct_para_init(&timer_initpara);
-    timer_initpara.prescaler = 239U;
+    timer_initpara.prescaler = 239;
     timer_initpara.alignedmode = TIMER_COUNTER_EDGE;
     timer_initpara.counterdirection = TIMER_COUNTER_UP;
-    timer_initpara.period = 99U;
+    timer_initpara.period = 99;
     timer_initpara.clockdivision = TIMER_CKDIV_DIV1;
-    timer_initpara.repetitioncounter = 0U;
-
+    timer_initpara.repetitioncounter = 0;
     timer_init(TIMER5, &timer_initpara);
     timer_master_output_trigger_source_select(TIMER5, TIMER_TRI_OUT_SRC_UPDATE);
     timer_enable(TIMER5);
 }
 
-/*
- * 函数作用：
- *   初始化 ADC0 的双通道扫描采样和 DMA 循环搬运。
- * 主要流程：
- *   1. 配置 ADC 时钟、GPIO 模拟输入。
- *   2. 配置 DMA1 CH0，将采样结果循环搬运到 adc_value。
- *   3. 配置 ADC0 连续扫描两个通道并启动软件触发。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
+/* ADC0 双通道扫描 + DMA 循环，PC0=CH0电位器，PC1=CH1 DAC回读 */
 void bsp_adc_init(void)
 {
     dma_single_data_parameter_struct dma_single_data_parameter;
@@ -63,11 +32,6 @@ void bsp_adc_init(void)
 
     adc_clock_config(ADC_ADCCK_PCLK2_DIV8);
 
-    /*
-     * PC0: CH0 电位器（ADC_CHANNEL_10）
-     * PC1: CH1 DAC 回读，通过 PA4-PC1 跳线接入（ADC_CHANNEL_11）
-     * PC2: 参考电压引脚，配置为模拟浮空（不参与扫描，防止引脚浮空干扰）
-     */
     gpio_mode_set(ADC1_PORT, GPIO_MODE_ANALOG, GPIO_PUPD_NONE,
                   ADC1_PIN | ADC2_PIN | ADC_VREF_PIN);
 
@@ -79,7 +43,7 @@ void bsp_adc_init(void)
     dma_single_data_parameter.memory_inc = DMA_MEMORY_INCREASE_ENABLE;
     dma_single_data_parameter.periph_memory_width = DMA_PERIPH_WIDTH_16BIT;
     dma_single_data_parameter.direction = DMA_PERIPH_TO_MEMORY;
-    dma_single_data_parameter.number = 2U;
+    dma_single_data_parameter.number = 2;
     dma_single_data_parameter.priority = DMA_PRIORITY_HIGH;
     dma_single_data_mode_init(DMA1, DMA_CH0, &dma_single_data_parameter);
     dma_channel_subperipheral_select(DMA1, DMA_CH0, DMA_SUBPERI0);
@@ -92,9 +56,9 @@ void bsp_adc_init(void)
     adc_special_function_config(ADC0, ADC_SCAN_MODE, ENABLE);
     adc_data_alignment_config(ADC0, ADC_DATAALIGN_RIGHT);
 
-    adc_channel_length_config(ADC0, ADC_ROUTINE_CHANNEL, 2U);
-    adc_routine_channel_config(ADC0, 0U, ADC_CHANNEL_10, ADC_SAMPLETIME_15); /* PC0 = CH0 电位器 */
-    adc_routine_channel_config(ADC0, 1U, ADC_CHANNEL_11, ADC_SAMPLETIME_15); /* PC1 = CH1 DAC 回读（原为 CH12/PC2 参考电压，错误！） */
+    adc_channel_length_config(ADC0, ADC_ROUTINE_CHANNEL, 2);
+    adc_routine_channel_config(ADC0, 0, ADC_CHANNEL_10, ADC_SAMPLETIME_15);
+    adc_routine_channel_config(ADC0, 1, ADC_CHANNEL_11, ADC_SAMPLETIME_15);
     adc_external_trigger_source_config(ADC0, ADC_ROUTINE_CHANNEL, ADC_EXTTRIG_ROUTINE_T0_CH0);
     adc_external_trigger_config(ADC0, ADC_ROUTINE_CHANNEL, EXTERNAL_TRIGGER_DISABLE);
 
@@ -102,25 +66,13 @@ void bsp_adc_init(void)
     adc_dma_mode_enable(ADC0);
 
     adc_enable(ADC0);
-    delay_1ms(1U);
+    delay_1ms(1);
     adc_calibration_enable(ADC0);
 
     adc_software_trigger_enable(ADC0, ADC_ROUTINE_CHANNEL);
 }
 
-/*
- * 函数作用：
- *   初始化 DAC0 通道 0，并绑定 TIMER5 触发输出。
- * 主要流程：
- *   1. 打开 DAC、GPIOA 和 TIMER5 时钟。
- *   2. 将 PA4 配置为模拟输出。
- *   3. 配置 DAC0 OUT0 使用 TIMER5 TRGO 触发。
- *   4. 启动 TIMER5，为 DAC 输出提供节拍。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
+/* DAC0 CH0，PA4模拟输出，TIMER5 TRGO触发 */
 void bsp_dac_init(void)
 {
     rcu_periph_clock_enable(DAC1_CLK_PORT);
