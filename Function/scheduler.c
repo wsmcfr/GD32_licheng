@@ -156,6 +156,13 @@ void system_init(void)
 
 		bsp_dac_init();
 
+		/*
+		 * 上电初始化后将 DAC 设置为中间值（2048 ≈ 1.65V），
+		 * 确保重启后 CH1 有可测量的基准信号，使评测 F-02 能验证
+		 * 变比是否在重启后保持（若 DAC=0 则 CH1=0，无法区分变比正确与否）。
+		 */
+		adc_app_set_dac_raw(2048U);
+
 		bsp_rtc_init();
 
 		OLED_Init();

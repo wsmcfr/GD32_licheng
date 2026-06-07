@@ -148,7 +148,8 @@ int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
          * 失败并保持旧缓存，下一轮调度仍会尝试刷新同一差异段，避免“缓存显示成功、
          * 物理屏幕没写入”的假成功状态。
          */
-        if(0U != OLED_ShowStr(segment_x, y, diff_buffer, 8)) {
+        /* 16px 字体每字符占 2 页，逻辑行 0→物理页 0，逻辑行 1→物理页 2。 */
+        if(0U != OLED_ShowStr(segment_x, (uint8_t)(y * 2U), diff_buffer, 16)) {
             memcpy(&g_oled_line_cache[y][diff_start], &buffer[diff_start], diff_len);
             g_oled_line_cache[y][OLED_APP_VISIBLE_CHARS] = '\0';
         }
