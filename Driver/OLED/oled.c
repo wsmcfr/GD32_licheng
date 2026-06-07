@@ -1,8 +1,3 @@
-/*
-this library is a 0.91'OLED(ssd1306) driver
-*/
-
-
 #include "oled.h"
 #include "oledfont.h"
 
@@ -212,10 +207,6 @@ static uint8_t oled_write_packet(__IO uint8_t *packet, uint16_t length)
     dma_channel_disable(DMA0, DMA_CH6);
     i2c_dma_config(I2C0, I2C_DMA_OFF);
 
-    /*
-     * DMA 完成只表示字节已经搬入 I2C 数据寄存器/移位链路，STOP 前再等 BTC，
-     * 避免最后一个字节尚未真正移出时就终止总线。
-     */
     if(!oled_wait_i2c_flag_set(I2C0, I2C_FLAG_BTC, OLED_I2C_WAIT_TIMEOUT))
 	{
         I2C_Bus_Reset();
@@ -299,10 +290,6 @@ uint8_t OLED_Write_cmd_buf(const uint8_t *cmds, uint16_t length)
             chunk_len = OLED_TX_DATA_MAX_SIZE;
         }
 
-        /*
-         * 复用数据 DMA 缓冲区发送命令块。这里函数是阻塞式，DMA 完成并 STOP 后才返回，
-         * 因此下一次数据写入前覆盖缓冲区不会破坏正在进行的传输。
-         */
         oled_data_buf[0] = OLED_CMD_CONTROL_BYTE;
         for(i = 0; i < chunk_len; i++)
 		{
@@ -439,9 +426,6 @@ void OLED_ShowHzbig(uint8_t x, uint8_t y, uint8_t n)
     OLED_Write_data_buf(Hzb[(4 * n) + 3], 32);
 }
 
-/**
- * @note
-*/
 void OLED_ShowFloat(uint8_t x, uint8_t y, float num, uint8_t accuracy, uint8_t fontsize)
 {
     uint8_t i = 0;
@@ -498,11 +482,6 @@ void OLED_ShowFloat(uint8_t x, uint8_t y, float num, uint8_t accuracy, uint8_t f
     }
 }
 
-/**
- * @param m - base
- * @param n - exponent
- * @return result
-*/
 static uint32_t OLED_Pow(uint8_t a, uint8_t n)
 {
     uint32_t result = 1;
@@ -513,9 +492,6 @@ static uint32_t OLED_Pow(uint8_t a, uint8_t n)
     return result;
 }
 
-/**
- * @note
-*/
 void OLED_ShowNum(uint8_t x, uint8_t y, uint32_t num, uint8_t length, uint8_t fontsize)
 {
     uint8_t t, temp;
@@ -554,11 +530,6 @@ static uint8_t oled_show_str_8x6(uint8_t x, uint8_t y, const char *ch)
         return 0;
     }
 
-    /*
-     * 6x8 字符实际字模宽度为 6 列，但旧接口按 8 像素步进排版。
-     * 这里每个字符补 2 列空白，保证批量写入后的坐标、间距和差异段刷新
-     * 都与原来的 x += 8 行为一致。
-     */
     while((*ch != '\0') && (y < (OLED_HEIGHT / 8)))
 	{
         row_len = 0;
@@ -691,10 +662,6 @@ void OLED_ShowChar(uint8_t x, uint8_t y, uint8_t ch, uint8_t fontsize)
 {
     uint8_t c;
 
-    /*
-     * 字库只覆盖标准可打印 ASCII。越界字符按空格显示，避免负偏移或过大
-     * 下标读穿字库数组。
-     */
     if((ch < ' ') || (ch > '~'))
 	{
         ch = ' ';
@@ -729,10 +696,6 @@ void OLED_Allfill(void)
     uint8_t pos_cmds[3];
     uint8_t i;
 
-    /*
-     * 全亮填充值只在手动测试或特殊显示场景使用，放在栈上临时生成即可，
-     * 避免为了少量低频调用长期占用一份全 0xFF 的全局常量空间。
-     */
     memset(fill, 0xFF, sizeof(fill));
 
     for (i = 0; i < 4; i++)
@@ -781,11 +744,6 @@ void OLED_Display_Off(void)
 {
     static const uint8_t display_off_cmds[] = {0x8DU, 0x10U, 0xAEU};
 
-    /*
-     * 先关闭电荷泵，再发送 Display OFF 命令。
-     * 这里必须使用 0xAE 关屏；若误发 0xAF，只会保持显示开启，
-     * 深度睡眠前的 OLED 息屏和降功耗就都不会真正生效。
-     */
     OLED_Write_cmd_buf(display_off_cmds, sizeof(display_off_cmds));
 }
 
