@@ -29,7 +29,7 @@ static uint8_t verify_crc(const params_t *p)
 {
     uint32_t calc;
 
-    if(NULL == p) { return 0; }
+    if(!p) { return 0; }
 
     calc = bootloader_port_crc32_calc((const uint8_t *)p, PARAMS_CRC_SIZE);
     return (calc == p->crc32) ? 1 : 0;

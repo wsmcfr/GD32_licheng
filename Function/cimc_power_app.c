@@ -38,10 +38,6 @@ static void rtc_wakeup_stop(void)
 
 /*
  * 深度睡眠唤醒后手动恢复系统时钟至240MHz（HXTAL+PLL）。
- * 不调用SystemInit()原因：SystemInit()内部先禁用再启用HXTAL，
- * 使用HXTAL_STARTUP_TIMEOUT（约0.5ms）等待稳定；深度睡眠后晶振
- * 重启需1~3ms，超时后进入while(0==HXTALSTB){}死循环。
- * 本函数用无超时等待，晶振稳定后继续，参数与system_clock_240m_25m_hxtal()一致。
  */
 static void restore_clock(void)
 {

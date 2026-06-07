@@ -29,9 +29,9 @@ static int prv_gd30ad3344_wait_dma_done(void)
 {
     uint32_t timeout = GD30AD3344_SPI_WAIT_TIMEOUT;
 
-    while(RESET == dma_flag_get(DMA1, DMA_CH3, DMA_FLAG_FTF)) 
+    while(RESET == dma_flag_get(DMA1, DMA_CH3, DMA_FLAG_FTF))
 	{
-        if(0 == timeout) 
+        if(0 == timeout)
 		{
             dma_flag_clear(DMA1, DMA_CH3, DMA_FLAG_FTF);
             dma_flag_clear(DMA1, DMA_CH4, DMA_FLAG_FTF);
@@ -53,7 +53,7 @@ static int prv_gd30ad3344_apply_config(const GD30AD3344 *config)
     uint16_t config_value;
     uint16_t rx_value;
 
-    if(NULL == config) 
+    if(!config)
 	{
         return -1;
     }
@@ -63,7 +63,7 @@ static int prv_gd30ad3344_apply_config(const GD30AD3344 *config)
     spi_enable(SPI_GD30AD3344);
     rx_value = spi_gd30ad3344_send_halfword_dma(config_value);
     (void)rx_value;
-    if(0 != s_gd30ad3344_dma_error) 
+    if(0 != s_gd30ad3344_dma_error)
 	{
         return -1;
     }
@@ -71,21 +71,14 @@ static int prv_gd30ad3344_apply_config(const GD30AD3344 *config)
     return 0;
 }
 
-/**
- * @brief 使用 DMA 发送并接收一个字节
- * @param byte 要发送的字节
- * @return 从 SPI 总线接收到的字节
- */
 uint8_t spi_gd30ad3344_send_byte_dma(uint8_t byte)
 {
     dma_single_data_parameter_struct dma_init_struct;
 
     s_gd30ad3344_dma_error = 0;
 
-    /* 将数据放入发送缓冲区 */
     spi3_send_array[0] = byte;
 
-    /* 配置 DMA 发送通道 */
     dma_deinit(DMA1, DMA_CH4);
     dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
@@ -93,14 +86,13 @@ uint8_t spi_gd30ad3344_send_byte_dma(uint8_t byte)
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
     dma_init_struct.periph_memory_width = DMA_PERIPH_WIDTH_8BIT;
     dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_init_struct.number              = 1; /* 只发送一个字节 */
+    dma_init_struct.number              = 1;
     dma_init_struct.periph_inc          = DMA_PERIPH_INCREASE_DISABLE;
     dma_init_struct.memory_inc          = DMA_MEMORY_INCREASE_ENABLE;
     dma_init_struct.circular_mode       = DMA_CIRCULAR_MODE_DISABLE;
     dma_single_data_mode_init(DMA1, DMA_CH4, &dma_init_struct);
     dma_channel_subperipheral_select(DMA1, DMA_CH4, DMA_SUBPERI5);
 
-    /* 配置 DMA 接收通道 */
     dma_deinit(DMA1, DMA_CH3);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
     dma_init_struct.memory0_addr        = (uint32_t)spi3_receive_array;
@@ -109,15 +101,13 @@ uint8_t spi_gd30ad3344_send_byte_dma(uint8_t byte)
     dma_single_data_mode_init(DMA1, DMA_CH3, &dma_init_struct);
     dma_channel_subperipheral_select(DMA1, DMA_CH3, DMA_SUBPERI5);
 
-    /* 启用接收和发送的 DMA 通道 */
     dma_channel_enable(DMA1, DMA_CH3);
     dma_channel_enable(DMA1, DMA_CH4);
 
-    /* 启用 SPI 的 DMA 接收和发送功能 */
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
 
-    if(0 != prv_gd30ad3344_wait_dma_done()) 
+    if(0 != prv_gd30ad3344_wait_dma_done())
 	{
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
@@ -127,22 +117,15 @@ uint8_t spi_gd30ad3344_send_byte_dma(uint8_t byte)
         return 0xFFU;
     }
 
-    /* 禁用 DMA */
     spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
     spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
     dma_channel_disable(DMA1, DMA_CH3);
     dma_channel_disable(DMA1, DMA_CH4);
 
-    /* 返回接收到的数据 */
     s_gd30ad3344_dma_error = 0;
     return spi3_receive_array[0];
 }
 
-/**
- * @brief 使用 DMA 发送并接收一个半字（16位数据）
- * @param half_word 要发送的半字
- * @return 从 SPI 总线接收到的半字
- */
 uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
 {
     uint16_t rx_data;
@@ -152,11 +135,9 @@ uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
 
     SPI_GD30AD3344_CS_LOW();
 
-    /* 先发送高8位 */
     spi3_send_array[0] = (uint8_t)(half_word >> 8);
     spi3_send_array[1] = (uint8_t)half_word;
 
-    /* 配置 DMA 发送通道 */
     dma_deinit(DMA1, DMA_CH4);
     dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
@@ -164,14 +145,13 @@ uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
     dma_init_struct.direction           = DMA_MEMORY_TO_PERIPH;
     dma_init_struct.periph_memory_width = DMA_PERIPH_WIDTH_8BIT;
     dma_init_struct.priority            = DMA_PRIORITY_HIGH;
-    dma_init_struct.number              = 2; /* 发送2个字节 */
+    dma_init_struct.number              = 2;
     dma_init_struct.periph_inc          = DMA_PERIPH_INCREASE_DISABLE;
     dma_init_struct.memory_inc          = DMA_MEMORY_INCREASE_ENABLE;
     dma_init_struct.circular_mode       = DMA_CIRCULAR_MODE_DISABLE;
     dma_single_data_mode_init(DMA1, DMA_CH4, &dma_init_struct);
     dma_channel_subperipheral_select(DMA1, DMA_CH4, DMA_SUBPERI5);
 
-    /* 配置 DMA 接收通道 */
     dma_deinit(DMA1, DMA_CH3);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
     dma_init_struct.memory0_addr        = (uint32_t)spi3_receive_array;
@@ -180,15 +160,13 @@ uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
     dma_single_data_mode_init(DMA1, DMA_CH3, &dma_init_struct);
     dma_channel_subperipheral_select(DMA1, DMA_CH3, DMA_SUBPERI5);
 
-    /* 启用接收和发送的 DMA 通道 */
     dma_channel_enable(DMA1, DMA_CH3);
     dma_channel_enable(DMA1, DMA_CH4);
 
-    /* 启用 SPI 的 DMA 接收和发送功能 */
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
 
-    if(0 != prv_gd30ad3344_wait_dma_done()) 
+    if(0 != prv_gd30ad3344_wait_dma_done())
 	{
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
@@ -199,13 +177,11 @@ uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
         return 0xFFFFU;
     }
 
-    /* 禁用 DMA */
     spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
     spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
     dma_channel_disable(DMA1, DMA_CH3);
     dma_channel_disable(DMA1, DMA_CH4);
 
-    /* 组合接收到的数据 */
     rx_data = (uint16_t)(spi3_receive_array[0] << 8);
     rx_data |= spi3_receive_array[1];
     SPI_GD30AD3344_CS_HIGH();
@@ -213,12 +189,6 @@ uint16_t spi_gd30ad3344_send_halfword_dma(uint16_t half_word)
     return rx_data;
 }
 
-/**
- * @brief 使用 DMA 发送和接收多个字节
- * @param tx_buffer 发送缓冲区
- * @param rx_buffer 接收缓冲区
- * @param size 传输大小
- */
 void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer, uint16_t size)
 {
     uint16_t i;
@@ -226,19 +196,16 @@ void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer,
 
     s_gd30ad3344_dma_error = 0;
 
-    /* 检查传输大小是否超过缓冲区 */
-    if (size > GD30AD3344_DMA_BUFFER_SIZE) 
+    if (size > GD30AD3344_DMA_BUFFER_SIZE)
 	{
         size = GD30AD3344_DMA_BUFFER_SIZE;
     }
 
-    /* 准备发送数据 */
-    for (i = 0; i < size; i++) 
+    for (i = 0; i < size; i++)
 	{
         spi3_send_array[i] = tx_buffer[i];
     }
 
-    /* 配置 DMA 发送通道 */
     dma_deinit(DMA1, DMA_CH4);
     dma_single_data_para_struct_init(&dma_init_struct);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
@@ -253,7 +220,6 @@ void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer,
     dma_single_data_mode_init(DMA1, DMA_CH4, &dma_init_struct);
     dma_channel_subperipheral_select(DMA1, DMA_CH4, DMA_SUBPERI5);
 
-    /* 配置 DMA 接收通道 */
     dma_deinit(DMA1, DMA_CH3);
     dma_init_struct.periph_addr         = (uint32_t)&SPI_DATA(SPI_GD30AD3344);
     dma_init_struct.memory0_addr        = (uint32_t)spi3_receive_array;
@@ -262,15 +228,13 @@ void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer,
     dma_single_data_mode_init(DMA1, DMA_CH3, &dma_init_struct);
     dma_channel_subperipheral_select(DMA1, DMA_CH3, DMA_SUBPERI5);
 
-    /* 启用接收和发送的 DMA 通道 */
     dma_channel_enable(DMA1, DMA_CH3);
     dma_channel_enable(DMA1, DMA_CH4);
 
-    /* 启用 SPI 的 DMA 接收和发送功能 */
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
     spi_dma_enable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
 
-    if(0 != prv_gd30ad3344_wait_dma_done()) 
+    if(0 != prv_gd30ad3344_wait_dma_done())
 	{
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
         spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
@@ -280,23 +244,18 @@ void spi_gd30ad3344_transmit_receive_dma(uint8_t *tx_buffer, uint8_t *rx_buffer,
         return;
     }
 
-    /* 禁用 DMA */
     spi_dma_disable(SPI_GD30AD3344, SPI_DMA_RECEIVE);
     spi_dma_disable(SPI_GD30AD3344, SPI_DMA_TRANSMIT);
     dma_channel_disable(DMA1, DMA_CH3);
     dma_channel_disable(DMA1, DMA_CH4);
 
-    /* 复制接收到的数据到接收缓冲区 */
-    for (i = 0; i < size; i++) 
+    for (i = 0; i < size; i++)
 	{
         rx_buffer[i] = spi3_receive_array[i];
     }
     s_gd30ad3344_dma_error = 0;
 }
 
-/**
- * @brief 等待 DMA 传输完成
- */
 void spi_gd30ad3344_wait_for_dma_end(void)
 {
     (void)prv_gd30ad3344_wait_dma_done();
@@ -403,7 +362,7 @@ int GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH, GD30AD3344_PGA_TypeDef Ref
     uint16_t raw_data;
     float result = 0.0;
 
-    if(NULL == out_voltage_v) 
+    if(!out_voltage_v)
 	{
         s_gd30ad3344_dma_error = 1;
         return -1;
@@ -413,7 +372,7 @@ int GD30AD3344_AD_Read(GD30AD3344_Channel_TypeDef CH, GD30AD3344_PGA_TypeDef Ref
     GD30AD3344_InitStruct.PGA = Ref;
 
     raw_data = spi_gd30ad3344_send_halfword_dma(GD30AD3344_InitStruct_Value);
-    if(0 != s_gd30ad3344_dma_error) 
+    if(0 != s_gd30ad3344_dma_error)
 	{
         return -1;
     }

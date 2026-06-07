@@ -125,7 +125,6 @@ static void append_record(const char *text, const alm_rec_t *rec)
 /*
  * ADC采集后调用：value超threshold且距上次同通道>=1s时记录告警。
  * 主动模式（0x01）直接向RS485发ASCII字符串，不经帧封装。
- * 此处不写Flash（整页擦写约1.5s会阻塞CPU），持久化在重启前统一完成。
  */
 void alm_check(uint8_t channel, float threshold, float value)
 {
@@ -197,7 +196,6 @@ void alm_query(char *buf, uint16_t size)
 
 /*
  * 清除所有告警记录并重置去抖计时器。
- * 不在此写Flash：整页擦写期间若复位，重启后load()会恢复旧数据使清除失效。
  * 重置计时器防止adc_task在清除后1s内立即写入新记录。
  */
 void alm_clear(void)

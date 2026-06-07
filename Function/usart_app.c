@@ -24,7 +24,7 @@ uint16_t uart_app_take_frame(uint8_t *output, uint16_t output_size)
 {
     uint16_t valid_length = 0;
 
-    if((NULL == output) || (output_size < 2)) 
+    if((!output) || (output_size < 2)) 
 	{
         return 0;
     }

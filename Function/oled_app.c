@@ -35,7 +35,6 @@ void oled_app_reset_cache(void)
     memset(g_cache, 0, sizeof(g_cache));
 }
 
-/* printf风格OLED显示，只刷新变化的字符段 */
 int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
 {
     char buf[LINE_BUF_SIZE], diff_buf[LINE_BUF_SIZE];

@@ -55,7 +55,6 @@ void bsp_usart_init(void)
  * 初始化 USART1 及 RS485 方向控制脚。
  * 配置 PD5/PD6 为 USART1 TX/RX 复用，PE8 为 RS485 方向控制，
  * USART1 为 19200-8N1，RX DMA 普通模式，IDLE 中断标记帧结束。
- * 旧 32KB circular DMA 仅服务自定义裸流 OTA，已从 APP 正式链路删除。
  */
 void bsp_usart1_init(void)
 {
@@ -114,10 +113,6 @@ uint16_t bsp_usart_send_buffer(uint32_t usart_periph, const uint8_t *data, uint1
 
     if(RS485_USART == usart_periph) 
 	{
-        /*
-         * 先切到发送态再写 USART DATA，避免 MAX3485 仍在接收态时吞掉首字节。
-         * 保留短暂建立时间，覆盖 GPIO 到收发器方向脚的传播延迟。
-         */
         bsp_rs485_direction_transmit();
         delay_us(10);
     }

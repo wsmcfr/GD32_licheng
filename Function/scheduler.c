@@ -54,11 +54,6 @@ void system_init(void)
 	#ifdef __FIRMWARE_VERSION_DEFINE
 		uint32_t fw_ver = 0;
 	#endif
-		/*
-		 * 当前工程作为BootLoader App运行，链接地址不是0x08000000。
-		 * 先接管跳转现场：VTOR指向App向量表，恢复BootLoader关闭的全局中断，
-		 * 否则SysTick/USART/DMA中断不会触发。
-		 */
 		boot_app_handoff_init();
 		bsp_usart_init();
 
@@ -98,7 +93,7 @@ void system_init(void)
 		bsp_adc_init();
 		bsp_dac_init();
 
-		/* DAC初始值2048（约1.65V），确保CH1上电后有可测量信号 */
+
 		adc_app_set_dac_raw(2048);
 
 		bsp_rtc_init();
@@ -108,7 +103,6 @@ void system_init(void)
 
 		scheduler_init();
 
-		/* 上电后主动发送心跳帧，通知上位机本机在线 */
 		proto_hb();
 }
 

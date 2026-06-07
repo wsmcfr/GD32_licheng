@@ -106,7 +106,7 @@ void USART1_IRQHandler(void)
         usart_data_receive(USART1);
 
         g_idle_ms = timebase_get_ms32();
-        g_idle_pend = 1U;
+        g_idle_pend = 1;
     }
 }
 
