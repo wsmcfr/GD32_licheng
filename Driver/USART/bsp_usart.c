@@ -91,7 +91,7 @@ void bsp_usart1_init(void)
     prv_rs485_direction_gpio_init();
 
     usart_deinit(USART1);
-    usart_baudrate_set(USART1, CIMC_RS485_BAUDRATE);
+    usart_baudrate_set(USART1, RS485_BAUD);
     usart_receive_config(USART1, USART_RECEIVE_ENABLE);
     usart_transmit_config(USART1, USART_TRANSMIT_ENABLE);
     usart_dma_receive_config(USART1, USART_RECEIVE_DMA_ENABLE);

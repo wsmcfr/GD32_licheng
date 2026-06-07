@@ -119,7 +119,7 @@ void SysTick_Handler(void)
 /*
  * RTC 自动唤醒定时器中断（EXTI_22），深度睡眠 10s 后触发。
  * 只需清 EXTI 挂起标志，WFI 即可自动返回；RTC 标志和定时器由
- * cimc_power_sleep_10s() 在 WFI 返回后统一清理。
+ * power_sleep() 在 WFI 返回后统一清理。
  */
 void RTC_WKUP_IRQHandler(void)
 {

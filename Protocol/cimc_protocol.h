@@ -12,13 +12,13 @@ extern "C" {
 #endif
 
 /* 处理RS485收到的一帧ASCII十六进制协议数据，返回1=已处理，0=非法帧 */
-uint8_t cimc_protocol_process_ascii_frame(const uint8_t *frame, uint16_t length);
+uint8_t proto_rx(const uint8_t *frame, uint16_t length);
 
 /* 调度器100ms周期调用，自动上报激活时按间隔推送数据帧 */
-void cimc_protocol_auto_report_tick(void);
+void proto_tick(void);
 
 /* 发送开机心跳帧（类型0x05，命令字0x8888），通知上位机本机在线 */
-void cimc_protocol_send_heartbeat(void);
+void proto_hb(void);
 
 #ifdef __cplusplus
 }

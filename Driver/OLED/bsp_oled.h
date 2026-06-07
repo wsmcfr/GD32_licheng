@@ -1,12 +1,6 @@
 #ifndef BSP_OLED_H
 #define BSP_OLED_H
 
-/*
- * 文件作用：
- *   定义 OLED 所在 I2C、DMA、GPIO 资源以及初始化接口。
- *   OLED 初始化使用的命令/数据 DMA 缓冲区也在这里声明。
- */
-
 #define SYSTEM_ALL_BASE_ONLY
 #include "system_all.h"
 #undef SYSTEM_ALL_BASE_ONLY
@@ -36,14 +30,6 @@ extern "C" {
 extern __IO uint8_t oled_cmd_buf[2];
 extern __IO uint8_t oled_data_buf[OLED_TX_BUFFER_SIZE];
 
-/*
- * 函数作用：
- *   初始化 OLED 所依赖的 GPIO、I2C0 和 DMA 发送通道。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void bsp_oled_init(void);
 
 #ifdef __cplusplus

@@ -10,57 +10,57 @@
 #include "gd30ad3344_pt100_app.h"
 
 /* ── 帧格式固定字段 ── */
-#define CIMC_FRAME_START          0xA5B6U
-#define CIMC_FRAME_END            0xB6A5U
-#define CIMC_PROTOCOL_VERSION     0x02U
-#define CIMC_FRAME_TYPE_COMMAND   0x01U
-#define CIMC_FRAME_TYPE_RESPONSE  0x02U
-#define CIMC_FRAME_TYPE_HEARTBEAT 0x05U
-#define CIMC_FRAME_TYPE_ERROR     0xFFU
-#define CIMC_RESPONSE_OK          0xFFU
+#define SOF          0xA5B6U
+#define FRAME_END            0xB6A5U
+#define PROTO_VER     0x02U
+#define FT_CMD   0x01U
+#define FT_RSP  0x02U
+#define FT_HB 0x05U
+#define FT_ERR     0xFFU
+#define RSP_OK          0xFFU
 
 /* ── 特殊命令字 ── */
-#define CIMC_CMD_HEARTBEAT        0x8888U
-#define CIMC_CMD_BROADCAST_SEARCH 0xFFFFU
+#define CMD_HB        0x8888U
+#define CMD_SEARCH 0xFFFFU
 
 /* ── 系统管理类 0x01xx ── */
-#define CIMC_CMD_REBOOT           0x0101U
-#define CIMC_CMD_QUERY_VERSION    0x0104U
-#define CIMC_CMD_SET_TIME         0x0105U
-#define CIMC_CMD_GET_TIME         0x0106U
-#define CIMC_CMD_SET_DEVICE_ID    0x01A1U
-#define CIMC_CMD_SET_BAUD         0x01A2U
-#define CIMC_CMD_GET_DEVICE_ID    0x0111U
-#define CIMC_CMD_GET_BAUD         0x0112U
+#define CMD_REBOOT           0x0101U
+#define CMD_VERSION    0x0104U
+#define CMD_SET_TIME         0x0105U
+#define CMD_GET_TIME         0x0106U
+#define CMD_SET_ID    0x01A1U
+#define CMD_SET_BAUD         0x01A2U
+#define CMD_GET_ID    0x0111U
+#define CMD_GET_BAUD         0x0112U
 
 /* ── 数据类 0x02xx ── */
-#define CIMC_CMD_GET_CH0          0x0201U
-#define CIMC_CMD_GET_CH1          0x0202U
-#define CIMC_CMD_GET_CH2          0x0221U
-#define CIMC_CMD_SET_CH0_RATIO    0x0241U
-#define CIMC_CMD_SET_CH1_RATIO    0x0242U
-#define CIMC_CMD_SET_REPORT_INTV  0x0261U
+#define CMD_GET_CH0          0x0201U
+#define CMD_GET_CH1          0x0202U
+#define CMD_GET_CH2          0x0221U
+#define CMD_SET_R0    0x0241U
+#define CMD_SET_R1    0x0242U
+#define CMD_SET_INTV  0x0261U
 
 /* ── 控制类 0x03xx ── */
-#define CIMC_CMD_SET_DAC          0x0301U
-#define CIMC_CMD_AUTO_SAMPLE_START 0x0302U
-#define CIMC_CMD_AUTO_SAMPLE_STOP  0x0303U
-#define CIMC_CMD_SLEEP            0x03AAU
+#define CMD_SET_DAC          0x0301U
+#define CMD_SAMPLE_ON 0x0302U
+#define CMD_SAMPLE_OFF  0x0303U
+#define CMD_SLEEP            0x03AAU
 
 /* ── 参数配置类 0x04xx ── */
-#define CIMC_CMD_GET_ALL_THRESH   0x0400U
-#define CIMC_CMD_GET_CH0_THRESH   0x0401U
-#define CIMC_CMD_GET_CH1_THRESH   0x0402U
-#define CIMC_CMD_SET_CH0_THRESH   0x0411U
-#define CIMC_CMD_SET_CH1_THRESH   0x0412U
+#define CMD_GET_THRA   0x0400U
+#define CMD_GET_THR0   0x0401U
+#define CMD_GET_THR1   0x0402U
+#define CMD_SET_THR0   0x0411U
+#define CMD_SET_THR1   0x0412U
 
 /* ── 升级类 0x05xx ── */
-#define CIMC_CMD_UPGRADE_REQUEST  0x0501U
+#define CMD_UPGRADE  0x0501U
 
 /* ── 告警日志类 0x06xx ── */
-#define CIMC_CMD_SET_ALARM_MODE   0x0601U
-#define CIMC_CMD_GET_ALARM_LOG    0x0602U
-#define CIMC_CMD_CLEAR_ALARM      0x0603U
+#define CMD_SET_ALM   0x0601U
+#define CMD_GET_ALM    0x0602U
+#define CMD_CLR_ALM      0x0603U
 
 /* 固件版本：2.0.1.0 → [02 00 01 00] */
 static const uint8_t s_fw_ver[4] = {0x02U, 0x00U, 0x01U, 0x00U};
@@ -77,7 +77,7 @@ typedef struct
     uint8_t         length;
     uint8_t         version;
     const uint8_t  *payload;
-} cimc_frame_t;
+} frame_t;
 
 static uint32_t g_last_report_ms = 0; /* 上次自动上报时刻，用于间隔计时 */
 
@@ -229,7 +229,7 @@ static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,
     binary[5] = (uint8_t)(command >> 8);
     binary[6] = (uint8_t)(command  & 0xFFU);
     binary[7] = payload_length;
-    binary[8] = CIMC_PROTOCOL_VERSION;
+    binary[8] = PROTO_VER;
     if(payload_length > 0) {
         memcpy(&binary[9], payload, payload_length);
     }
@@ -254,20 +254,20 @@ static uint8_t send_frame(uint16_t device_id, uint8_t frame_type,
 /* 发送OK应答帧（内容区=0xFF） */
 static uint8_t send_ok(uint16_t device_id, uint16_t command)
 {
-    uint8_t ok = CIMC_RESPONSE_OK;
-    return send_frame(device_id, CIMC_FRAME_TYPE_RESPONSE, command, &ok, 1);
+    uint8_t ok = RSP_OK;
+    return send_frame(device_id, FT_RSP, command, &ok, 1);
 }
 
 /* 发送错误应答帧（帧类型0xFF），CRC/长度/非法帧类型时回复 */
 static uint8_t send_error(uint16_t device_id, uint16_t command)
 {
-    return send_frame(device_id, CIMC_FRAME_TYPE_ERROR, command, NULL, 0);
+    return send_frame(device_id, FT_ERR, command, NULL, 0);
 }
 
 /* 采集UTC+CH0+CH1组装12字节payload，发送一帧自动上报数据帧 */
 static void send_auto_report(uint16_t own_id)
 {
-    const cimc_params_t *params = cimc_params_get();
+    const params_t *params = params_get();
     uint8_t  payload[12];
     uint32_t unix_ts = 0;
     float    ch0, ch1;
@@ -280,13 +280,13 @@ static void send_auto_report(uint16_t own_id)
     write_float_be(&payload[4], ch0);
     write_float_be(&payload[8], ch1);
 
-    send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE,
-                     CIMC_CMD_AUTO_SAMPLE_START, payload, 12);
+    send_frame(own_id, FT_RSP,
+                     CMD_SAMPLE_ON, payload, 12);
 }
 
 /* 校验并解析一帧二进制协议数据，合法返回1，否则返回0 */
 static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,
-                            cimc_frame_t *frame)
+                            frame_t *frame)
 {
     uint8_t  payload_length;
     uint16_t expected_length;
@@ -294,8 +294,8 @@ static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,
 
     if((NULL == binary) || (NULL == frame) || (binary_len < 13)) { return 0; }
 
-    if((CIMC_FRAME_START != read_u16_be(&binary[0])) ||
-       (CIMC_FRAME_END   != read_u16_be(&binary[binary_len - 2]))) {
+    if((SOF != read_u16_be(&binary[0])) ||
+       (FRAME_END   != read_u16_be(&binary[binary_len - 2]))) {
         return 0;
     }
 
@@ -303,7 +303,7 @@ static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,
     expected_length = (uint16_t)(13 + payload_length);
     if(binary_len != expected_length) { return 0; }
 
-    if(CIMC_PROTOCOL_VERSION != binary[8]) { return 0; }
+    if(PROTO_VER != binary[8]) { return 0; }
 
     recv_crc = read_u16_be(&binary[9 + payload_length]);
     calc_crc = crc16_modbus(binary, (uint16_t)(9 + payload_length));
@@ -324,60 +324,60 @@ static uint8_t parse_frame(const uint8_t *binary, uint16_t binary_len,
  * 设备ID过滤：0xFFFF=广播，等于本机ID=正常响应，其他静默丢弃。
  * 自动上报激活期间只允许停止命令（0x0303），其他命令静默丢弃。
  */
-static uint8_t dispatch_command(const cimc_frame_t *frame)
+static uint8_t dispatch_command(const frame_t *frame)
 {
-    const cimc_params_t *params;
+    const params_t *params;
     uint16_t own_id;
 
     if(NULL == frame) { return 0; }
 
-    params = cimc_params_get();
+    params = params_get();
     own_id = params->device_id;
 
     if((frame->device_id != own_id) && (frame->device_id != 0xFFFFU)) {
         return 1;
     }
 
-    if(0 != cimc_status_is_auto_sample_active()) {
-        if((CIMC_FRAME_TYPE_COMMAND != frame->frame_type) ||
-           (frame->command != CIMC_CMD_AUTO_SAMPLE_STOP)) {
+    if(0 != sts_sampling()) {
+        if((FT_CMD != frame->frame_type) ||
+           (frame->command != CMD_SAMPLE_OFF)) {
             return 1;
         }
     }
 
     /* 心跳帧（类型0x05）：广播寻址时回复本机心跳 */
-    if(CIMC_FRAME_TYPE_HEARTBEAT == frame->frame_type) {
-        if(CIMC_CMD_BROADCAST_SEARCH == frame->command) {
-            send_frame(own_id, CIMC_FRAME_TYPE_HEARTBEAT,
-                             CIMC_CMD_HEARTBEAT, NULL, 0);
+    if(FT_HB == frame->frame_type) {
+        if(CMD_SEARCH == frame->command) {
+            send_frame(own_id, FT_HB,
+                             CMD_HB, NULL, 0);
         }
         return 1;
     }
 
     /* 非命令帧（类型非0x01）→ 回错误帧 */
-    if(CIMC_FRAME_TYPE_COMMAND != frame->frame_type) {
+    if(FT_CMD != frame->frame_type) {
         send_error(own_id, frame->command);
         return 1;
     }
 
     switch(frame->command) {
 
-    case CIMC_CMD_REBOOT:  /* 0x0101 设备重启 */
+    case CMD_REBOOT:  /* 0x0101 设备重启 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         send_ok(own_id, frame->command);
-        cimc_alarm_save();
+        alm_save();
         delay_ms(20);
         __set_FAULTMASK(1);
         NVIC_SystemReset();
         return 1;
 
-    case CIMC_CMD_QUERY_VERSION:  /* 0x0104 查询固件版本 */
+    case CMD_VERSION:  /* 0x0104 查询固件版本 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
-        send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE,
+        send_frame(own_id, FT_RSP,
                          frame->command, s_fw_ver, 4);
         return 1;
 
-    case CIMC_CMD_SET_TIME:  /* 0x0105 设置设备时间（4字节UTC秒，大端） */
+    case CMD_SET_TIME:  /* 0x0105 设置设备时间（4字节UTC秒，大端） */
         if((frame->length != 4) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
@@ -390,7 +390,7 @@ static uint8_t dispatch_command(const cimc_frame_t *frame)
         send_ok(own_id, frame->command);
         return 1;
 
-    case CIMC_CMD_GET_TIME:  /* 0x0106 查询设备时间（回4字节UTC秒） */
+    case CMD_GET_TIME:  /* 0x0106 查询设备时间（回4字节UTC秒） */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint32_t ts;
@@ -399,58 +399,58 @@ static uint8_t dispatch_command(const cimc_frame_t *frame)
                 send_error(own_id, frame->command); return 1;
             }
             write_u32_be(buf, ts);
-            send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE, frame->command, buf, 4);
+            send_frame(own_id, FT_RSP, frame->command, buf, 4);
         }
         return 1;
 
-    case CIMC_CMD_GET_DEVICE_ID:  /* 0x0111 查询设备ID（广播下发，回本机2字节ID） */
+    case CMD_GET_ID:  /* 0x0111 查询设备ID（广播下发，回本机2字节ID） */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[2];
             buf[0] = (uint8_t)(own_id >> 8);
             buf[1] = (uint8_t)(own_id  & 0xFFU);
-            send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE, frame->command, buf, 2);
+            send_frame(own_id, FT_RSP, frame->command, buf, 2);
         }
         return 1;
 
-    case CIMC_CMD_GET_BAUD:  /* 0x0112 查询波特率（回1字节映射码） */
+    case CMD_GET_BAUD:  /* 0x0112 查询波特率（回1字节映射码） */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t baud_code = params->baud_code;
-            send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE, frame->command, &baud_code, 1);
+            send_frame(own_id, FT_RSP, frame->command, &baud_code, 1);
         }
         return 1;
 
-    case CIMC_CMD_SET_DEVICE_ID:  /* 0x01A1 设置设备ID（应答帧用新ID） */
+    case CMD_SET_ID:  /* 0x01A1 设置设备ID（应答帧用新ID） */
         if((frame->length != 2) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
         {
             uint16_t new_id = read_u16_be(frame->payload);
-            if(0 == cimc_params_set_device_id(new_id)) {
+            if(0 == params_set_id(new_id)) {
                 send_error(own_id, frame->command); return 1;
             }
             send_ok(new_id, frame->command);
         }
         return 1;
 
-    case CIMC_CMD_SET_BAUD:  /* 0x01A2 设置波特率：先回OK（旧波特率），再在线切换 */
+    case CMD_SET_BAUD:  /* 0x01A2 设置波特率：先回OK（旧波特率），再在线切换 */
         if((frame->length != 1) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
-        if(0 == cimc_params_set_baud_code(frame->payload[0])) {
+        if(0 == params_set_baud(frame->payload[0])) {
             send_error(own_id, frame->command); return 1;
         }
         send_ok(own_id, frame->command);
         /*
          * OK帧以旧波特率发完后，在线切换到新波特率，不重启。
-         * 波特率码已由cimc_params_set_baud_code()持久化到Flash。
+         * 波特率码已由params_set_baud()持久化到Flash。
          */
         delay_ms(20);
-        bsp_usart_change_baudrate(cimc_params_get_baud_rate());
+        bsp_usart_change_baudrate(params_baud());
         return 1;
 
-    case CIMC_CMD_SET_DAC:  /* 0x0301 设置DAC输出（0~4095） */
+    case CMD_SET_DAC:  /* 0x0301 设置DAC输出（0~4095） */
         if((frame->length != 2) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
@@ -462,161 +462,161 @@ static uint8_t dispatch_command(const cimc_frame_t *frame)
         }
         return 1;
 
-    case CIMC_CMD_AUTO_SAMPLE_START:  /* 0x0302 开始定时自动上报，首次响应直接发数据帧 */
+    case CMD_SAMPLE_ON:  /* 0x0302 开始定时自动上报，首次响应直接发数据帧 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
-        cimc_status_set_auto_sample(1);
+        sts_set_sample(1);
         send_auto_report(own_id);
         g_last_report_ms = timebase_get_ms32();
         return 1;
 
-    case CIMC_CMD_AUTO_SAMPLE_STOP:  /* 0x0303 停止定时自动上报 */
+    case CMD_SAMPLE_OFF:  /* 0x0303 停止定时自动上报 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
-        cimc_status_set_auto_sample(0);
+        sts_set_sample(0);
         send_ok(own_id, frame->command);
         return 1;
 
-    case CIMC_CMD_UPGRADE_REQUEST:  /* 0x0501 进入Bootloader等待升级 */
+    case CMD_UPGRADE:  /* 0x0501 进入Bootloader等待升级 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         if(BOOTLOADER_PORT_STATUS_OK != bootloader_port_request_bootloader_upgrade()) {
             send_error(own_id, frame->command); return 1;
         }
         send_ok(own_id, frame->command);
-        cimc_alarm_save();
+        alm_save();
         delay_ms(20);
         bootloader_port_request_upgrade_reset();
         return 1;
 
-    case CIMC_CMD_GET_CH0:  /* 0x0201 查询CH0（原始电压×变比，float大端） */
+    case CMD_GET_CH0:  /* 0x0201 查询CH0（原始电压×变比，float大端） */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[4];
             float   val = adc_app_get_ch0_raw_float() * params->ch0_ratio;
             write_float_be(buf, val);
-            send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE, frame->command, buf, 4);
+            send_frame(own_id, FT_RSP, frame->command, buf, 4);
         }
         return 1;
 
-    case CIMC_CMD_GET_CH1:  /* 0x0202 查询CH1（原始电压×变比，float大端） */
+    case CMD_GET_CH1:  /* 0x0202 查询CH1（原始电压×变比，float大端） */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[4];
             float   val = adc_app_get_ch1_raw_float() * params->ch1_ratio;
             write_float_be(buf, val);
-            send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE, frame->command, buf, 4);
+            send_frame(own_id, FT_RSP, frame->command, buf, 4);
         }
         return 1;
 
-    case CIMC_CMD_GET_CH2:  /* 0x0221 查询CH2（PT100温度，float大端） */
+    case CMD_GET_CH2:  /* 0x0221 查询CH2（PT100温度，float大端） */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t          buf[4];
             pt100_measurement_t meas = gd30ad3344_pt100_get_latest();
             write_float_be(buf, meas.temperature_c);
-            send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE, frame->command, buf, 4);
+            send_frame(own_id, FT_RSP, frame->command, buf, 4);
         }
         return 1;
 
-    case CIMC_CMD_SET_CH0_RATIO:  /* 0x0241 设置CH0变比 */
+    case CMD_SET_R0:  /* 0x0241 设置CH0变比 */
         if((frame->length != 4) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
-        cimc_params_set_ch0_ratio(read_float_be(frame->payload));
+        params_set_r0(read_float_be(frame->payload));
         send_ok(own_id, frame->command);
         return 1;
 
-    case CIMC_CMD_SET_CH1_RATIO:  /* 0x0242 设置CH1变比 */
+    case CMD_SET_R1:  /* 0x0242 设置CH1变比 */
         if((frame->length != 4) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
-        cimc_params_set_ch1_ratio(read_float_be(frame->payload));
+        params_set_r1(read_float_be(frame->payload));
         send_ok(own_id, frame->command);
         return 1;
 
-    case CIMC_CMD_SET_REPORT_INTV:  /* 0x0261 设置自动上报间隔（01=1s/02=3s/03=5s） */
+    case CMD_SET_INTV:  /* 0x0261 设置自动上报间隔（01=1s/02=3s/03=5s） */
         if((frame->length != 1) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
-        if(0 == cimc_params_set_report_interval(frame->payload[0])) {
+        if(0 == params_set_intv(frame->payload[0])) {
             send_error(own_id, frame->command); return 1;
         }
         send_ok(own_id, frame->command);
         return 1;
 
-    case CIMC_CMD_SLEEP:  /* 0x03AA 进入MCU深度睡眠10s后唤醒 */
+    case CMD_SLEEP:  /* 0x03AA 进入MCU深度睡眠10s后唤醒 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         send_ok(own_id, frame->command);
-        cimc_power_sleep_10s();
+        power_sleep();
         return 1;
 
-    case CIMC_CMD_GET_ALL_THRESH:  /* 0x0400 批量读取CH0+CH1阈值（各float大端，共8字节） */
+    case CMD_GET_THRA:  /* 0x0400 批量读取CH0+CH1阈值（各float大端，共8字节） */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[8];
             write_float_be(&buf[0], params->ch0_threshold);
             write_float_be(&buf[4], params->ch1_threshold);
-            send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE, frame->command, buf, 8);
+            send_frame(own_id, FT_RSP, frame->command, buf, 8);
         }
         return 1;
 
-    case CIMC_CMD_GET_CH0_THRESH:  /* 0x0401 读取CH0阈值 */
+    case CMD_GET_THR0:  /* 0x0401 读取CH0阈值 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[4];
             write_float_be(buf, params->ch0_threshold);
-            send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE, frame->command, buf, 4);
+            send_frame(own_id, FT_RSP, frame->command, buf, 4);
         }
         return 1;
 
-    case CIMC_CMD_GET_CH1_THRESH:  /* 0x0402 读取CH1阈值 */
+    case CMD_GET_THR1:  /* 0x0402 读取CH1阈值 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             uint8_t buf[4];
             write_float_be(buf, params->ch1_threshold);
-            send_frame(own_id, CIMC_FRAME_TYPE_RESPONSE, frame->command, buf, 4);
+            send_frame(own_id, FT_RSP, frame->command, buf, 4);
         }
         return 1;
 
-    case CIMC_CMD_SET_CH0_THRESH:  /* 0x0411 写入CH0阈值 */
+    case CMD_SET_THR0:  /* 0x0411 写入CH0阈值 */
         if((frame->length != 4) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
-        cimc_params_set_ch0_threshold(read_float_be(frame->payload));
+        params_set_thr0(read_float_be(frame->payload));
         send_ok(own_id, frame->command);
         return 1;
 
-    case CIMC_CMD_SET_CH1_THRESH:  /* 0x0412 写入CH1阈值 */
+    case CMD_SET_THR1:  /* 0x0412 写入CH1阈值 */
         if((frame->length != 4) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
-        cimc_params_set_ch1_threshold(read_float_be(frame->payload));
+        params_set_thr1(read_float_be(frame->payload));
         send_ok(own_id, frame->command);
         return 1;
 
-    case CIMC_CMD_SET_ALARM_MODE:  /* 0x0601 设置告警上报模式（01=主动/02=仅记录） */
+    case CMD_SET_ALM:  /* 0x0601 设置告警上报模式（01=主动/02=仅记录） */
         if((frame->length != 1) || (NULL == frame->payload)) {
             send_error(own_id, frame->command); return 1;
         }
-        if(0 == cimc_params_set_alarm_mode(frame->payload[0])) {
+        if(0 == params_set_alm(frame->payload[0])) {
             send_error(own_id, frame->command); return 1;
         }
-        cimc_alarm_set_mode(frame->payload[0]);
+        alm_set_mode(frame->payload[0]);
         send_ok(own_id, frame->command);
         return 1;
 
-    case CIMC_CMD_GET_ALARM_LOG:  /* 0x0602 查询告警记录（ASCII直接回复，非帧封装） */
+    case CMD_GET_ALM:  /* 0x0602 查询告警记录（ASCII直接回复，非帧封装） */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
         {
             char buf[560]; /* 10条×55字符+终止符 */
-            cimc_alarm_query(buf, (uint16_t)sizeof(buf));
+            alm_query(buf, (uint16_t)sizeof(buf));
             bsp_usart_send_buffer(RS485_USART,
                                         (const uint8_t *)buf,
                                         (uint16_t)strlen(buf));
         }
         return 1;
 
-    case CIMC_CMD_CLEAR_ALARM:  /* 0x0603 清除告警记录 */
+    case CMD_CLR_ALM:  /* 0x0603 清除告警记录 */
         if(frame->length != 0) { send_error(own_id, frame->command); return 1; }
-        cimc_alarm_clear();
+        alm_clear();
         send_ok(own_id, frame->command);
         return 1;
 
@@ -636,11 +636,11 @@ static uint8_t dispatch_command(const cimc_frame_t *frame)
  * 2. 校验帧头/帧尾/长度/版本/CRC-16-Modbus；失败时回错误帧。
  * 3. 通过校验后交由分发器处理。
  */
-uint8_t cimc_protocol_process_ascii_frame(const uint8_t *frame, uint16_t length)
+uint8_t proto_rx(const uint8_t *frame, uint16_t length)
 {
     uint8_t      binary[BIN_BUF_SIZE];
     uint16_t     binary_length;
-    cimc_frame_t parsed_frame;
+    frame_t parsed_frame;
 
     binary_length = decode_ascii_hex(frame, length,
                                      binary, (uint16_t)sizeof(binary));
@@ -649,7 +649,7 @@ uint8_t cimc_protocol_process_ascii_frame(const uint8_t *frame, uint16_t length)
     }
 
     if(0 == parse_frame(binary, binary_length, &parsed_frame)) {
-        send_error(cimc_params_get()->device_id, 0xEEEEU);
+        send_error(params_get()->device_id, 0xEEEEU);
         return 1;
     }
 
@@ -657,25 +657,25 @@ uint8_t cimc_protocol_process_ascii_frame(const uint8_t *frame, uint16_t length)
 }
 
 /* 发送开机心跳帧（类型0x05，命令字0x8888），通知上位机本机在线 */
-void cimc_protocol_send_heartbeat(void)
+void proto_hb(void)
 {
-    uint16_t own_id = cimc_params_get()->device_id;
-    send_frame(own_id, CIMC_FRAME_TYPE_HEARTBEAT,
-                     CIMC_CMD_HEARTBEAT, NULL, 0);
+    uint16_t own_id = params_get()->device_id;
+    send_frame(own_id, FT_HB,
+                     CMD_HB, NULL, 0);
 }
 
 /* 调度器100ms周期调用，自动上报激活时按间隔推送数据帧 */
-void cimc_protocol_auto_report_tick(void)
+void proto_tick(void)
 {
-    const cimc_params_t *params;
+    const params_t *params;
     uint32_t             interval_ms;
     uint32_t             now_ms;
 
-    if(0 == cimc_status_is_auto_sample_active()) {
+    if(0 == sts_sampling()) {
         return;
     }
 
-    params = cimc_params_get();
+    params = params_get();
 
     switch(params->report_interval) {
     case 0x01U: interval_ms = 1000UL; break;

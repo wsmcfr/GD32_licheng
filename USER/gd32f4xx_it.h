@@ -37,104 +37,24 @@ OF SUCH DAMAGE.
 
 #include "system_all.h"
 
-/*
- * 函数作用：
- *   处理 NMI 不可屏蔽中断异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void NMI_Handler(void);
 
-/*
- * 函数作用：
- *   处理 HardFault 硬 fault 异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void HardFault_Handler(void);
 
-/*
- * 函数作用：
- *   处理 MemManage 内存管理异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void MemManage_Handler(void);
 
-/*
- * 函数作用：
- *   处理 BusFault 总线访问异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void BusFault_Handler(void);
 
-/*
- * 函数作用：
- *   处理 UsageFault 指令使用异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void UsageFault_Handler(void);
 
-/*
- * 函数作用：
- *   处理 SVC 异常入口。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void SVC_Handler(void);
 
-/*
- * 函数作用：
- *   处理 DebugMon 调试监控异常。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void DebugMon_Handler(void);
 
-/*
- * 函数作用：
- *   处理 PendSV 异常入口。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void PendSV_Handler(void);
 
-/*
- * 函数作用：
- *   处理 USART1/RS485 IDLE 中断，将完整 ASCII 协议帧移交给任务层。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void USART1_IRQHandler(void);
 
-/*
- * 函数作用：
- *   处理 SysTick 中断并维护阻塞延时计数。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void SysTick_Handler(void);
 
 #endif /* GD32F4XX_IT_H */

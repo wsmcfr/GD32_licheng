@@ -92,6 +92,6 @@ void uart_task(void)
     dma_channel_enable(USART1_RX_DMA_PERIPH, USART1_RX_DMA_CHANNEL);
 
     if(copy_len > 0) {
-        cimc_protocol_process_ascii_frame(frame_buffer, copy_len);
+        proto_rx(frame_buffer, copy_len);
     }
 }

@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 /* 执行深度睡眠10s流程，唤醒后恢复外设并通过RS485发ASCII唤醒字符串 */
-void cimc_power_sleep_10s(void);
+void power_sleep(void);
 
 #ifdef __cplusplus
 }

@@ -73,8 +73,8 @@ int oled_printf(uint8_t x, uint8_t y, const char *format, ...)
 
 void oled_task(void)
 {
-    oled_printf(0, 0, "%s", cimc_status_get_team_id());
-    if(cimc_status_is_auto_sample_active())
+    oled_printf(0, 0, "%s", sts_team_id());
+    if(sts_sampling())
         oled_printf(0, 1, "AutoSample");
     else
         oled_printf(0, 1, "IDLE");

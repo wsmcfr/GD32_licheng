@@ -83,7 +83,7 @@ static void restore_clock(void)
  * 执行深度睡眠10s流程：关外设→配置RTC唤醒→WFI→唤醒恢复→发"instrument wakeup"。
  * 收到0x03AA命令后由协议层调用（OK帧已在调用前发出）。
  */
-void cimc_power_sleep_10s(void)
+void power_sleep(void)
 {
     led_app_blank_for_sleep(); /* 进入睡眠前关闭LED */
 
@@ -111,7 +111,7 @@ void cimc_power_sleep_10s(void)
     /* 重新初始化USART1，使用Flash保存的波特率 */
     bsp_usart_init();
     {
-        uint32_t saved_baud = cimc_params_get_baud_rate();
+        uint32_t saved_baud = params_baud();
         if(saved_baud != 19200) {
             bsp_usart_change_baudrate(saved_baud);
         }

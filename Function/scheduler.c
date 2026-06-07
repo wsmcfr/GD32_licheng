@@ -19,7 +19,7 @@ static task_t scheduler_task[] =
     ,{oled_task,                     100,  0}
     ,{uart_task,                     5,    0}
     ,{rtc_task,                      1000, 0}  /* 每秒更新RTC共享缓存 */
-    ,{cimc_protocol_auto_report_tick, 100,  0}  /* 自动上报，内部自管理间隔 */
+    ,{proto_tick, 100,  0}  /* 自动上报，内部自管理间隔 */
 };
 
 // 按静态任务表长度初始化有效任务数
@@ -61,14 +61,14 @@ void system_init(void)
 		boot_app_handoff_init();
 		bsp_usart_init();
 
-		cimc_params_load();
-		cimc_alarm_init();
-		cimc_alarm_load();
+		params_load();
+		alm_init();
+		alm_load();
 
 		/* Flash保存的波特率与出厂默认不同时，原地切换USART1波特率 */
 		{
-		    uint32_t saved_baud = cimc_params_get_baud_rate();
-		    if(saved_baud != CIMC_RS485_BAUDRATE) {
+		    uint32_t saved_baud = params_baud();
+		    if(saved_baud != RS485_BAUD) {
 		        bsp_usart_change_baudrate(saved_baud);
 		    }
 		}
@@ -106,7 +106,7 @@ void system_init(void)
 		scheduler_init();
 
 		/* 上电后主动发送心跳帧，通知上位机本机在线 */
-		cimc_protocol_send_heartbeat();
+		proto_hb();
 }
 
 /* 轮询任务表，执行已到期的周期任务，32位tick回绕安全 */

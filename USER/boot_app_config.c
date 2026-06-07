@@ -1,15 +1,7 @@
 #include "boot_app_config.h"
 
-/*
- * 函数作用：
- *   将异常和外设中断入口切换到 App 自己的向量表。
- * 主要流程：
- *   1. 写入 SCB->VTOR，使中断向量表基址指向 BOOT_APP_START_ADDRESS。
- *   2. 执行数据同步和指令同步屏障，确保后续中断使用新的向量表。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
+/* 将 SCB->VTOR 切换到 App 向量表基址，并执行 DSB/ISB 屏障，
+ * 确保后续异常和外设中断入口正确。
  */
 void boot_app_vector_table_init(void)
 {
@@ -27,17 +19,8 @@ void boot_app_vector_table_init(void)
     __ISB();
 }
 
-/*
- * 函数作用：
- *   完成 BootLoader 跳转到 App 后的最小运行环境接管。
- * 主要流程：
- *   1. 先把 VTOR 切换到当前 App 的向量表，保证异常和外设中断入口正确。
- *   2. 清理 NVIC 和 SysTick 中仍可能残留的中断挂起位，避免一开中断就误进旧现场。
- *   3. 重新打开全局中断，因为官方 BootLoader 在跳转前会调用 __disable_irq()。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
+/* 接管 BootLoader 跳转后的最小运行环境：切换向量表、
+ * 清理残留中断挂起位、重新打开全局中断。
  */
 void boot_app_handoff_init(void)
 {
@@ -52,7 +35,7 @@ void boot_app_handoff_init(void)
      * 直接调试 App、异常复位后重进 App 等场景，确保后续 SysTick/USART/DMA
      * 中断从干净状态开始。
      */
-    for(uint32_t i = 0U; i < 8U; i++) {
+    for(uint32_t i = 0; i < 8; i++) {
         NVIC->ICPR[i] = 0xFFFFFFFFUL;
     }
 
@@ -66,7 +49,7 @@ void boot_app_handoff_init(void)
     /*
      * BootLoader 为避免跳转过程中被中断打断，会在 iap_load_app() 里关闭全局中断。
      * PRIMASK 不会因为普通函数跳转自动恢复，因此 App 必须在完成 VTOR 切换后重新开中断。
-     * 这也是“BootLoader 能跳到 App，但 App 的定时器/串口中断不工作”的最常见根因之一。
+     * 这也是"BootLoader 能跳到 App，但 App 的定时器/串口中断不工作"的最常见根因之一。
      */
     __enable_irq();
     __DSB();

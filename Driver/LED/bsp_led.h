@@ -1,12 +1,6 @@
 #ifndef BSP_LED_H
 #define BSP_LED_H
 
-/*
- * 文件作用：
- *   定义板载 LED 的引脚资源、控制宏以及初始化接口。
- *   与 LED 相关的宏全部放在本头文件中，不再放到公共头文件里。
- */
-
 #define SYSTEM_ALL_BASE_ONLY
 #include "system_all.h"
 #undef SYSTEM_ALL_BASE_ONLY
@@ -26,11 +20,6 @@ extern "C" {
 /* LED 电平有效配置：1 表示高电平点亮，0 表示低电平点亮。 */
 #define LED_ACTIVE_HIGH         1U
 
-/*
- * 宏作用：
- *   按当前板级有效电平配置写入 LED 电平。
- *   这里统一封装后，上层不再关心高低电平点亮差异。
- */
 #if LED_ACTIVE_HIGH
 #define LED_WRITE(pin, on)                                                      \
     do {                                                                        \
@@ -64,14 +53,6 @@ extern "C" {
 #define LED1_OFF                do { LED_WRITE(LED1_PIN, 0U); } while (0)
 #define LED2_OFF                do { LED_WRITE(LED2_PIN, 0U); } while (0)
 
-/*
- * 函数作用：
- *   初始化正式版使用的两个板载 LED GPIO，并统一关闭。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void bsp_led_init(void);
 
 #ifdef __cplusplus

@@ -1,11 +1,6 @@
 #ifndef BSP_ANALOG_H
 #define BSP_ANALOG_H
 
-/*
- * 文件作用：
- *   定义 ADC/DAC 相关引脚资源、共享数据缓冲区以及初始化接口。
- */
-
 #define SYSTEM_ALL_BASE_ONLY
 #include "system_all.h"
 #undef SYSTEM_ALL_BASE_ONLY
@@ -32,24 +27,8 @@ extern "C" {
 extern __IO uint16_t adc_value[2];
 extern uint16_t convertarr[CONVERT_NUM];
 
-/*
- * 函数作用：
- *   初始化 ADC0 双通道采样及 DMA 循环搬运。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void bsp_adc_init(void);
 
-/*
- * 函数作用：
- *   初始化 DAC0 通道 0 以及触发它的 TIMER5。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void bsp_dac_init(void);
 
 #ifdef __cplusplus

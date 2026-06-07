@@ -3,13 +3,8 @@
 /* updateStatus=0x02 表示 App 已收到 0x0501，请 Bootloader 进入大赛串口升级等待窗口。 */
 #define BOOTLOADER_PORT_STATUS_WAIT_CONTEST_OTA    0x02U
 
-/*
- * 结构体作用：
- *   描述 BootLoader 主参数区的 256 字节布局。
- * 说明：
- *   当前 App 只会改升级相关字段，其它字段尽量保留原值，确保与官方
- *   Two Stage BootLoader 的二进制布局兼容。
- */
+/* BootLoader 主参数区 256 字节布局。当前 App 只会改升级相关字段，
+   其它字段尽量保留原值，确保与官方 Two Stage BootLoader 的二进制布局兼容。 */
 typedef struct __attribute__((packed))
 {
     uint32_t magicWord;
@@ -70,13 +65,9 @@ typedef struct __attribute__((packed))
     uint32_t tailMagic;
 } bootloader_port_boot_param_t;
 
-/*
- * 结构体作用：
- *   描述当前工程 4KB BootLoader 参数区的整体布局。
- * 说明：
- *   参数区除了主参数外，还包含备份区、升级日志、用户配置和校准数据；
- *   因此写升级信息时必须整块读回、修改后再整页回写，不能只写前几个字节。
- */
+/* 当前工程 4KB BootLoader 参数区整体布局。
+   参数区除主参数外还含备份区、升级日志、用户配置和校准数据；
+   写升级信息时必须整块读回、修改后再整页回写，不能只写前几个字节。 */
 typedef struct __attribute__((packed))
 {
     bootloader_port_boot_param_t boot_param;
@@ -94,14 +85,7 @@ typedef struct __attribute__((packed))
 /* 参数区回写时使用的 RAM 缓冲，避免直接在 Flash 上做读改写。 */
 static uint8_t g_bootloader_port_param_buffer[BOOTLOADER_PORT_PARAM_SIZE] = {0};
 
-/*
- * 函数作用：
- *   从小端字节序缓冲区读取 32 位无符号整数。
- * 参数说明：
- *   data：指向至少 4 字节有效数据的缓冲区。
- * 返回值说明：
- *   返回组合后的 32 位无符号整数；若 data 为空则返回 0。
- */
+/* 从小端字节序缓冲区读取 32 位无符号整数，data 为空时返回 0。 */
 static uint32_t prv_bootloader_port_read_u32_le(const uint8_t *data)
 {
     if(NULL == data){
@@ -114,14 +98,7 @@ static uint32_t prv_bootloader_port_read_u32_le(const uint8_t *data)
            ((uint32_t)data[3] << 24U);
 }
 
-/*
- * 函数作用：
- *   清除内部 Flash 控制器上一次操作留下的完成位和错误位。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
+/* 清除内部 Flash 控制器上一次操作留下的完成位和错误位。 */
 static void prv_bootloader_port_flash_clear_flags(void)
 {
     fmc_flag_clear(FMC_FLAG_END);
@@ -132,16 +109,8 @@ static void prv_bootloader_port_flash_clear_flags(void)
     fmc_flag_clear(FMC_FLAG_RDDERR);
 }
 
-/*
- * 函数作用：
- *   按页擦除指定内部 Flash 区间。
- * 参数说明：
- *   start_addr：待擦除区起始地址，必须按页对齐。
- *   length：待擦除长度，单位为字节；为 0 时直接视为成功。
- * 返回值说明：
- *   BOOTLOADER_PORT_STATUS_OK：全部页擦除成功。
- *   BOOTLOADER_PORT_STATUS_FLASH_ERROR：任一页擦除失败。
- */
+/* 按页擦除指定内部 Flash 区间。start_addr 必须按页对齐，length 为 0 时直接返回成功。
+   任一页擦除失败立即返回 BOOTLOADER_PORT_STATUS_FLASH_ERROR。 */
 static bootloader_port_status_t prv_bootloader_port_flash_erase_pages(uint32_t start_addr,
                                                                       uint32_t length)
 {
@@ -167,18 +136,9 @@ static bootloader_port_status_t prv_bootloader_port_flash_erase_pages(uint32_t s
     return BOOTLOADER_PORT_STATUS_OK;
 }
 
-/*
- * 函数作用：
- *   逐字节把一段数据写入内部 Flash。
- * 参数说明：
- *   start_addr：写入目标起始地址。
- *   data：待写入数据缓冲区。
- *   length：待写入字节数，单位为字节。
- * 返回值说明：
- *   BOOTLOADER_PORT_STATUS_OK：全部字节写入成功。
- *   BOOTLOADER_PORT_STATUS_BAD_PARAM：数据指针为空且 length 非 0。
- *   BOOTLOADER_PORT_STATUS_FLASH_ERROR：任一字节写入失败。
- */
+/* 逐字节把一段数据写入内部 Flash。OTA 分包长度不一定按字对齐，
+   因此保留逐字节策略，避免为对齐额外引入 RAM 拼包逻辑。
+   data 为空且 length 非 0 时返回 BAD_PARAM，任一字节写入失败返回 FLASH_ERROR。 */
 static bootloader_port_status_t prv_bootloader_port_flash_write_bytes(uint32_t start_addr,
                                                                       const uint8_t *data,
                                                                       uint32_t length)
@@ -204,14 +164,7 @@ static bootloader_port_status_t prv_bootloader_port_flash_write_bytes(uint32_t s
     return BOOTLOADER_PORT_STATUS_OK;
 }
 
-/*
- * 函数作用：
- *   为首次空白参数区填充一组最小可用的默认字段。
- * 参数说明：
- *   parameter：指向当前 RAM 中的参数区镜像。
- * 返回值说明：
- *   无返回值。
- */
+/* 为首次空白参数区填充一组最小可用的默认字段，parameter 为空时直接返回。 */
 static void prv_bootloader_port_init_default_parameter(bootloader_port_parameter_t *parameter)
 {
     if(NULL == parameter){
@@ -246,15 +199,8 @@ static void prv_bootloader_port_init_default_parameter(bootloader_port_parameter
     parameter->boot_param.tailMagic = BOOTLOADER_PORT_TAIL_MAGIC;
 }
 
-/*
- * 函数作用：
- *   计算一段 RAM 数据的 CRC32。
- * 参数说明：
- *   data：待计算数据起始地址。
- *   length：待计算字节数，单位为字节。
- * 返回值说明：
- *   返回 BootLoader 约定算法的 CRC32 值。
- */
+/* 标准 IEEE 802.3 多项式 CRC32，初值 0xFFFFFFFF 最终取反。
+   data 为空且 length 非 0 时返回 0；正常情况逐字节处理并返回最终校验值。 */
 uint32_t bootloader_port_crc32_calc(const uint8_t *data, uint32_t length)
 {
     uint32_t crc = 0xFFFFFFFFUL;
@@ -279,16 +225,8 @@ uint32_t bootloader_port_crc32_calc(const uint8_t *data, uint32_t length)
     return crc ^ 0xFFFFFFFFUL;
 }
 
-/*
- * 函数作用：
- *   在已有 CRC32 中间值上继续追加一段数据。
- * 参数说明：
- *   crc：当前未取反 CRC32 中间值。
- *   data：待追加数据起始地址。
- *   length：待追加字节数，单位为字节。
- * 返回值说明：
- *   返回更新后的未取反 CRC32 中间值。
- */
+/* 在已有 CRC32 中间值上继续追加一段数据，用于分块流式计算。
+   crc 为未取反的中间值，返回更新后的未取反中间值；data 为空时原样返回 crc。 */
 uint32_t bootloader_port_crc32_update(uint32_t crc, const uint8_t *data, uint32_t length)
 {
     uint32_t index;
@@ -312,18 +250,9 @@ uint32_t bootloader_port_crc32_update(uint32_t crc, const uint8_t *data, uint32_
     return crc;
 }
 
-/*
- * 函数作用：
- *   校验固件镜像向量表是否合法。
- * 参数说明：
- *   firmware：固件镜像起始地址。
- *   firmware_size：固件长度，至少 8 字节。
- *   stack_addr：可选输出参数，返回 MSP 初值。
- *   entry_addr：可选输出参数，返回入口地址。
- * 返回值说明：
- *   BOOTLOADER_PORT_STATUS_OK：向量表合法。
- *   其它状态：参数非法或向量表不在允许范围内。
- */
+/* 校验固件镜像向量表是否合法：MSP 必须落在 SRAM 范围内，
+   Reset_Handler 最低位须为 1（Thumb 状态）且地址主体必须落在 App 运行区内，
+   避免跳向 BootLoader 区或参数区。stack_addr/entry_addr 为可选输出参数。 */
 bootloader_port_status_t bootloader_port_validate_firmware_vector(const uint8_t *firmware,
                                                                   uint32_t firmware_size,
                                                                   uint32_t *stack_addr,
@@ -364,14 +293,7 @@ bootloader_port_status_t bootloader_port_validate_firmware_vector(const uint8_t 
     return BOOTLOADER_PORT_STATUS_OK;
 }
 
-/*
- * 函数作用：
- *   擦除内部 Flash 下载缓存区。
- * 参数说明：
- *   firmware_size：本次接收固件大小，单位为字节。
- * 返回值说明：
- *   返回下载区准备结果。
- */
+/* 擦除内部 Flash 下载缓存区，firmware_size 为 0 或超出最大下载区大小时返回 BAD_PARAM。 */
 bootloader_port_status_t bootloader_port_prepare_download_area(uint32_t firmware_size)
 {
     bootloader_port_status_t status;
@@ -387,16 +309,8 @@ bootloader_port_status_t bootloader_port_prepare_download_area(uint32_t firmware
     return status;
 }
 
-/*
- * 函数作用：
- *   把一个 OTA 数据分包写入下载缓存区指定偏移。
- * 参数说明：
- *   offset：分包写入偏移。
- *   data：分包数据起始地址。
- *   length：分包长度，单位为字节。
- * 返回值说明：
- *   返回下载区写入结果。
- */
+/* 把一个 OTA 数据分包写入下载缓存区指定偏移。
+   offset+length 超出最大下载区范围时返回 BAD_PARAM。 */
 bootloader_port_status_t bootloader_port_write_download_chunk(uint32_t offset,
                                                               const uint8_t *data,
                                                               uint32_t length)
@@ -417,14 +331,8 @@ bootloader_port_status_t bootloader_port_write_download_chunk(uint32_t offset,
     return status;
 }
 
-/*
- * 函数作用：
- *   从下载缓存区回读指定范围并重新计算 CRC32。
- * 参数说明：
- *   firmware_size：参与回读校验的固件大小。
- * 返回值说明：
- *   返回下载缓存区对应内容的 CRC32。
- */
+/* 从下载缓存区逐字节回读并以相同 CRC32 算法重新计算校验值，供上层与协议中的期望值比对。
+   firmware_size 为 0 或超出范围时返回 0。 */
 uint32_t bootloader_port_calc_download_crc32(uint32_t firmware_size)
 {
     uint32_t crc = 0xFFFFFFFFUL;
@@ -451,16 +359,10 @@ uint32_t bootloader_port_calc_download_crc32(uint32_t firmware_size)
     return crc ^ 0xFFFFFFFFUL;
 }
 
-/*
- * 函数作用：
- *   回写 BootLoader 参数区中的升级控制字段。
- * 参数说明：
- *   app_version：升级固件版本号。
- *   firmware_size：升级固件大小。
- *   firmware_crc32：升级固件 CRC32。
- * 返回值说明：
- *   返回参数区回写结果。
- */
+/* 把升级控制字段写入 BootLoader 参数区，供 BootLoader 下次复位后搬运固件。
+   先把整个 4KB 页读入 RAM，再覆盖 updateFlag/appSize/appCRC32 等字段，
+   同时把修改前的主参数备份到 boot_param_reserved 并记录其 CRC32，
+   最后擦除整页后完整回写，保持与 Two Stage 工程的参数区布局兼容。 */
 bootloader_port_status_t bootloader_port_write_upgrade_info(uint32_t app_version,
                                                             uint32_t firmware_size,
                                                             uint32_t firmware_crc32)
@@ -507,7 +409,7 @@ bootloader_port_status_t bootloader_port_write_upgrade_info(uint32_t app_version
     parameter->boot_param.appStackAddr = *(volatile uint32_t *)(BOOT_APP_START_ADDRESS + 0U);
     parameter->boot_param.appEntryAddr = *(volatile uint32_t *)(BOOT_APP_START_ADDRESS + 4U);
     /*
-     * 官方旧 App 例程会把“升级前主参数镜像”的 CRC32 记录到 backupCRC32。
+     * 官方旧 App 例程会把"升级前主参数镜像"的 CRC32 记录到 backupCRC32。
      * 这里继续保持同样写法，避免迁移到独立 bootloader_port 模块后丢掉该兼容字段。
      */
     parameter->boot_param.backupCRC32 = bootloader_port_crc32_calc(backup_bytes,
@@ -527,19 +429,10 @@ bootloader_port_status_t bootloader_port_write_upgrade_info(uint32_t app_version
     return status;
 }
 
-/*
- * 函数作用：
- *   写入”进入 Bootloader 等待串口升级”的请求标志。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   BOOTLOADER_PORT_STATUS_OK：参数区写入成功。
- *   BOOTLOADER_PORT_STATUS_FLASH_ERROR：参数区擦写失败。
- * 说明：
- *   该接口只写 updateFlag/updateStatus，不写 appSize/appCRC32。
- *   Bootloader 据此知道下一次复位是由 0x0501 触发，应等待 0x0502 接收 bin；
- *   普通上电或下载区搬运流程不会误用这个状态。
- */
+/* 写入"进入 Bootloader 等待串口升级"的请求标志。
+   只写 updateFlag/updateStatus，不写 appSize/appCRC32；
+   Bootloader 据此判断本次复位由 0x0501 指令触发，应等待 0x0502 接收 bin，
+   普通上电或下载区搬运流程不会误触发此状态。 */
 bootloader_port_status_t bootloader_port_request_bootloader_upgrade(void)
 {
     uint32_t index;
@@ -578,32 +471,16 @@ bootloader_port_status_t bootloader_port_request_bootloader_upgrade(void)
     return status;
 }
 
-/*
- * 函数作用：
- *   请求软件复位，让 BootLoader 读取参数区并接手升级。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
+/* 请求软件复位，让 BootLoader 读取参数区并接手升级流程。 */
 void bootloader_port_request_upgrade_reset(void)
 {
     __set_FAULTMASK(1);
     NVIC_SystemReset();
 }
 
-/*
- * 函数作用：
- *   从参数区 user_config 段读取指定字节数到 RAM 缓冲区。
- * 主要流程：
- *   Flash 是内存映射的，可以直接按结构体字段偏移读取；无需解锁控制器。
- * 参数说明：
- *   buf：接收数据的 RAM 缓冲区，长度至少为 size 字节。
- *   size：读取字节数，不超过 BOOTLOADER_PORT_USER_CONFIG_SIZE（512）。
- * 返回值说明：
- *   BOOTLOADER_PORT_STATUS_OK：读取成功。
- *   BOOTLOADER_PORT_STATUS_BAD_PARAM：buf 为空或 size 越界。
- */
+/* 从参数区 user_config 段读取指定字节数到 RAM 缓冲区。
+   Flash 是内存映射的，可直接按结构体字段偏移读取，无需解锁控制器。
+   buf 为空或 size 超出 BOOTLOADER_PORT_USER_CONFIG_SIZE（512）时返回 BAD_PARAM。 */
 bootloader_port_status_t bootloader_port_read_user_config(uint8_t *buf, uint16_t size)
 {
     const bootloader_port_parameter_t *flash_map;
@@ -625,21 +502,9 @@ bootloader_port_status_t bootloader_port_read_user_config(uint8_t *buf, uint16_t
     return BOOTLOADER_PORT_STATUS_OK;
 }
 
-/*
- * 函数作用：
- *   将 RAM 缓冲区写入参数区 user_config 段，内部执行整页读-改-写。
- * 主要流程：
- *   1. 把整个 4KB 参数区读入已有的 g_bootloader_port_param_buffer。
- *   2. 只修改其中 user_config 偏移处的 size 字节。
- *   3. 擦除整页后把修改后的缓冲区完整回写，保留其他字段（升级控制、设备信息等）。
- * 参数说明：
- *   buf：待写入数据的 RAM 缓冲区，长度至少为 size 字节。
- *   size：写入字节数，不超过 BOOTLOADER_PORT_USER_CONFIG_SIZE（512）。
- * 返回值说明：
- *   BOOTLOADER_PORT_STATUS_OK：写入成功。
- *   BOOTLOADER_PORT_STATUS_BAD_PARAM：buf 为空或 size 越界。
- *   BOOTLOADER_PORT_STATUS_FLASH_ERROR：Flash 擦写失败。
- */
+/* 将 RAM 缓冲区写入参数区 user_config 段，内部执行整页读-改-写。
+   先把整个 4KB 参数区读入 g_bootloader_port_param_buffer，只修改 user_config 偏移处，
+   再擦除整页后完整回写，保留升级控制字段、设备信息等其他内容不变。 */
 bootloader_port_status_t bootloader_port_write_user_config(const uint8_t *buf, uint16_t size)
 {
     uint32_t index;

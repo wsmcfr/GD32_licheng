@@ -1,11 +1,6 @@
 #ifndef BSP_STORAGE_H
 #define BSP_STORAGE_H
 
-/*
- * 文件作用：
- *   提供 GD30AD3344 外部 ADC 的底层外设初始化接口。
- */
-
 #define SYSTEM_ALL_BASE_ONLY
 #include "system_all.h"
 #undef SYSTEM_ALL_BASE_ONLY
@@ -14,14 +9,6 @@
 extern "C" {
 #endif
 
-/*
- * 函数作用：
- *   初始化 GD30AD3344 所使用的 GPIO、SPI3、DMA 等底层资源。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
 void bsp_gd30ad3344_init(void);
 
 #ifdef __cplusplus

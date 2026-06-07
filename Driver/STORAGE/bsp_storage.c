@@ -1,17 +1,6 @@
 #include "bsp_storage.h"
 
-/*
- * 函数作用：
- *   初始化 GD30AD3344 底层总线资源。
- * 主要流程：
- *   1. 打开 GPIOE、SPI3、DMA1 时钟。
- *   2. 配置 SPI3 三线复用功能和片选 GPIO。
- *   3. 初始化 SPI3 参数并调用 ADC 组件初始化。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   无返回值。
- */
+/* 初始化 GD30AD3344 底层总线资源：打开时钟、配置 SPI3 GPIO 及片选、初始化 SPI3 参数 */
 void bsp_gd30ad3344_init(void)
 {
     spi_parameter_struct spi_init_struct;
@@ -20,26 +9,12 @@ void bsp_gd30ad3344_init(void)
     rcu_periph_clock_enable(RCU_SPI3);
     rcu_periph_clock_enable(RCU_DMA1);
 
-    gpio_af_set(GD30AD3344_SPI_GPIO_PORT,
-                GD30AD3344_SPI_AF,
-                GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
-    gpio_mode_set(GD30AD3344_SPI_GPIO_PORT,
-                  GPIO_MODE_AF,
-                  GPIO_PUPD_NONE,
-                  GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
-    gpio_output_options_set(GD30AD3344_SPI_GPIO_PORT,
-                            GPIO_OTYPE_PP,
-                            GPIO_OSPEED_50MHZ,
-                            GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
+    gpio_af_set(GD30AD3344_SPI_GPIO_PORT, GD30AD3344_SPI_AF, GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
+    gpio_mode_set(GD30AD3344_SPI_GPIO_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
+    gpio_output_options_set(GD30AD3344_SPI_GPIO_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GD30AD3344_SPI_SCK_PIN | GD30AD3344_SPI_MISO_PIN | GD30AD3344_SPI_MOSI_PIN);
 
-    gpio_mode_set(GD30AD3344_SPI_GPIO_PORT,
-                  GPIO_MODE_OUTPUT,
-                  GPIO_PUPD_NONE,
-                  GD30AD3344_SPI_CS_PIN);
-    gpio_output_options_set(GD30AD3344_SPI_GPIO_PORT,
-                            GPIO_OTYPE_PP,
-                            GPIO_OSPEED_50MHZ,
-                            GD30AD3344_SPI_CS_PIN);
+    gpio_mode_set(GD30AD3344_SPI_GPIO_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GD30AD3344_SPI_CS_PIN);
+    gpio_output_options_set(GD30AD3344_SPI_GPIO_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GD30AD3344_SPI_CS_PIN);
 
     spi_init_struct.trans_mode = SPI_TRANSMODE_FULLDUPLEX;
     spi_init_struct.device_mode = SPI_MASTER;

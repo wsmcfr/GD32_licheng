@@ -8,8 +8,8 @@
 #define DEBOUNCE_MS     1000UL /* 同一通道两次告警最小间隔 */
 
 /*
- * Flash持久化：告警块紧跟cimc_params_t（29字节packed）之后。
- * 若修改cimc_params_t大小，必须同步更新ALARM_FLASH_OFFSET。
+ * Flash持久化：告警块紧跟params_t（29字节packed）之后。
+ * 若修改params_t大小，必须同步更新ALARM_FLASH_OFFSET。
  */
 #define ALARM_FLASH_MAGIC   0xA1B2C3D4UL
 #define ALARM_FLASH_OFFSET  29
@@ -48,7 +48,7 @@ static uint32_t       g_last_ms[2];    /* 每通道上次告警时刻，用于�
 static alarm_flash_rec_t g_flash[MAX_RECORDS]; /* 与g_records同步的二进制记录 */
 
 // 初始化告警模块，清空记录，模式置为仅记录
-void cimc_alarm_init(void)
+void alm_init(void)
 {
     uint8_t i;
 
@@ -61,7 +61,7 @@ void cimc_alarm_init(void)
 }
 
 /* 设置告警上报模式（0x01主动/0x02仅记录），非法值忽略 */
-void cimc_alarm_set_mode(uint8_t mode)
+void alm_set_mode(uint8_t mode)
 {
     if((mode == 0x01U) || (mode == 0x02U)) {
         g_mode = mode;
@@ -69,7 +69,7 @@ void cimc_alarm_set_mode(uint8_t mode)
 }
 
 // 获取当前告警上报模式
-uint8_t cimc_alarm_get_mode(void)
+uint8_t alm_get_mode(void)
 {
     return g_mode;
 }
@@ -123,7 +123,7 @@ static void append_record(const char *text, const alarm_flash_rec_t *rec)
  * 主动模式（0x01）直接向RS485发ASCII字符串，不经帧封装。
  * 此处不写Flash（整页擦写约1.5s会阻塞CPU），持久化在重启前统一完成。
  */
-void cimc_alarm_check(uint8_t channel, float threshold, float value)
+void alm_check(uint8_t channel, float threshold, float value)
 {
     uint32_t now_ms;
     bsp_rtc_datetime_t dt;
@@ -169,7 +169,7 @@ void cimc_alarm_check(uint8_t channel, float threshold, float value)
 }
 
 /* 将所有告警记录倒序写入buf，无记录时写"empty" */
-void cimc_alarm_query(char *buf, uint16_t size)
+void alm_query(char *buf, uint16_t size)
 {
     uint16_t pos = 0;
     uint16_t rec_len;
@@ -196,7 +196,7 @@ void cimc_alarm_query(char *buf, uint16_t size)
  * 不在此写Flash：整页擦写期间若复位，重启后load()会恢复旧数据使清除失效。
  * 重置计时器防止adc_task在清除后1s内立即写入新记录。
  */
-void cimc_alarm_clear(void)
+void alm_clear(void)
 {
     uint8_t  i;
     uint32_t now = timebase_get_ms32();
@@ -210,16 +210,16 @@ void cimc_alarm_clear(void)
 }
 
 /* 将当前RAM告警记录持久化到Flash，应在设备即将重启前调用 */
-void cimc_alarm_save(void)
+void alm_save(void)
 {
     save_flash();
 }
 
 /*
- * 从Flash恢复历史告警记录到RAM，应在cimc_alarm_init()之后调用。
+ * 从Flash恢复历史告警记录到RAM，应在alm_init()之后调用。
  * 魔术字或CRC校验失败时静默返回，视为无历史记录。
  */
-void cimc_alarm_load(void)
+void alm_load(void)
 {
     uint8_t buf[ALARM_BUF_SIZE];
     const alarm_flash_blk_t *blk;

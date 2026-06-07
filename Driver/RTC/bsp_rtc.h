@@ -1,11 +1,6 @@
 #ifndef BSP_RTC_H
 #define BSP_RTC_H
 
-/*
- * 文件作用：
- *   定义 RTC 初始化相关的常量、共享时间结构和初始化接口。
- */
-
 #define SYSTEM_ALL_BASE_ONLY
 #include "system_all.h"
 #undef SYSTEM_ALL_BASE_ONLY
@@ -17,29 +12,12 @@ extern "C" {
 /* 当前工程选择 LXTAL 作为 RTC 时钟源。 */
 #define RTC_CLOCK_SOURCE_LXTAL
 
-/*
- * 宏作用：
- *   控制 LXTAL 启动失败时是否允许退回片内 IRC32K 作为 RTC 时钟源。
- * 说明：
- *   冷启动且备份域尚未选择 RTC 时钟源时，LXTAL 启动失败才会回退 IRC32K。
- *   若 VBAT 备份域已经保存 LXTAL，则不会强制切换；若保存的是 IRC32K，
- *   驱动会在 LXTAL 重新稳定后迁回外部晶振，避免纽扣电池期间长期按片内 RC 走时。
- */
 #ifndef RTC_CLOCK_FALLBACK_IRC32K_ENABLE
 #define RTC_CLOCK_FALLBACK_IRC32K_ENABLE 1U
 #endif
 
 #define BKP_VALUE                       0x32F0U
 
-/*
- * 枚举作用：
- *   描述当前 RTC 实际使用的时钟源，供串口诊断和现场排查长期走时误差使用。
- * 枚举说明：
- *   RTC_STATUS_SOURCE_NONE：备份域尚未选择 RTC 时钟源。
- *   RTC_STATUS_SOURCE_LXTAL：RTC 使用外部 32.768kHz 低速晶振。
- *   RTC_STATUS_SOURCE_IRC32K：RTC 使用片内 32kHz RC，长期走时精度明显低于外部晶振。
- *   RTC_STATUS_SOURCE_HXTAL_DIV：RTC 使用高速外部晶振分频，当前工程不作为默认路径。
- */
 typedef enum
 {
     RTC_STATUS_SOURCE_NONE = 0U,
@@ -48,18 +26,6 @@ typedef enum
     RTC_STATUS_SOURCE_HXTAL_DIV = 3U,
 } bsp_rtc_clock_source_t;
 
-/*
- * 结构体作用：
- *   以十进制形式描述一组完整的 RTC 日期时间，供串口命令层和其它应用层模块使用。
- * 成员说明：
- *   year：完整年份，当前接口约定范围为 2000~2099。
- *   month：月份，十进制范围为 1~12。
- *   date：日期，十进制范围为 1~31，具体上限受月份和闰年影响。
- *   hour：小时，24 小时制，十进制范围为 0~23。
- *   minute：分钟，十进制范围为 0~59。
- *   second：秒，十进制范围为 0~59。
- *   day_of_week：星期枚举，读取时返回 `RTC_MONDAY`~`RTC_SUNDAY`；设置时由驱动内部自动计算。
- */
 typedef struct
 {
     uint16_t year;
@@ -71,20 +37,6 @@ typedef struct
     uint8_t day_of_week;
 } bsp_rtc_datetime_t;
 
-/*
- * 结构体作用：
- *   汇总 RTC 备份域、时钟源、分频和校准寄存器状态，用于串口 `rtcstat` 诊断。
- * 成员说明：
- *   clock_ready：1 表示本次启动已完成 RTC 时钟源配置，0 表示 RTC 当前不可可靠读取。
- *   backup_valid：1 表示 `RTC_BKP0` 中存在本工程有效标记，0 表示备份域未建表或已被复位。
- *   lxtal_recovered：1 表示本次初始化曾检测到 IRC32K 并成功迁回 LXTAL。
- *   clock_source：当前 `RCU_BDCTL.RTCSRC` 解码后的 RTC 时钟源。
- *   prescaler_a：RTC 异步分频值，来自 `RTC_PSC` 高位字段。
- *   prescaler_s：RTC 同步分频值，来自 `RTC_PSC` 低位字段。
- *   bdctl：备份域控制寄存器原始值，用于现场确认 RTCSRC/LXTALEN/LXTALSTB。
- *   hrfc：RTC 平滑校准寄存器原始值，用于确认是否启用频率补偿。
- *   cosc：RTC 粗校准寄存器原始值，用于确认是否启用粗调校准。
- */
 typedef struct
 {
     uint8_t clock_ready;
@@ -101,61 +53,14 @@ typedef struct
 /* rtc_task 需要复用这个结构读取当前时间，因此在头文件中导出。 */
 extern rtc_parameter_struct rtc_initpara;
 
-/*
- * 函数作用：
- *   初始化 RTC 外设；若备份域已有有效时间则直接恢复，否则写入默认时间。
- * 参数说明：
- *   无参数。
- * 返回值说明：
- *   0：表示初始化流程执行完成，且 RTC 当前时间已可读取。
- *  -1：表示首次建表时写入默认 RTC 时间失败。
- */
 int bsp_rtc_init(void);
 
-/*
- * 函数作用：
- *   读取当前 RTC 的完整年月日时分秒，并转换成十进制结构体输出。
- * 参数说明：
- *   datetime：输出时间结构体指针，必须非空；成功时写入当前 RTC 快照。
- * 返回值说明：
- *   0：表示读取成功。
- *  -1：表示参数无效，或 RTC 阴影寄存器同步失败导致当前时间不可可靠读取。
- */
 int bsp_rtc_get_datetime(bsp_rtc_datetime_t *datetime);
 
-/*
- * 函数作用：
- *   读取当前 RTC 时间，并转换为 2000-01-01 00:00:00 起算的秒级时间戳。
- * 参数说明：
- *   epoch_seconds：输出秒计数的指针，必须非空；成功时写入当前秒级时间戳。
- * 返回值说明：
- *   0：表示转换成功。
- *  -1：表示参数无效、RTC 读取失败或日期字段非法。
- * 说明：
- *   该时间戳不是 Unix epoch，只用于深睡前后计算 RTC 秒差，保证跨睡眠补偿单调。
- */
 int bsp_rtc_get_epoch_seconds(uint32_t *epoch_seconds);
 
-/*
- * 函数作用：
- *   读取 RTC 当前诊断状态，包含时钟源、备份标记、分频和校准寄存器。
- * 参数说明：
- *   status：输出状态结构体指针，必须非空；成功时写入当前寄存器快照。
- * 返回值说明：
- *   0：表示状态读取成功。
- *  -1：表示参数为空。
- */
 int bsp_rtc_get_status(bsp_rtc_status_t *status);
 
-/*
- * 函数作用：
- *   按十进制年月日时分秒设置 RTC 当前时间，并自动计算星期字段。
- * 参数说明：
- *   datetime：输入时间结构体指针，必须非空；年份范围当前约定为 2000~2099。
- * 返回值说明：
- *   0：表示设置成功，RTC 当前时间已经更新。
- *  -1：表示参数无效、RTC 同步失败，或底层 rtc_init() 写入失败。
- */
 int bsp_rtc_set_datetime(const bsp_rtc_datetime_t *datetime);
 
 #ifdef __cplusplus

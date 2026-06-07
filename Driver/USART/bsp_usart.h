@@ -12,8 +12,8 @@ extern "C" {
 #endif
 
 /* RS485通信串口，出厂默认波特率19200 */
-#define CIMC_RS485_USART               USART1
-#define CIMC_RS485_BAUDRATE            19200U
+#define RS485_PORT               USART1
+#define RS485_BAUD            19200U
 
 /* USART1/RS485 DMA接收缓冲区长度（单帧远小于512字节，1KB留有余量） */
 #define BSP_USART1_RX_BUFFER_SIZE      1024U
@@ -31,7 +31,7 @@ extern "C" {
 #define USART1_AF                      GPIO_AF_7
 
 /* RS485方向控制脚PE8（DE/RE#复用），高电平发送，低电平接收 */
-#define RS485_USART                    CIMC_RS485_USART
+#define RS485_USART                    RS485_PORT
 #define RS485_DIR_PORT                 GPIOE
 #define RS485_DIR_CLK_PORT             RCU_GPIOE
 #define RS485_DIR_PIN                  GPIO_PIN_8

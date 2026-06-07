@@ -47,10 +47,10 @@ float adc_app_get_ch1_raw_float(void)
 /* 50ms周期：计算变比后的CH0/CH1并检查阈值告警 */
 void adc_task(void)
 {
-    const cimc_params_t *p = cimc_params_get();
+    const params_t *p = params_get();
     float ch0 = adc_app_get_ch0_raw_float() * p->ch0_ratio;
     float ch1 = adc_app_get_ch1_raw_float() * p->ch1_ratio;
 
-    cimc_alarm_check(0, p->ch0_threshold, ch0);
-    cimc_alarm_check(1, p->ch1_threshold, ch1);
+    alm_check(0, p->ch0_threshold, ch0);
+    alm_check(1, p->ch1_threshold, ch1);
 }

@@ -26,7 +26,7 @@ static uint8_t build_mask(void)
         mask |= 0x01U;
     }
 
-    if(cimc_status_is_auto_sample_active() != 0) {
+    if(sts_sampling() != 0) {
         mask |= 0x02U;
     }
 
